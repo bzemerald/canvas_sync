@@ -140,8 +140,8 @@ class Engine:
         """Update the search index from what was last pulled. Only changed files are re-read."""
         return self.index.sync(self.state, self.root, on_progress)
 
-    def search(self, query: str, limit: int = 50) -> list[Hit]:
-        return self.index.search(query, self.state.courses(), self.settings, limit)
+    def search(self, query: str, limit: int = 50, course_ids: list[int] | None = None) -> list[Hit]:
+        return self.index.search(query, self.state.courses(), self.settings, limit, course_ids)
 
     def relative(self, path: Path) -> str:
         """A user-supplied path (absolute, or relative to cwd) as a path relative to root.

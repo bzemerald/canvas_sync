@@ -103,6 +103,10 @@ def test_course_filter_and_aliases(root, course):
     assert search(root, "math eigen") == ["Lecture 3.pdf"]
     assert search(root, "lin eigen") == ["Lecture 3.pdf"]  # prefix of the course name
     assert search(root, "cs61a eigen") == []                # not a course: must match text
+    with Engine(root) as e:
+        assert [h.title for h in e.search("eigen", course_ids=[1])] == ["Lecture 3.pdf"]
+        assert e.search("eigen", course_ids=[2]) == []
+        assert len(e.search("", course_ids=[1])) == 8
     set_config(root, "[course_aliases]\n", "[course_aliases]\n1 = [\"线代\"]\n")
     assert search(root, "线代 eigen") == ["Lecture 3.pdf"]
 

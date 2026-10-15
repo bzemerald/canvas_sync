@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -103,9 +103,9 @@ def create_app(account: Account, token: str) -> FastAPI:
             ]
 
     @api.get("/search")
-    def search(q: str, limit: int = 50) -> list[dict[str, Any]]:
+    def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[])) -> list[dict[str, Any]]:
         with engine() as e:
-            return [h.to_dict() for h in e.search(q, min(limit, 200))]
+            return [h.to_dict() for h in e.search(q, min(limit, 500), course or None)]
 
     @api.get("/status")
     def status() -> list[dict[str, Any]]:

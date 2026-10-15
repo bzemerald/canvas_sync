@@ -356,9 +356,15 @@ class Index:
             on_progress(len(todo), len(todo), "")
         return stats
 
-    def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50) -> list[Hit]:
+    def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50,
+               course_ids: list[int] | None = None) -> list[Hit]:
+        """`course_ids` restricts the search to those courses, whatever the query says."""
         abbreviations = {**DEFAULT_ABBREVIATIONS, **settings.abbreviations}
         q = parse(query, CourseMatcher(courses, settings), abbreviations)
+        if course_ids:
+            q.course_ids = sorted(set(course_ids) & set(q.course_ids)) if q.course_ids else list(course_ids)
+            if not q.course_ids:
+                return []
         codes = {c.id: settings.course_names.get(c.id) or c.code for c in courses}
         where, args = [], []
         if q.course_ids:
