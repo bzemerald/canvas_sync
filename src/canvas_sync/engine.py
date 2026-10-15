@@ -17,6 +17,7 @@ from .layout import Layout
 from .local import clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner
+from .search import Hit, Index, IndexStats, ProgressHandler
 from .state import META_DIR, State
 
 
@@ -42,6 +43,7 @@ class Engine:
         self.layout = Layout(self.settings)
         self.state = State(self.meta / "state.db")
         self.client = client
+        self._index: Index | None = None
 
     @staticmethod
     def init_root(root: Path) -> Path:
@@ -60,7 +62,15 @@ class Engine:
         self.close()
 
     def close(self) -> None:
+        if self._index is not None:
+            self._index.close()
         self.state.close()
+
+    @property
+    def index(self) -> Index:
+        if self._index is None:
+            self._index = Index(self.meta / "index.db")
+        return self._index
 
     def _api(self) -> CanvasClient:
         if self.client is None:
@@ -125,6 +135,13 @@ class Engine:
             if states:
                 out.append(FileStatus(path, r.id, r.course_id, states))
         return out
+
+    def reindex(self, on_progress: ProgressHandler | None = None) -> IndexStats:
+        """Update the search index from what was last pulled. Only changed files are re-read."""
+        return self.index.sync(self.state, self.root, on_progress)
+
+    def search(self, query: str, limit: int = 50) -> list[Hit]:
+        return self.index.search(query, self.state.courses(), self.settings, limit)
 
     def relative(self, path: Path) -> str:
         """A user-supplied path (absolute, or relative to cwd) as a path relative to root.

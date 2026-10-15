@@ -2,107 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
-import re
-from pathlib import Path
 
-import httpx
-import pytest
-
-from canvas_sync import CanvasClient, Engine, Kind
-
-BASE = "https://canvas.test"
-COURSE = "Fall 2026/MATH 221"
-
-
-class FakeCanvas:
-    def __init__(self) -> None:
-        self.course = {"id": 1, "name": "Linear Algebra", "course_code": "MATH 221", "term": {"name": "Fall 2026"}}
-        self.folders = [{"id": 10, "full_name": "course files"}, {"id": 11, "full_name": "course files/Lectures"}]
-        self.files: dict[int, dict] = {}
-        self.modules: list[dict] = []
-        self.pages: dict[str, dict] = {}
-        self.files_tab_hidden = False
-
-    def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z") -> None:
-        self.files[fid] = {
-            "id": fid, "display_name": name, "folder_id": folder, "size": len(content),
-            "modified_at": version, "url": f"{BASE}/files/{fid}/download?verifier=x", "_content": content,
-        }
-
-    def module(self, position: int, name: str, items: list[dict]) -> None:
-        self.modules.append({"id": position, "position": position, "name": name, "items": items})
-
-    def handle(self, req: httpx.Request) -> httpx.Response:
-        path = req.url.path
-        public = lambda f: {k: v for k, v in f.items() if not k.startswith("_")}  # noqa: E731
-        routes = {
-            "/api/v1/users/self": lambda: {"name": "Test"},
-            "/api/v1/courses": lambda: [self.course],
-            "/api/v1/courses/1": lambda: self.course,
-            "/api/v1/courses/1/folders": lambda: self.folders,
-            "/api/v1/courses/1/modules": lambda: self.modules,
-            "/api/v1/courses/1/pages": lambda: [{"url": u} for u in self.pages],
-            "/api/v1/courses/1/assignments": lambda: [],
-            "/api/v1/announcements": lambda: [],
-        }
-        if path in routes:
-            return httpx.Response(200, json=routes[path]())
-        if path == "/api/v1/courses/1/files":
-            if self.files_tab_hidden:
-                return httpx.Response(403, json={"errors": [{"message": "unauthorized"}]})
-            return httpx.Response(200, json=[public(f) for f in self.files.values()])
-        if (m := re.fullmatch(r"/api/v1/courses/1/files/(\d+)", path)) and int(m[1]) in self.files:
-            return httpx.Response(200, json=public(self.files[int(m[1])]))
-        if (m := re.fullmatch(r"/api/v1/courses/1/pages/(.+)", path)) and m[1] in self.pages:
-            return httpx.Response(200, json=self.pages[m[1]])
-        if (m := re.fullmatch(r"/files/(\d+)/download", path)) and int(m[1]) in self.files:
-            return httpx.Response(200, content=self.files[int(m[1])]["_content"])
-        return httpx.Response(404, json={"errors": [{"message": "not found"}]})
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    return Engine.init_root(tmp_path / "Canvas")
-
-
-@pytest.fixture
-def fake() -> FakeCanvas:
-    f = FakeCanvas()
-    f.put(100, "lec1.pdf", b"v1")
-    f.module(1, "Week 1", [{"type": "File", "content_id": 100}])
-    return f
-
-
-@pytest.fixture(autouse=True)
-def no_real_trash(monkeypatch: pytest.MonkeyPatch) -> None:
-    for mod in ("canvas_sync.engine", "canvas_sync.execute"):
-        monkeypatch.setattr(f"{mod}.send2trash", lambda p: os.unlink(p))
-
-
-def pull(root: Path, fake: FakeCanvas):
-    async def go():
-        async with CanvasClient(BASE, "t", transport=httpx.MockTransport(fake.handle)) as client:
-            with Engine(root, client) as engine:
-                plan = await engine.plan()
-                errors = await engine.apply(plan)
-                assert errors == []
-                return plan
-
-    return asyncio.run(go())
-
-
-def kinds(plan) -> list[tuple[str, str | None]]:
-    return sorted((a.kind.value, a.path) for a in plan.actions)
-
-
-def set_config(root: Path, old: str, new: str) -> None:
-    cfg = root / ".canvas" / "config.toml"
-    text = cfg.read_text()
-    assert old in text
-    cfg.write_text(text.replace(old, new))
-
+from canvas_sync import Engine, Kind
+from fake_canvas import COURSE, kinds, pull, set_config
 
 MOD = f"{COURSE}/Modules/01 Week 1/lec1.pdf"
 FILES = f"{COURSE}/Files/Lectures/lec1.pdf"

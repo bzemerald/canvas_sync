@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -12,14 +11,17 @@ from typing import Annotated, Optional, TypeVar
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress
 from rich.table import Table
 
 from .api import CanvasClient, CanvasError
 from .config import Account, ConfigError, set_course_listed
 from .engine import Engine, NotInitialized
+from .local import open_path
 from .models import Course
 from .plan import Kind, Plan
+from .search import Hit
 from .state import META_DIR
 
 app = typer.Typer(help="Sync Canvas course files into a local folder.", no_args_is_help=True)
@@ -217,11 +219,78 @@ def pull(
                     progress.console.print(f"[red]failed:[/] {a.path or a.name}: {error}")
 
             errors = await engine.apply(plan, on_event)
+        reindex(engine)
         counts = Counter(a.kind for a in work)
         summary = ", ".join(f"{n} {k.value.replace('_', ' ')}" for k, n in counts.items() if k not in (Kind.LINK, Kind.UNLINK))
         console.print(f"Done{': ' + summary if summary else ''}." + (f" [red]{len(errors)} failed.[/]" if errors else ""))
 
     with_engine(True, body)
+
+
+def reindex(engine: Engine) -> None:
+    with console.status("Indexing for search…") as spinner:
+        def on_progress(done: int, total: int, title: str) -> None:
+            if title:
+                spinner.update(f"Indexing for search… {done}/{total} [dim]{title}[/]")
+
+        engine.reindex(on_progress)
+
+
+@app.command("index")
+def index_() -> None:
+    """Update the search index (runs automatically after `pull`)."""
+
+    async def body(engine: Engine) -> None:
+        reindex(engine)
+        console.print("Search index up to date.")
+
+    with_engine(False, body)
+
+
+KIND_LABEL = {"file": "file", "page": "page", "assignment": "hw", "announcement": "news", "syllabus": "syll"}
+
+
+def render_hit(n: int, h: Hit, base_url: str) -> None:
+    date = f"  [dim]{h.date[:10]}[/]" if h.date else ""
+    console.print(f"[dim]{n:>2}[/] [cyan]{KIND_LABEL.get(h.kind, h.kind):<4}[/] [bold]{escape(h.course)}[/]  {escape(h.title)}{date}")
+    where = h.path or (base_url + h.url if h.url else "")
+    if where:
+        console.print(f"        [dim]{escape(where)}[/]")
+    if h.snippet:
+        text = "".join(f"[yellow]{escape(t)}[/]" if m else escape(t) for t, m in h.snippet)
+        console.print(f"        {text}", highlight=False)
+
+
+@app.command()
+def search(
+    query: Annotated[list[str], typer.Argument(help='e.g. "221 mt", "cs61a hw3 sol"')],
+    limit: Annotated[int, typer.Option("-n", "--limit")] = 20,
+    open_: Annotated[Optional[int], typer.Option("--open", "-o", help="Open result N")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Search files, pages, assignments and announcements (offline)."""
+    acc = account()
+    hits = with_engine(False, lambda engine: _value(engine.search(" ".join(query), limit)))
+    if as_json:
+        print(json.dumps([h.to_dict() for h in hits], indent=2, ensure_ascii=False))
+        return
+    if open_ is not None:
+        if not 1 <= open_ <= len(hits):
+            raise fail(f"no result {open_}")
+        h = hits[open_ - 1]
+        target = str(acc.root / h.path) if h.path else acc.base_url + (h.url or "")
+        if h.path:
+            open_path(acc.root / h.path)
+        else:
+            typer.launch(target)
+        console.print(f"opened {target}")
+        return
+    if not hits:
+        console.print("No results. [dim](`canvas index` if you haven't pulled since installing search)[/]")
+        return
+    for n, h in enumerate(hits, 1):
+        render_hit(n, h, acc.base_url)
+    console.print("[dim]`--open N` to open one.[/]")
 
 
 @app.command()
@@ -260,9 +329,19 @@ def restore(paths: Annotated[list[Path], typer.Argument(help="Files to restore")
     with_engine(False, body)
 
 
+@app.command()
+def serve(
+    port: Annotated[int, typer.Option(help="0 = pick a free port")] = 0,
+) -> None:
+    """Run the local API the desktop app talks to. Prints {"port", "token"} as the first line."""
+    from .server import serve as run
+
+    run(account(), port)
+
+
 @app.command("open")
 def open_(course: Annotated[Optional[str], typer.Argument(help="Course id, code or name")] = None) -> None:
-    """Open the sync folder (or one course's folder) in Finder."""
+    """Open the sync folder (or one course's folder) in the file manager."""
     acc = account()
     target = acc.root
     if course:
@@ -272,4 +351,4 @@ def open_(course: Annotated[Optional[str], typer.Argument(help="Course id, code 
             return engine.root / engine.layout.course_dir(c)
 
         target = with_engine(False, body)
-    subprocess.run(["open", str(target)], check=False)
+    open_path(target)

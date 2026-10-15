@@ -33,6 +33,9 @@ exclude = []   # course ids to never sync
 [course_names]
 # Rename a course folder:  12345 = "Linear Algebra"
 
+[course_aliases]
+# Extra names search understands for a course:  12345 = ["linalg", "线代"]
+
 [layout]
 # Course folder relative to this root. Fields: {term} {code} {name} {id}
 course_dir = "{term}/{code}"
@@ -65,6 +68,10 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # course = 12345         # optional: only in this course
 # keep_views = false     # true: also keep symlinks in the normal views
 # skip = false           # true: don't download matching files at all
+
+[search.abbreviations]
+# Added to the built-in ones (mt = midterm, hw = homework, sol = solution, ...).
+# exam = ["midterm", "final", "prelim"]
 """
 
 CHOICES = {
@@ -106,6 +113,8 @@ class Settings:
     on_local_move: str = "follow"
     on_remote_delete: str = "keep"
     rules: list[Rule] = field(default_factory=list)
+    course_aliases: dict[int, list[str]] = field(default_factory=dict)
+    abbreviations: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -131,6 +140,11 @@ class Settings:
             on_local_move=sync.get("on_local_move", d.on_local_move),
             on_remote_delete=sync.get("on_remote_delete", d.on_remote_delete),
             rules=[_rule(r) for r in data.get("rules", [])],
+            course_aliases={int(k): _strings(v) for k, v in data.get("course_aliases", {}).items()},
+            abbreviations={
+                str(k).lower(): [x.lower() for x in _strings(v)]
+                for k, v in data.get("search", {}).get("abbreviations", {}).items()
+            },
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -139,6 +153,10 @@ class Settings:
             if v not in DEFAULT_VIEW_DIRS:
                 raise ConfigError(f"{path}: unknown view {v!r}; use {sorted(DEFAULT_VIEW_DIRS)}")
         return s
+
+
+def _strings(v: Any) -> list[str]:
+    return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
 def _rule(r: dict[str, Any]) -> Rule:

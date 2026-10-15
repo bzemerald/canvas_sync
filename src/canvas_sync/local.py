@@ -7,6 +7,7 @@ import ctypes.util
 import hashlib
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,6 +27,19 @@ def clone_file(src: Path, dst: Path) -> None:
     if _clonefile is not None and _clonefile(os.fsencode(src), os.fsencode(dst), 0) == 0:
         return
     shutil.copy2(src, dst)
+
+
+def open_path(path: Path, reveal: bool = False) -> None:
+    """Open with the default app, or with `reveal` show it in Finder / Explorer / the file manager."""
+    if sys.platform == "darwin":
+        subprocess.run(["open", *(["-R"] if reveal else []), str(path)], check=False)
+    elif sys.platform == "win32":
+        if reveal:
+            subprocess.run(["explorer", f"/select,{path}"], check=False)
+        else:
+            os.startfile(path)  # type: ignore[attr-defined]
+    else:
+        subprocess.run(["xdg-open", str(path.parent if reveal else path)], check=False)
 
 
 def sha256_file(path: Path) -> str:

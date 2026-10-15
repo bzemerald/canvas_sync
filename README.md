@@ -19,7 +19,24 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 | `pull [-c COURSE] [-n] [-v] [--json]` | fetch new/changed files |
 | `status [--json]` | your local edits / moves / deletions since the last pull (offline) |
 | `restore PATH…` | put back the Canvas original (your version goes to the Trash) |
+| `search QUERY… [-o N] [--json]` | search every course (offline), see below |
+| `index` | update the search index (runs after every `pull`) |
 | `open [COURSE]` | open in Finder |
+| `serve` | local API for the desktop app |
+
+## Search
+
+`canvas search 221 mt` searches file names, folder names, the text inside PDFs /
+Office files / notebooks, and every page, assignment, announcement and syllabus.
+
+- Words that name a course become a filter: `221`, `math221`, `cs70` (for COMPSCI 70),
+  the start of the course name, or your own `[course_aliases]`.
+- Abbreviations expand both ways: `mt` ↔ midterm, `hw` ↔ homework / problem set,
+  `sol` ↔ solution, `期中` → midterm, … Add your own under `[search.abbreviations]`.
+- `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
+- `--open N` opens result N (the file, or the Canvas page).
+
+The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 
 ## What ends up on disk
 
@@ -63,6 +80,9 @@ plan.py      remote vs. original vs. disk → list of Actions (nothing is change
 execute.py   carries out a Plan
 engine.py    the public API: courses(), plan(), apply(), status(), restore()
 state.py     SQLite schema and access
+text.py      text out of PDFs, Office files, notebooks, HTML
+search.py    the search index (SQLite FTS5) and query parsing
+server.py    local HTTP API for the desktop app (`canvas serve`)
 cli.py       `canvas` command
 ```
 

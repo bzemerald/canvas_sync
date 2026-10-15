@@ -74,6 +74,7 @@ class State:
     def __init__(self, db_path: Path):
         self.db = sqlite3.connect(db_path)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode = WAL")  # readers (search, GUI) don't block a pull
         self.db.executescript(SCHEMA)
 
     def close(self) -> None:
