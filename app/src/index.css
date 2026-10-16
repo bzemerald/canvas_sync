@@ -15,6 +15,19 @@
   --on-accent: #ffffff;
   --highlight: #fde68a;
   --danger: #c2410c;
+  --danger-soft: #fdebe2;
+  --warn: #a16207;
+  --warn-soft: #fdf3d7;
+  --info: #1d5fc4;
+  --info-soft: #e3ecfb;
+  --type-pdf: #d1453b;
+  --type-doc: #2f6fde;
+  --type-slides: #d97706;
+  --type-sheet: #15803d;
+  --type-image: #9333ea;
+  --type-media: #db2777;
+  --type-code: #0e7490;
+  --type-folder: #6b9bd8;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -32,6 +45,19 @@
     --on-accent: #0b0b0d;
     --highlight: #6b5a1e;
     --danger: #fb923c;
+    --danger-soft: #3d2418;
+    --warn: #fbbf24;
+    --warn-soft: #3a2f12;
+    --info: #7aa7f5;
+    --info-soft: #1f2c45;
+    --type-pdf: #f07167;
+    --type-doc: #6f9cf0;
+    --type-slides: #f5a524;
+    --type-sheet: #4ade80;
+    --type-image: #c084fc;
+    --type-media: #f472b6;
+    --type-code: #22d3ee;
+    --type-folder: #6f98d0;
   }
 }
 
@@ -49,6 +75,19 @@
   --color-on-accent: var(--on-accent);
   --color-highlight: var(--highlight);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-type-pdf: var(--type-pdf);
+  --color-type-doc: var(--type-doc);
+  --color-type-slides: var(--type-slides);
+  --color-type-sheet: var(--type-sheet);
+  --color-type-image: var(--type-image);
+  --color-type-media: var(--type-media);
+  --color-type-code: var(--type-code);
+  --color-type-folder: var(--type-folder);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
@@ -68,6 +107,12 @@ html.launcher body {
   background: transparent;
 }
 
-input {
+input,
+textarea {
   user-select: text;
+}
+
+/* Lists and grids handle their own keyboard focus; show it without the browser's ring. */
+.focus-quiet:focus {
+  outline: none;
 }

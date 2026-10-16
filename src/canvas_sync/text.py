@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import threading
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
@@ -15,6 +16,9 @@ from pathlib import Path
 MAX_CHARS = 300_000
 MAX_PDF_PAGES = 400
 MAX_FILE_MB = 80
+
+# PDFium is not thread-safe, and indexing and thumbnails can run at the same time.
+PDFIUM_LOCK = threading.Lock()
 
 PLAIN = {
     ".txt", ".md", ".markdown", ".csv", ".tsv", ".tex", ".bib", ".json", ".yaml", ".yml",
@@ -79,7 +83,12 @@ def html_to_text(source: str | None) -> str:
 def _pdf(path: Path) -> str:
     import pypdfium2 as pdfium  # imported lazily: native library, only needed here
 
-    pdf = pdfium.PdfDocument(path)
+    with PDFIUM_LOCK:
+        return _pdf_locked(pdfium, path)
+
+
+def _pdf_locked(pdfium: object, path: Path) -> str:
+    pdf = pdfium.PdfDocument(path)  # type: ignore[attr-defined]
     try:
         out, size = [], 0
         for i in range(min(len(pdf), MAX_PDF_PAGES)):

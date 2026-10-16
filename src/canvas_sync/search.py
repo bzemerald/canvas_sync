@@ -118,6 +118,7 @@ class Hit:
     url: str | None
     date: str | None
     snippet: list[tuple[str, bool]] = field(default_factory=list)  # (text, is_match)
+    match: str = "name"   # name: the title or a folder matched; content: only the text inside
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -190,12 +191,22 @@ class CourseMatcher:
         return set()
 
 
+def _and_plural(term: str) -> list[str]:
+    """An expansion and its plural, so "midterm" also matches "Midterms"."""
+    last = term.rsplit(" ", 1)[-1]
+    if not last.isalpha() or _is_cjk(last) or last.endswith("s"):
+        return [term]
+    return [term, term + ("es" if re.search(r"(x|ch|sh)$", last) else "s")]
+
+
 def expand(token: str, abbreviations: dict[str, list[str]]) -> list[tuple[str, bool]]:
-    """Alternatives for one query token, as (term, exact) pairs."""
+    """Alternatives for one query token, as (term, exact) pairs. What you typed may be the
+    start of a word ("lec" finds "lecture"); what we expand it to must be a whole word, or
+    "mt" -> "prelim" would find "Preliminary Exercises"."""
     t = token.lower()
-    alts = [(t, False), *((a, False) for a in abbreviations.get(t, []))]
+    alts = [(t, False), *((p, True) for a in abbreviations.get(t, []) for p in _and_plural(a))]
     if m := re.fullmatch(r"(\D+?)[\s_-]*(\d+)", t):  # mt1 -> midterm 1, hw3 -> homework 3
-        alts += [(f"{a} {m[2]}", False) for a in abbreviations.get(m[1], [])]
+        alts += [(f"{a} {m[2]}", True) for a in abbreviations.get(m[1], [])]
     # And the other way round: "midterm" also finds "MT1.pdf" (whole word only, so
     # "announcement" -> "ann" doesn't find "annual").
     alts += [(k, True) for k, v in abbreviations.items() if t in v and not _is_cjk(k)]
@@ -357,8 +368,11 @@ class Index:
         return stats
 
     def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50,
-               course_ids: list[int] | None = None) -> list[Hit]:
-        """`course_ids` restricts the search to those courses, whatever the query says."""
+               course_ids: list[int] | None = None, kinds: list[str] | None = None,
+               names_only: bool = False) -> list[Hit]:
+        """`course_ids` restricts the search to those courses, whatever the query says;
+        `kinds` to those kinds of item. With either, an empty query lists everything in them.
+        `names_only` skips items where only the text inside matches."""
         abbreviations = {**DEFAULT_ABBREVIATIONS, **settings.abbreviations}
         q = parse(query, CourseMatcher(courses, settings), abbreviations)
         if course_ids:
@@ -370,18 +384,25 @@ class Index:
         if q.course_ids:
             where.append(f"i.course_id IN ({','.join('?' * len(q.course_ids))})")
             args += q.course_ids
+        if kinds:
+            where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
+            args += kinds
         if q.groups:
             # bm25 alone can't tell "Lecture 3.pdf" from "HW3.pdf" in a "Lectures" folder when
-            # nearly every file there matches "lec": everything matching in the title wins.
-            sql = f"""SELECT i.*, snippet(fts, -1, '{_HIT_START}', '{_HIT_END}', '…', 14) AS snip
+            # nearly every file there matches "lec": title matches first, then folder matches,
+            # then files that only mention it inside.
+            expr = q.fts()
+            names = f"{{title folder}} : ({expr})"
+            sql = f"""SELECT i.*, snippet(fts, -1, '{_HIT_START}', '{_HIT_END}', '…', 14) AS snip,
+                             fts.rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?) AS in_title,
+                             fts.rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?) AS in_name
                       FROM fts JOIN items i ON i.id = fts.rowid
                       WHERE fts MATCH ? {''.join(' AND ' + w for w in where)}
-                      ORDER BY fts.rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?) DESC,
-                               bm25(fts, 10.0, 3.0, 1.0)
+                      ORDER BY in_title DESC, in_name DESC, bm25(fts, 10.0, 3.0, 1.0)
                       LIMIT ?"""
-            args = [q.fts(), *args, f"title : ({q.fts()})", limit]
-        elif q.course_ids:  # just a course: its most recent items
-            sql = f"""SELECT i.*, NULL AS snip FROM items i WHERE {' AND '.join(where)}
+            args = [f"title : ({expr})", names, names if names_only else expr, *args, limit]
+        elif where:  # just a course and/or kinds: the most recent items
+            sql = f"""SELECT i.*, NULL AS snip, 1 AS in_name FROM items i WHERE {' AND '.join(where)}
                       ORDER BY i.date IS NULL, i.date DESC LIMIT ?"""
             args.append(limit)
         else:
@@ -389,7 +410,8 @@ class Index:
         return [
             Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
                 title=r["title"], path=r["path"], url=r["url"], date=r["date"],
-                snippet=_segments(r["snip"]) if r["snip"] else [])
+                snippet=_segments(r["snip"]) if r["snip"] else [],
+                match="name" if r["in_name"] else "content")
             for r in self.db.execute(sql, args)
         ]
 

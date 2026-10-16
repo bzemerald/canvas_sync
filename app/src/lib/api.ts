@@ -12,6 +12,7 @@ export interface Hit {
   url: string | null;
   date: string | null;
   snippet: { text: string; match: boolean }[];
+  match: "name" | "content"; // name: title or folder matched; content: only the text inside
 }
 
 export interface Course {
@@ -23,8 +24,45 @@ export interface Course {
   dir: string;
 }
 
+export interface Entry {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  size: number | null;
+  mtime: number | null;
+  file_id: number | null;
+  course_id: number | null;
+  url: string | null;
+  link: string | null;
+  states: string[];
+  deleted: boolean;
+  changes: number;
+}
+
+export interface FileStatus {
+  path: string | null;
+  file_id: number;
+  course_id: number;
+  states: string[];
+}
+
+export interface SmartFolder {
+  name: string;
+  query: string;
+  courses: number[];
+  kinds: Kind[];
+  content: boolean; // also match text inside files and pages, not just names
+}
+
+/** A term, course, folder or file: what a sync or restore applies to. */
+export interface Scope {
+  paths?: string[];
+  file_ids?: number[];
+}
+
 export interface SyncState {
   phase: "idle" | "checking" | "downloading" | "indexing" | "done" | "failed";
+  scope: string[];
   running: boolean;
   total: number;
   done: number;
@@ -65,23 +103,57 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function search(q: string, opts: { limit?: number; courses?: number[] } = {}): Promise<Hit[]> {
+export function search(
+  q: string,
+  opts: { limit?: number; courses?: number[]; kinds?: Kind[]; namesOnly?: boolean } = {},
+): Promise<Hit[]> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 50) });
+  if (opts.namesOnly) params.set("names_only", "true");
   for (const c of opts.courses ?? []) params.append("course", String(c));
+  for (const k of opts.kinds ?? []) params.append("kind", k);
   return api(`/search?${params}`);
 }
 
 export const courses = () => api<Course[]>("/courses");
 export const health = () => api<{ root: string; canvas: string }>("/health");
+export const status = () => api<FileStatus[]>("/status");
+export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
+
 export const syncState = () => api<SyncState>("/sync");
-export const startSync = () => api<SyncState>("/sync", { method: "POST" });
+export const startSync = (scope: Scope = {}) => api<SyncState>("/sync", { method: "POST", body: JSON.stringify(scope) });
+
+export const restorePreview = (scope: Scope) =>
+  api<{ files: FileStatus[] }>("/restore", { method: "POST", body: JSON.stringify({ ...scope, dry_run: true }) });
+export const restore = (scope: Scope) =>
+  api<{ restored: string[] }>("/restore", { method: "POST", body: JSON.stringify(scope) });
+
+export const smartFolders = () => api<SmartFolder[]>("/smart-folders");
+export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
+  api<SmartFolder[]>("/smart-folders", { method: "POST", body: JSON.stringify({ ...folder, replaces }) });
+export const deleteSmartFolder = (name: string) =>
+  api<SmartFolder[]>(`/smart-folders/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+/** A JPEG preview as an object URL, or null if the file has none. */
+export async function thumb(path: string, size: number): Promise<string | null> {
+  const { port, token } = await getBackend();
+  const params = new URLSearchParams({ path, size: String(size) });
+  const res = await fetch(`http://127.0.0.1:${port}/api/thumb?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  return res.ok ? URL.createObjectURL(await res.blob()) : null;
+}
+
+export function openPath(path: string, how: { reveal?: boolean; preview?: boolean } = {}) {
+  return api("/open", { method: "POST", body: JSON.stringify({ path, ...how }) });
+}
+
+export function openUrl(url: string) {
+  return api("/open", { method: "POST", body: JSON.stringify({ url }) });
+}
 
 /** Open a result: the local file if we have one, else its Canvas page in the browser. */
 export function openHit(hit: Hit, reveal = false) {
-  const body = hit.path ? { path: hit.path, reveal } : { url: hit.url };
-  return api("/open", { method: "POST", body: JSON.stringify(body) });
+  return hit.path ? openPath(hit.path, { reveal }) : openUrl(hit.url ?? "/");
 }
 
 export function openCanvas(hit: Hit) {
-  return api("/open", { method: "POST", body: JSON.stringify({ url: hit.url }) });
+  return openUrl(hit.url ?? "/");
 }

@@ -10,13 +10,14 @@ from pathlib import Path
 from send2trash import send2trash
 
 from .api import CanvasClient
+from .browse import RESTORABLE, Entry, list_dir
 from .config import SETTINGS_TEMPLATE, Settings
 from .discover import discover_course
 from .execute import EventHandler, Executor
 from .layout import Layout
 from .local import clone_file, is_regular, sha256_file
 from .models import Course
-from .plan import Action, Inspector, Plan, Planner
+from .plan import Action, Inspector, Plan, Planner, Scope, narrow
 from .search import Hit, Index, IndexStats, ProgressHandler
 from .state import META_DIR, State
 
@@ -27,7 +28,7 @@ class NotInitialized(Exception):
 
 @dataclass
 class FileStatus:
-    path: str | None
+    path: str | None  # where the file is now (or was, if you deleted it)
     file_id: int
     course_id: int
     states: list[str]  # modified | missing | moved | ignored | remote_deleted
@@ -98,17 +99,31 @@ class Engine:
             return False
         return course.id in s.include or s.select == "active" or course.is_favorite
 
-    async def plan(self, courses: list[Course] | None = None) -> Plan:
-        """Look at Canvas and the disk and work out what a pull would do. Changes nothing."""
+    async def plan(self, courses: list[Course] | None = None, scope: Scope | None = None) -> Plan:
+        """Look at Canvas and the disk and work out what a pull would do. Changes nothing.
+
+        With a `scope` (a term, course, folder or file), only courses under it are checked
+        and only actions for files in it are kept. An explicit scope also covers courses
+        `pull` would normally skip, since you asked for them."""
         if courses is None:
-            courses = [c for c in await self.courses() if self.is_selected(c)]
+            courses = self.courses_in(scope) if scope else [c for c in await self.courses() if self.is_selected(c)]
         snaps = await asyncio.gather(*(discover_course(self._api(), c) for c in courses))
         planner = Planner(self.root, self.state, self.layout, self.settings)
         plan = Plan([], [], list(snaps))
         for snap in snaps:
             plan.actions += planner.plan_course(snap)
             plan.warnings += [f"{snap.course.code}: {w}" for w in snap.warnings]
+        if scope:
+            plan.actions = narrow(plan.actions, scope)
         return plan
+
+    def courses_in(self, scope: Scope) -> list[Course]:
+        """Courses we've synced before that the scope reaches into."""
+        ids = {r.course_id for r in map(self.state.get, scope.file_ids) if r}
+        return [
+            c for c in self.state.courses()
+            if c.id in ids or scope.overlaps(self.layout.course_dir(c).as_posix())
+        ]
 
     async def apply(self, plan: Plan, on_event: EventHandler | None = None) -> list[tuple[Action, str]]:
         return await Executor(self.root, self.state, self._api(), on_event).apply(plan)
@@ -140,8 +155,9 @@ class Engine:
         """Update the search index from what was last pulled. Only changed files are re-read."""
         return self.index.sync(self.state, self.root, on_progress)
 
-    def search(self, query: str, limit: int = 50, course_ids: list[int] | None = None) -> list[Hit]:
-        return self.index.search(query, self.state.courses(), self.settings, limit, course_ids)
+    def search(self, query: str, limit: int = 50, course_ids: list[int] | None = None,
+               kinds: list[str] | None = None, names_only: bool = False) -> list[Hit]:
+        return self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds, names_only)
 
     def relative(self, path: Path) -> str:
         """A user-supplied path (absolute, or relative to cwd) as a path relative to root.
@@ -152,21 +168,54 @@ class Engine:
         except ValueError:
             raise LookupError(f"{path} is not inside {self.root}") from None
 
-    def restore(self, path: Path) -> str:
-        """Put back the copy last pulled from Canvas. Your edited version goes to the Trash."""
+    def restorable(self, scope: Scope) -> list[FileStatus]:
+        """Files in `scope` that `restore_files` would put back: edited or deleted by you."""
+        return [
+            s for s in self.status()
+            if RESTORABLE & set(s.states) and (s.file_id in scope.file_ids or scope.contains(s.path))
+        ]
+
+    def restore(self, path: Path) -> list[str]:
+        """Put back the copies last pulled from Canvas, for a file or everything changed in
+        a folder. Your edited versions go to the Trash."""
         rel = self.relative(path)
+        if (self.root / rel).is_dir() and not (self.root / rel).is_symlink():
+            return self.restore_files([s.file_id for s in self.restorable(Scope([rel]))])
         rec = self.state.by_path(rel)
+        if rec is None:  # maybe a file you moved here
+            moved = {s.path: s.file_id for s in self.status() if "moved" in s.states}
+            rec = self.state.get(moved[rel]) if rel in moved else None
         if rec is None or rec.path is None:
             raise LookupError(f"{rel} is not a file canvas-sync tracks")
-        original = self.meta / "originals" / str(rec.id)
-        if not original.exists():
-            raise LookupError(f"no original kept for {rel}; run `canvas pull`")
-        dest = self.root / rec.path
-        if is_regular(dest) and sha256_file(dest) != rec.base_hash:
-            send2trash(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        clone_file(original, dest)
-        st = dest.stat()
-        self.state.update(rec.id, ignored=0, snap_mtime=st.st_mtime, snap_size=st.st_size, snap_inode=st.st_ino)
-        self.state.commit()
-        return rec.path
+        return self.restore_files([rec.id])
+
+    def restore_files(self, file_ids: list[int]) -> list[str]:
+        """Restore each file where it is now (a file you moved stays moved, but gets its
+        original content back) or, if you deleted it, where it was."""
+        inspector = Inspector(self.root)
+        done = []
+        for fid in file_ids:
+            rec = self.state.get(fid)
+            if rec is None or rec.path is None:
+                raise LookupError(f"file {fid} is not tracked")
+            original = self.meta / "originals" / str(rec.id)
+            if not original.exists():
+                raise LookupError(f"no original kept for {rec.path}; run `canvas pull`")
+            rel = rec.path
+            if not rec.ignored:
+                rel = inspector.inspect(rec).path or rec.path
+            dest = self.root / rel
+            if is_regular(dest) and sha256_file(dest) != rec.base_hash:
+                send2trash(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            clone_file(original, dest)
+            st = dest.stat()
+            self.state.update(rec.id, ignored=0, snap_mtime=st.st_mtime, snap_size=st.st_size, snap_inode=st.st_ino)
+            self.state.commit()
+            done.append(rel)
+        return done
+
+    def list_dir(self, rel: str = "") -> list[Entry]:
+        """A folder's contents as the app shows them; see `browse.list_dir`."""
+        return list_dir(self.root, self.state, self.layout, self.status(), rel.strip("/"))
+

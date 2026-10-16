@@ -13,6 +13,8 @@ import json
 import os
 import secrets
 import socket
+import sys
+import threading
 import webbrowser
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -23,14 +25,17 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import __version__
 from .api import CanvasClient, CanvasError
-from .config import Account
+from .config import Account, ConfigError, SmartFolder, delete_smart_folder, save_smart_folder
 from .engine import Engine
 from .local import open_path
-from .plan import Kind
+from .plan import Kind, Scope
+from .state import META_DIR
+from .thumbs import thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"]
@@ -45,6 +50,7 @@ def _now() -> str:
 @dataclass
 class SyncJob:
     phase: str = "idle"  # idle | checking | downloading | indexing | done | failed
+    scope: list[str] = field(default_factory=list)  # paths synced; empty = everything
     started_at: str | None = None
     finished_at: str | None = None
     total: int = 0       # files to transfer
@@ -63,10 +69,34 @@ class OpenRequest(BaseModel):
     path: str | None = None    # relative to the sync folder
     url: str | None = None     # Canvas URL, relative to the Canvas base URL
     reveal: bool = False       # show in the file manager instead of opening
+    preview: bool = False      # Quick Look (macOS)
 
 
-class SyncRequest(BaseModel):
+class ScopeRequest(BaseModel):
+    """A term, course, folder or file: paths relative to the sync folder, and/or file ids."""
+
+    paths: list[str] = []
+    file_ids: list[int] = []
+
+    def scope(self) -> Scope | None:
+        return Scope(self.paths, set(self.file_ids)) if self.paths or self.file_ids else None
+
+
+class SyncRequest(ScopeRequest):
     courses: list[int] | None = None  # default: every course `pull` would sync
+
+
+class RestoreRequest(ScopeRequest):
+    dry_run: bool = False
+
+
+class SmartFolderRequest(BaseModel):
+    name: str
+    query: str = ""
+    courses: list[int] = []
+    kinds: list[str] = []
+    content: bool = False
+    replaces: str | None = None  # renaming: the old name
 
 
 def create_app(account: Account, token: str) -> FastAPI:
@@ -89,6 +119,20 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     api = FastAPI(dependencies=[Depends(authorized)])
 
+    def inside(rel: str) -> Path:
+        """root/rel, refusing anything that resolves outside the sync folder or into .canvas."""
+        root = account.root.resolve()
+        target = (account.root / rel).resolve()
+        if target != root and root not in target.parents:
+            raise HTTPException(400, "path is outside the sync folder")
+        if (root / META_DIR) in [target, *target.parents]:
+            raise HTTPException(400, "that's canvas-sync's own folder")
+        return account.root / rel
+
+    def scope_paths(req: ScopeRequest) -> None:
+        for p in req.paths:
+            inside(p)
+
     @api.get("/health")
     def health() -> dict[str, Any]:
         return {"ok": True, "version": __version__, "root": str(account.root), "canvas": account.base_url}
@@ -103,9 +147,67 @@ def create_app(account: Account, token: str) -> FastAPI:
             ]
 
     @api.get("/search")
-    def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[])) -> list[dict[str, Any]]:
+    def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
+               kind: list[str] = Query(default=[]), names_only: bool = False) -> list[dict[str, Any]]:
         with engine() as e:
-            return [h.to_dict() for h in e.search(q, min(limit, 500), course or None)]
+            return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only)]
+
+    @api.get("/tree")
+    def tree(path: str = "") -> list[dict[str, Any]]:
+        if path:
+            inside(path)
+        with engine() as e:
+            try:
+                return [asdict(x) for x in e.list_dir(path)]
+            except LookupError as err:
+                raise HTTPException(404, str(err))
+
+    @api.get("/thumb")
+    def thumb(path: str, size: int = 256) -> FileResponse:
+        inside(path)
+        out = thumbnail(account.root, path, size)
+        if out is None:
+            raise HTTPException(404, "no thumbnail for this file")
+        return FileResponse(out, media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+    @api.post("/restore")
+    def restore(req: RestoreRequest) -> dict[str, Any]:
+        scope_paths(req)
+        scope = req.scope()
+        if scope is None:
+            raise HTTPException(400, "say what to restore")
+        with engine() as e:
+            todo = e.restorable(scope)
+            if req.dry_run:
+                return {"files": [asdict(s) for s in todo]}
+            try:
+                return {"restored": e.restore_files([s.file_id for s in todo])}
+            except LookupError as err:
+                raise HTTPException(409, str(err))
+
+    @api.get("/smart-folders")
+    def smart_folders() -> list[dict[str, Any]]:
+        with engine() as e:
+            return [asdict(f) for f in e.settings.smart_folders]
+
+    @api.post("/smart-folders")
+    def save_folder(req: SmartFolderRequest) -> list[dict[str, Any]]:
+        if not req.name.strip():
+            raise HTTPException(400, "a smart folder needs a name")
+        folder = SmartFolder(req.name.strip(), req.query.strip(), req.courses, req.kinds, req.content)
+        try:
+            save_smart_folder(account.root / META_DIR / "config.toml", folder, req.replaces)
+        except ConfigError as err:
+            raise HTTPException(400, str(err))
+        return smart_folders()
+
+    @api.delete("/smart-folders/{name}")
+    def delete_folder(name: str) -> list[dict[str, Any]]:
+        try:
+            delete_smart_folder(account.root / META_DIR / "config.toml", name)
+        except LookupError as err:
+            raise HTTPException(404, str(err))
+        return smart_folders()
 
     @api.get("/status")
     def status() -> list[dict[str, Any]]:
@@ -114,13 +216,11 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     @api.post("/open")
     def open_(req: OpenRequest) -> dict[str, str]:
-        if req.path:
-            target = (account.root / req.path).resolve()
-            if account.root.resolve() not in target.parents:
-                raise HTTPException(400, "path is outside the sync folder")
+        if req.path is not None:
+            target = inside(req.path)
             if not target.exists():
                 raise HTTPException(404, f"{req.path} does not exist")
-            open_path(account.root / req.path, reveal=req.reveal)
+            open_path(target, reveal=req.reveal, preview=req.preview)
             return {"opened": str(target)}
         if req.url:
             if not req.url.startswith("/"):
@@ -146,8 +246,10 @@ def create_app(account: Account, token: str) -> FastAPI:
         canvas_token = account.token()
         if not canvas_token:
             raise HTTPException(400, "no Canvas token; run `canvas init`")
-        job = SyncJob(phase="checking", started_at=_now())
-        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses if req else None, job))
+        req = req or SyncRequest()
+        scope_paths(req)
+        job = SyncJob(phase="checking", started_at=_now(), scope=req.paths)
+        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
         return sync_state()
@@ -156,13 +258,15 @@ def create_app(account: Account, token: str) -> FastAPI:
     return app
 
 
-async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, job: SyncJob) -> None:
+async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, scope: Scope | None,
+                    job: SyncJob) -> None:
     try:
         async with CanvasClient(account.base_url, canvas_token) as client:
             with Engine(account.root, client) as e:
-                listed = await e.courses()
-                courses = [c for c in listed if (c.id in course_ids if course_ids is not None else e.is_selected(c))]
-                plan = await e.plan(courses)
+                courses = None
+                if course_ids is not None:
+                    courses = [c for c in await e.courses() if c.id in course_ids]
+                plan = await e.plan(courses, scope)
                 job.warnings = plan.warnings
                 work = [a for a in plan.actions if a.kind != Kind.SKIP]
                 for a in work:
@@ -202,8 +306,24 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
         job.finished_at, job.current = _now(), ""
 
 
-def serve(account: Account, port: int = 0, token: str | None = None) -> None:
+def _exit_when_stdin_closes() -> None:
+    """The app keeps our stdin open. When it goes away, however it went (quit, crash,
+    killed by a dev-mode rebuild), the pipe closes and we go too."""
+    def watch() -> None:
+        try:
+            while sys.stdin.buffer.read(4096):
+                pass
+        finally:
+            os._exit(0)
+
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
+
+
+def serve(account: Account, port: int = 0, token: str | None = None, exit_with_stdin: bool = False) -> None:
     import uvicorn
+
+    if exit_with_stdin:
+        _exit_when_stdin_closes()
 
     token = token or os.environ.get("CANVAS_SERVER_TOKEN") or secrets.token_urlsafe(32)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

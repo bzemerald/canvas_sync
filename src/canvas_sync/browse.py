@@ -1,0 +1,103 @@
+"""What the app shows for a folder: what's on disk, plus what canvas-sync knows about it.
+
+Finder shows files; this also says which ones came from Canvas, which you changed,
+which are view links to a file stored elsewhere, and which you deleted (they're still
+listed, so they can be brought back).
+"""
+
+from __future__ import annotations
+
+import os
+import posixpath
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol
+
+from .layout import Layout
+from .state import META_DIR, State
+
+# Local changes `restore` undoes. ("moved" alone isn't one: your folders are yours to arrange.)
+RESTORABLE = {"modified", "missing", "ignored"}
+GONE = {"missing", "ignored"}
+
+
+class Status(Protocol):
+    path: str | None
+    file_id: int
+    course_id: int
+    states: list[str]
+
+
+@dataclass
+class Entry:
+    name: str
+    path: str                     # relative to root
+    type: str                     # dir | file
+    size: int | None = None
+    mtime: float | None = None
+    file_id: int | None = None    # set if the file came from Canvas
+    course_id: int | None = None  # files: their course; dirs: set if this is a course's folder
+    url: str | None = None        # the file on Canvas, relative to the Canvas site
+    link: str | None = None       # a view link: path of the real file it points at
+    states: list[str] = field(default_factory=list)  # modified moved missing ignored remote_deleted
+    deleted: bool = False         # not on disk any more because you deleted it
+    changes: int = 0              # dirs: files below with changes `restore` can undo
+
+
+def _natural(name: str) -> list[object]:
+    """"Week 2" before "Week 10"."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name.casefold())]
+
+
+def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status], rel: str) -> list[Entry]:
+    base = (root / rel) if rel else root
+    if not base.resolve().is_relative_to(root.resolve()) or not base.is_dir():
+        raise LookupError(f"{rel or '.'} is not a folder in {root}")
+    statuses = list(statuses)
+    by_id = {s.file_id: s for s in statuses}
+    at = {s.path: s for s in statuses if s.path and not GONE & set(s.states)}  # where files are now
+    moved = {s.file_id for s in statuses if "moved" in s.states}  # their old path may hold something else now
+    tracked = {r.path: r for r in state.all_files() if r.path and not r.ignored and r.id not in moved}
+    links = {row[0]: row[1] for row in state.db.execute("SELECT path, file_id FROM links")}
+    course_dirs = {layout.course_dir(c).as_posix(): c.id for c in state.courses()}
+    changed = [s.path for s in statuses if s.path and RESTORABLE & set(s.states)]
+
+    def canvas(fid: int, cid: int) -> dict[str, object]:
+        s = by_id.get(fid)
+        return {"file_id": fid, "course_id": cid, "url": f"/courses/{cid}/files/{fid}",
+                "states": list(s.states) if s else []}
+
+    out: list[Entry] = []
+    with os.scandir(base) as it:
+        for d in it:
+            if d.name.startswith(".") or (not rel and d.name == META_DIR):
+                continue
+            path = f"{rel}/{d.name}" if rel else d.name
+            try:
+                st = d.stat()  # follows links
+            except OSError:
+                st = None  # a dangling link
+            if d.is_symlink() and path in links and (rec := state.get(links[path])):
+                real = by_id[rec.id].path if rec.id in by_id and by_id[rec.id].path else rec.path
+                out.append(Entry(d.name, path, "file", st and st.st_size, st and st.st_mtime,
+                                 link=real, **canvas(rec.id, rec.course_id)))  # type: ignore[arg-type]
+            elif st is not None and d.is_dir():
+                prefix = path + "/"
+                out.append(Entry(d.name, path, "dir", mtime=st.st_mtime, course_id=course_dirs.get(path),
+                                 changes=sum(p.startswith(prefix) for p in changed)))
+            elif st is not None:
+                s, rec = at.get(path), tracked.get(path)
+                fid, cid = (s.file_id, s.course_id) if s else (rec.id, rec.course_id) if rec else (None, None)
+                extra = canvas(fid, cid) if fid is not None and cid is not None else {}
+                out.append(Entry(d.name, path, "file", st.st_size, st.st_mtime, **extra))  # type: ignore[arg-type]
+
+    # Files you deleted (or deleted and then pulled, so they're no longer synced).
+    for s in statuses:
+        if s.path and GONE & set(s.states) and posixpath.dirname(s.path) == rel and not os.path.lexists(root / s.path):
+            out.append(Entry(posixpath.basename(s.path), s.path, "file", deleted=True,
+                             **canvas(s.file_id, s.course_id)))  # type: ignore[arg-type]
+
+    out.sort(key=lambda e: (e.type != "dir", _natural(e.name)))
+    return out

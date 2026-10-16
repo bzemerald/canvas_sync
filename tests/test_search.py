@@ -11,28 +11,7 @@ from fastapi.testclient import TestClient
 from canvas_sync import Engine
 from canvas_sync.config import Account
 from canvas_sync.server import create_app
-from fake_canvas import BASE, COURSE, FakeCanvas, pull, set_config
-
-
-def make_pdf(text: str) -> bytes:
-    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
-        b" /Resources << /Font << /F1 5 0 R >> >> >>",
-        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    ]
-    out, offsets = bytearray(b"%PDF-1.4\n"), []
-    for n, body in enumerate(objects, 1):
-        offsets.append(len(out))
-        out += b"%d 0 obj\n%s\nendobj\n" % (n, body)
-    xref = len(out)
-    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
-    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
-    return bytes(out)
+from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull, set_config
 
 
 @pytest.fixture
@@ -140,7 +119,7 @@ def test_reindex_is_incremental(root, course):
 def client(root, course, monkeypatch):
     pull(root, course)
     reindex(root)
-    monkeypatch.setattr("canvas_sync.server.open_path", lambda p, reveal=False: None)
+    monkeypatch.setattr("canvas_sync.server.open_path", lambda p, **kw: None)
     app = create_app(Account(BASE, root), "secret")
     return TestClient(app, headers={"Authorization": "Bearer secret"})
 
@@ -179,3 +158,29 @@ def test_api_sync_job(root, course, monkeypatch):
         assert state["phase"] == "done" and state["errors"] == []
         assert state["changes"]["download"] == 6
         assert c.get("/api/search", params={"q": "eigen"}).json()[0]["title"] == "Lecture 3.pdf"
+
+
+def test_expansions_match_whole_words_only(root, course):
+    # "mt" expands to "prelim" (Cornell's word for a midterm); that must not find
+    # "Preliminary Exercises", though typing "prelim" yourself still finds it.
+    course.put(205, "PreLab1.pdf", make_pdf("Preliminary Exercises"))
+    course.put(206, "Midterms Overview.pdf", b"x")
+    pull(root, course)
+    reindex(root)
+    found = search(root, "mt")
+    assert "PreLab1.pdf" not in found
+    assert "Midterms Overview.pdf" in found  # plurals still count
+    assert "PreLab1.pdf" in search(root, "prelim")
+
+
+def test_names_first_then_content_and_names_only(root, course):
+    course.put(207, "Week 5 slides.pdf", make_pdf("Midterm next Thursday"))
+    pull(root, course)
+    reindex(root)
+    with Engine(root) as e:
+        hits = e.search("midterm")
+        assert [h.match for h in hits] == sorted((h.match for h in hits), key=["name", "content"].index)
+        assert ("Week 5 slides.pdf", "content") in [(h.title, h.match) for h in hits]
+        assert ("Midterm 1 Solutions.pdf", "name") in [(h.title, h.match) for h in hits]
+        names = [h.title for h in e.search("midterm", names_only=True)]
+        assert "Midterm 1 Solutions.pdf" in names and "Week 5 slides.pdf" not in names

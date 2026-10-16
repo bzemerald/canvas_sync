@@ -62,6 +62,46 @@ class Plan:
 
 
 @dataclass
+class Scope:
+    """Part of the sync folder: files or folders (paths relative to root) and/or file ids."""
+
+    paths: list[str] = field(default_factory=list)
+    file_ids: set[int] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        self.paths = [p.strip("/") for p in self.paths]
+
+    def contains(self, path: str | None) -> bool:
+        if path is None:
+            return False
+        return any(p == "" or path == p or path.startswith(p + "/") for p in self.paths)
+
+    def overlaps(self, folder: str) -> bool:
+        """`folder` is inside the scope, or the scope is inside `folder`."""
+        return self.contains(folder) or any(p.startswith(folder.strip("/") + "/") for p in self.paths)
+
+    def touches(self, a: Action) -> bool:
+        return a.file_id in self.file_ids or any(map(self.contains, (a.path, a.src, a.backup, a.target)))
+
+
+def narrow(actions: list[Action], scope: Scope) -> list[Action]:
+    """The part of a plan that concerns `scope`, kept whole per file: a file in scope gets
+    all its actions (its download *and* its links in other views), so syncing just the
+    Files/ view still fetches a file whose real copy lives under Modules/. Files whose
+    actions free up or occupy the same paths are pulled in too, so nothing collides."""
+    by_file: dict[int | None, list[Action]] = {}
+    for a in actions:
+        by_file.setdefault(a.file_id, []).append(a)
+    chosen = {a.file_id for a in actions if scope.touches(a)}
+    while True:
+        paths = {p for f in chosen for a in by_file[f] for p in (a.path, a.src) if p}
+        more = {a.file_id for a in actions if a.file_id not in chosen and ({a.path, a.src} & paths)}
+        if not more:
+            return [a for a in actions if a.file_id in chosen]
+        chosen |= more
+
+
+@dataclass
 class LocalInfo:
     path: str | None  # where the file is now; None if it's gone
     moved: bool = False

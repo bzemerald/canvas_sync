@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -24,6 +24,9 @@ struct Backend {
 #[derive(Default)]
 struct BackendState {
     child: Mutex<Option<Child>>,
+    /// Held open for our lifetime: when this process ends, however it ends, the OS closes
+    /// it and the backend (started with --exit-with-stdin) exits too.
+    lifeline: Mutex<Option<ChildStdin>>,
     /// None while starting, then the connection details or why it failed.
     ready: Mutex<Option<Result<Backend, String>>>,
     /// Last lines the backend wrote to stderr, for error messages.
@@ -48,8 +51,8 @@ fn start_backend(app: &AppHandle) {
     let state = app.state::<BackendState>();
     let path = backend_path();
     let spawned = Command::new(&path)
-        .arg("serve")
-        .stdin(Stdio::null())
+        .args(["serve", "--exit-with-stdin"])
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -62,6 +65,7 @@ fn start_backend(app: &AppHandle) {
     };
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
+    *state.lifeline.lock().unwrap() = child.stdin.take();
     *state.child.lock().unwrap() = Some(child);
 
     // Keep draining stderr so the backend never blocks on a full pipe.

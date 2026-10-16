@@ -16,9 +16,9 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 | command | |
 |---|---|
-| `pull [-c COURSE] [-n] [-v] [--json]` | fetch new/changed files |
+| `pull [PATH…] [-c COURSE] [-n] [-v] [--json]` | fetch new/changed files; with paths, only in those folders/files |
 | `status [--json]` | your local edits / moves / deletions since the last pull (offline) |
-| `restore PATH…` | put back the Canvas original (your version goes to the Trash) |
+| `restore PATH…` | put back the Canvas original of a file, or of everything you changed in a folder (your versions go to the Trash) |
 | `search QUERY… [-o N] [--json]` | search every course (offline), see below |
 | `index` | update the search index (runs after every `pull`) |
 | `open [COURSE]` | open in Finder |
@@ -35,6 +35,9 @@ Office files / notebooks, and every page, assignment, announcement and syllabus.
   `sol` ↔ solution, `期中` → midterm, … Add your own under `[search.abbreviations]`.
 - `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
 - `--open N` opens result N (the file, or the Canvas page).
+- Results whose name or folder matches come first; files that only mention it inside follow.
+- `[[smart_folders]]` in `config.toml` are saved searches the app shows as folders
+  (names only unless `content = true`).
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 
@@ -78,10 +81,12 @@ discover.py  course → every file + where it appears (CourseSnapshot)
 layout.py    file → local path(s). Pure: pins > rules > views
 plan.py      remote vs. original vs. disk → list of Actions (nothing is changed)
 execute.py   carries out a Plan
-engine.py    the public API: courses(), plan(), apply(), status(), restore()
+engine.py    the public API: courses(), plan(scope), apply(), status(), restore(), list_dir(), search()
 state.py     SQLite schema and access
 text.py      text out of PDFs, Office files, notebooks, HTML
 search.py    the search index (SQLite FTS5) and query parsing
+browse.py    a folder as the app shows it: disk + Canvas status, links, deleted files
+thumbs.py    preview images for the app's icon view
 server.py    local HTTP API for the desktop app (`canvas serve`)
 cli.py       `canvas` command
 ```

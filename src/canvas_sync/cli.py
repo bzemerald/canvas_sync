@@ -20,7 +20,7 @@ from .config import Account, ConfigError, set_course_listed
 from .engine import Engine, NotInitialized
 from .local import open_path
 from .models import Course
-from .plan import Kind, Plan
+from .plan import Kind, Plan, Scope
 from .search import Hit
 from .state import META_DIR
 
@@ -184,6 +184,7 @@ def render_plan(plan: Plan, verbose: bool) -> None:
 
 @app.command()
 def pull(
+    paths: Annotated[Optional[list[Path]], typer.Argument(help="Only these folders or files (in the sync folder)")] = None,
     course: Annotated[Optional[list[str]], typer.Option("-c", "--course", help="Only these courses (id, code or name)")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", "-n", help="Show what would happen, change nothing")] = False,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Also list skipped files")] = False,
@@ -195,8 +196,11 @@ def pull(
         chosen = None
         if course:
             chosen = pick_courses(await engine.courses(), course)
+        scope = Scope([engine.relative(p) for p in paths]) if paths else None
+        if scope and not engine.courses_in(scope):
+            raise fail("nothing there that canvas-sync has synced before")
         with console.status("Checking Canvas…"):
-            plan = await engine.plan(chosen)
+            plan = await engine.plan(chosen, scope)
         if as_json:
             print(json.dumps(plan.to_dict(), indent=2))
         else:
@@ -319,12 +323,16 @@ def status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
 
 
 @app.command()
-def restore(paths: Annotated[list[Path], typer.Argument(help="Files to restore")]) -> None:
-    """Put back the original Canvas version of a file (your version goes to the Trash)."""
+def restore(paths: Annotated[list[Path], typer.Argument(help="Files, or folders to restore everything changed in")]) -> None:
+    """Put back the original Canvas version of files (your versions go to the Trash)."""
 
     async def body(engine: Engine) -> None:
         for p in paths:
-            console.print(f"restored {engine.restore(p)}")
+            restored = engine.restore(p)
+            for r in restored:
+                console.print(f"restored {r}")
+            if not restored:
+                console.print(f"[dim]nothing to restore in {p}[/]")
 
     with_engine(False, body)
 
@@ -332,11 +340,12 @@ def restore(paths: Annotated[list[Path], typer.Argument(help="Files to restore")
 @app.command()
 def serve(
     port: Annotated[int, typer.Option(help="0 = pick a free port")] = 0,
+    exit_with_stdin: Annotated[bool, typer.Option(help="Stop when stdin closes (how the app makes sure it doesn't outlive it)")] = False,
 ) -> None:
     """Run the local API the desktop app talks to. Prints {"port", "token"} as the first line."""
     from .server import serve as run
 
-    run(account(), port)
+    run(account(), port, exit_with_stdin=exit_with_stdin)
 
 
 @app.command("open")
@@ -352,3 +361,7 @@ def open_(course: Annotated[Optional[str], typer.Argument(help="Course id, code 
 
         target = with_engine(False, body)
     open_path(target)
+
+
+if __name__ == "__main__":
+    app()

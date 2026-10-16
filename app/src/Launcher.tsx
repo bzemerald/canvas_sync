@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ResultBody, fileManager, hitKey, isMac } from "./components/Result";
+import { ContentDivider, ResultBody, fileManager, firstContentMatch, hitKey, isMac } from "./components/Result";
 import { openCanvas, openHit, search, type Hit } from "./lib/api";
 import { useSearch } from "./lib/useSearch";
 
@@ -80,7 +80,8 @@ export function Launcher() {
             <Command.Empty className="px-3 py-10 text-center text-sm text-muted">没有结果</Command.Empty>
           )}
           {!error && !query.trim() && <Tips />}
-          {hits.map((h) => (
+          {hits.map((h, i) => [
+            i === firstContentMatch(hits) && <ContentDivider key="divider" />,
             <Command.Item
               key={hitKey(h)}
               value={hitKey(h)}
@@ -88,8 +89,8 @@ export function Launcher() {
               className="cursor-default rounded-lg px-3 py-2 data-[selected=true]:bg-selected"
             >
               <ResultBody hit={h} />
-            </Command.Item>
-          ))}
+            </Command.Item>,
+          ])}
         </Command.List>
 
         <footer className="flex gap-4 border-t border-line px-4 py-2 text-xs text-muted">

@@ -1,5 +1,6 @@
-import { BookOpen, ClipboardList, FileText, Megaphone, ScrollText, type LucideIcon } from "lucide-react";
-import type { Hit, Kind } from "../lib/api";
+import { BookOpen, ClipboardList, ExternalLink, FileText, FolderOpen, Megaphone, ScrollText, type LucideIcon } from "lucide-react";
+import { openCanvas, openHit, type Hit, type Kind } from "../lib/api";
+import { Thumb } from "./Thumb";
 
 export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
   file: { icon: FileText, label: "文件" },
@@ -57,5 +58,97 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
         )}
       </div>
     </div>
+  );
+}
+
+/** Search results / smart folder contents as rows. Click opens; right-click for more. */
+/** Index of the first result that matched only inside the text (results come names first). */
+export function firstContentMatch(hits: Hit[]): number {
+  const i = hits.findIndex((h) => h.match === "content");
+  return i > 0 ? i : -1; // no divider when nothing matched by name
+}
+
+export function ContentDivider({ className = "" }: { className?: string }) {
+  return (
+    <div role="separator" className={`flex items-center gap-2 px-2 pt-3 pb-1 text-xs text-muted ${className}`}>
+      正文中提到
+      <span className="h-px flex-1 bg-line" />
+    </div>
+  );
+}
+
+export function HitList({ hits, showCourse, onMenu }: { hits: Hit[]; showCourse: boolean; onMenu: (h: Hit, x: number, y: number) => void }) {
+  const divider = firstContentMatch(hits);
+  return (
+    <ul className="space-y-0.5">
+      {hits.map((h, i) => [
+        i === divider && <li key="divider"><ContentDivider /></li>,
+        <li
+          key={hitKey(h)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onMenu(h, e.clientX, e.clientY);
+          }}
+          className="group flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-selected"
+        >
+          <button className="min-w-0 flex-1 text-left" onClick={() => void openHit(h)} title={h.path ? "打开文件" : "在 Canvas 中打开"}>
+            <ResultBody hit={h} showCourse={showCourse} />
+          </button>
+          <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            {h.path && (
+              <IconButton title={`在 ${fileManager} 中显示`} onClick={() => void openHit(h, true)}>
+                <FolderOpen className="size-4" />
+              </IconButton>
+            )}
+            {h.url && (
+              <IconButton title="在 Canvas 中打开" onClick={() => void openCanvas(h)}>
+                <ExternalLink className="size-4" />
+              </IconButton>
+            )}
+          </div>
+        </li>,
+      ])}
+    </ul>
+  );
+}
+
+/** The same, as icons with file previews. */
+export function HitGrid({ hits, onMenu }: { hits: Hit[]; onMenu: (h: Hit, x: number, y: number) => void }) {
+  const divider = firstContentMatch(hits);
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1 py-2">
+      {hits.map((h, i) => {
+        const { icon: Icon } = KIND[h.kind] ?? KIND.file;
+        return [
+          i === divider && <ContentDivider key="divider" className="col-span-full" />,
+          <button
+            key={hitKey(h)}
+            onDoubleClick={() => void openHit(h)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onMenu(h, e.clientX, e.clientY);
+            }}
+            title={`${h.title} · ${h.course}`}
+            className="flex flex-col items-center gap-1.5 rounded-lg p-2 hover:bg-chip focus:bg-selected focus:outline-none"
+          >
+            {h.path ? (
+              <Thumb path={h.path} name={h.title} mtime={null} size={72} iconClass="size-12" />
+            ) : (
+              <div className="flex size-18 items-center justify-center"><Icon className="size-10 text-muted" /></div>
+            )}
+            <span className="line-clamp-2 w-full text-center text-xs break-words">{h.title}</span>
+            <span className="max-w-full truncate rounded bg-chip px-1.5 text-[10px] text-fg-soft">{h.course}</span>
+          </button>,
+        ];
+      })}
+    </div>
+  );
+}
+
+function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button title={title} aria-label={title} onClick={onClick} className="rounded-md p-1.5 text-muted hover:bg-chip hover:text-fg">
+      {children}
+    </button>
   );
 }

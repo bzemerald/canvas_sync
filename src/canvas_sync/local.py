@@ -29,9 +29,12 @@ def clone_file(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def open_path(path: Path, reveal: bool = False) -> None:
-    """Open with the default app, or with `reveal` show it in Finder / Explorer / the file manager."""
-    if sys.platform == "darwin":
+def open_path(path: Path, reveal: bool = False, preview: bool = False) -> None:
+    """Open with the default app, or with `reveal` show it in Finder / Explorer / the file
+    manager, or with `preview` show it in Quick Look (macOS; elsewhere it just opens)."""
+    if preview and sys.platform == "darwin":
+        subprocess.Popen(["qlmanage", "-p", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif sys.platform == "darwin":
         subprocess.run(["open", *(["-R"] if reveal else []), str(path)], check=False)
     elif sys.platform == "win32":
         if reveal:

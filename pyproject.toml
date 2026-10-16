@@ -11,6 +11,7 @@ dependencies = [
     "tomlkit>=0.12",
     "send2trash>=1.8",
     "pypdfium2>=4.30",
+    "pillow>=10",
     "fastapi>=0.115",
     "uvicorn>=0.30",
 ]

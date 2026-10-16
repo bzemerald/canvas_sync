@@ -1,0 +1,292 @@
+// A folder's contents, Finder-style: a list whose folders expand in place, or an icon grid.
+// Keyboard: arrows move, → / ← expand and collapse (list), Enter opens, Space previews,
+// ⌘↑ / Backspace goes to the enclosing folder.
+import { ChevronDown, ChevronRight, ChevronUp, CornerUpRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as api from "../lib/api";
+import type { Entry } from "../lib/api";
+import { FileIcon } from "./FileIcon";
+import { StatusBadges, StatusDot } from "./Status";
+import { Thumb } from "./Thumb";
+import { isMac } from "./Result";
+
+export type ViewMode = "list" | "grid";
+type SortKey = "name" | "date" | "size";
+
+interface Props {
+  path: string;
+  version: number; // bump to reload (after a sync, a restore, or the window regaining focus)
+  mode: ViewMode;
+  showDeleted: boolean;
+  select?: string | null; // a path to select once it's listed
+  onNavigate: (path: string) => void;
+  onOpen: (e: Entry) => void;
+  onPreview: (e: Entry) => void;
+  onMenu: (e: Entry, x: number, y: number) => void;
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+export function formatSize(n: number | null): string {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
+
+export function formatTime(seconds: number | null): string {
+  if (seconds == null) return "";
+  const d = new Date(seconds * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return `今天 ${d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleDateString("zh-CN", d.getFullYear() === now.getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+}
+
+export function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i < 0 ? "" : path.slice(0, i);
+}
+
+export function FileBrowser({ path, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu }: Props) {
+  const [listings, setListings] = useState<Record<string, Entry[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "name", desc: false });
+  const box = useRef<HTMLDivElement>(null);
+  const grid = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async (dir: string) => {
+    try {
+      const entries = await api.tree(dir);
+      setListings((l) => ({ ...l, [dir]: entries }));
+      if (dir === path) setError(null);
+    } catch (e) {
+      if (dir === path) setError((e as Error).message);
+      else setExpanded((x) => new Set([...x].filter((p) => p !== dir))); // vanished: fold it
+    }
+  }, [path]);
+
+  // New folder: start fresh. Same folder, new version: reload it and everything expanded.
+  useEffect(() => {
+    setExpanded(new Set());
+    setSelected(null);
+    setListings({});
+    box.current?.focus();
+  }, [path]);
+  useEffect(() => {
+    void load(path);
+    expanded.forEach((d) => void load(d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, version, load]);
+
+  // Select `select` once it shows up (a "show original" jump), but only once: later reloads
+  // keep whatever you've selected since.
+  const applied = useRef<string | null>(null);
+  useEffect(() => {
+    if (select && applied.current !== select && listings[path]?.some((e) => e.path === select)) {
+      applied.current = select;
+      setSelected(select);
+    }
+  }, [select, listings, path]);
+
+  const sorted = useCallback(
+    (entries: Entry[]) => {
+      const visible = showDeleted ? entries : entries.filter((e) => !e.deleted);
+      const cmp = (a: Entry, b: Entry) => {
+        const v = sort.key === "date" ? (a.mtime ?? 0) - (b.mtime ?? 0)
+          : sort.key === "size" ? (a.size ?? 0) - (b.size ?? 0)
+          : collator.compare(a.name, b.name);
+        return (sort.desc ? -v : v) || collator.compare(a.name, b.name);
+      };
+      return [...visible].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || cmp(a, b));
+    },
+    [showDeleted, sort],
+  );
+
+  // The rows on screen, in order: expanded folders' children follow them (list view only).
+  const rows = useMemo(() => {
+    const out: { entry: Entry; depth: number }[] = [];
+    const walk = (dir: string, depth: number) => {
+      for (const entry of sorted(listings[dir] ?? [])) {
+        out.push({ entry, depth });
+        if (mode === "list" && entry.type === "dir" && expanded.has(entry.path)) walk(entry.path, depth + 1);
+      }
+    };
+    walk(path, 0);
+    return out;
+  }, [listings, path, expanded, mode, sorted]);
+
+  const toggle = (dir: string, open?: boolean) => {
+    setExpanded((x) => {
+      const next = new Set(x);
+      const willOpen = open ?? !next.has(dir);
+      if (willOpen) {
+        next.add(dir);
+        if (!listings[dir]) void load(dir);
+      } else {
+        for (const p of next) if (p === dir || p.startsWith(dir + "/")) next.delete(p);
+      }
+      return next;
+    });
+  };
+
+  const activate = (e: Entry) => (e.type === "dir" ? onNavigate(e.path) : onOpen(e));
+
+  useEffect(() => {
+    if (!selected) return;
+    box.current?.querySelector(`[data-path="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
+  const onKeyDown = (ev: React.KeyboardEvent) => {
+    const i = rows.findIndex((r) => r.entry.path === selected);
+    const cur = i >= 0 ? rows[i] : null;
+    const go = (j: number) => {
+      const r = rows[Math.max(0, Math.min(rows.length - 1, j))];
+      if (r) setSelected(r.entry.path);
+    };
+    const columns = mode === "grid" && grid.current ? getComputedStyle(grid.current).gridTemplateColumns.split(" ").length : 1;
+    const primary = isMac ? ev.metaKey : ev.ctrlKey;
+    let handled = true;
+    if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
+    else if (ev.key === "ArrowUp" && primary) path && onNavigate(parentOf(path));
+    else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
+    else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);
+    else if (ev.key === "ArrowLeft" && mode === "grid") go(i - 1);
+    else if (ev.key === "ArrowRight" && cur?.entry.type === "dir") {
+      if (!expanded.has(cur.entry.path)) toggle(cur.entry.path, true);
+      else go(i + 1);
+    } else if (ev.key === "ArrowLeft" && cur) {
+      if (cur.entry.type === "dir" && expanded.has(cur.entry.path)) toggle(cur.entry.path, false);
+      else if (cur.depth > 0) setSelected(parentOf(cur.entry.path));
+    } else if (ev.key === "Enter" && cur) activate(cur.entry);
+    else if (ev.key === " " && cur && cur.entry.type === "file" && !cur.entry.deleted) onPreview(cur.entry);
+    else if (ev.key === "Backspace" && path) onNavigate(parentOf(path));
+    else handled = false;
+    if (handled) ev.preventDefault();
+  };
+
+  const contextMenu = (e: Entry) => (ev: React.MouseEvent) => {
+    ev.preventDefault();
+    setSelected(e.path);
+    onMenu(e, ev.clientX, ev.clientY);
+  };
+
+  const loaded = listings[path] !== undefined;
+  const empty = loaded && rows.length === 0;
+
+  return (
+    <div ref={box} tabIndex={0} onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
+      {mode === "list" && (
+        <div className="grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] gap-3 border-b border-line px-6 py-1.5 text-xs text-muted">
+          <SortHeader label="名称" k="name" sort={sort} setSort={setSort} />
+          <span>状态</span>
+          <SortHeader label="修改日期" k="date" sort={sort} setSort={setSort} />
+          <SortHeader label="大小" k="size" sort={sort} setSort={setSort} right />
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1" onClick={(e) => e.target === e.currentTarget && setSelected(null)}>
+        {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
+        {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">这个文件夹是空的</p>}
+
+        {mode === "list" ? (
+          <ul role="tree">
+            {rows.map(({ entry: e, depth }) => (
+              <li
+                key={e.path}
+                data-path={e.path}
+                role="treeitem"
+                aria-selected={selected === e.path}
+                aria-expanded={e.type === "dir" ? expanded.has(e.path) : undefined}
+                onClick={() => setSelected(e.path)}
+                onDoubleClick={() => activate(e)}
+                onContextMenu={contextMenu(e)}
+                className={`grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] items-center gap-3 rounded-md px-3 py-1 text-sm ${selected === e.path ? "bg-selected" : "hover:bg-chip"} ${e.deleted ? "opacity-55" : ""}`}
+              >
+                <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: depth * 18 }}>
+                  {e.type === "dir" ? (
+                    <button
+                      tabIndex={-1}
+                      aria-label={expanded.has(e.path) ? "收起" : "展开"}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        toggle(e.path);
+                      }}
+                      className="rounded p-0.5 text-muted hover:text-fg"
+                    >
+                      {expanded.has(e.path) ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                    </button>
+                  ) : (
+                    <span className="w-4.5 shrink-0" />
+                  )}
+                  <FileIcon name={e.name} dir={e.type === "dir"} />
+                  <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                  {e.link && (
+                    <span title={`快捷方式，原文件在 ${e.link}`}>
+                      <CornerUpRight className="size-3 shrink-0 text-muted" aria-label="快捷方式" />
+                    </span>
+                  )}
+                </span>
+                <StatusBadges entry={e} />
+                <span className="truncate text-xs text-muted">{formatTime(e.mtime)}</span>
+                <span className="text-right text-xs text-muted tabular-nums">{e.type === "file" ? formatSize(e.size) : ""}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div ref={grid} role="listbox" className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1 py-2">
+            {rows.map(({ entry: e }) => (
+              <div
+                key={e.path}
+                data-path={e.path}
+                role="option"
+                aria-selected={selected === e.path}
+                onClick={() => setSelected(e.path)}
+                onDoubleClick={() => activate(e)}
+                onContextMenu={contextMenu(e)}
+                title={e.link ? `${e.name}（快捷方式，原文件在 ${e.link}）` : e.name}
+                className={`flex flex-col items-center gap-1.5 rounded-lg p-2 ${selected === e.path ? "bg-selected" : "hover:bg-chip"} ${e.deleted ? "opacity-55" : ""}`}
+              >
+                <div className="relative">
+                  {e.type === "dir" ? (
+                    <div className="flex size-18 items-center justify-center"><FileIcon name={e.name} dir className="size-14" /></div>
+                  ) : (
+                    <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
+                  )}
+                  {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label="快捷方式" />}
+                </div>
+                <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                <StatusDot entry={e} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SortHeader({ label, k, sort, setSort, right }: {
+  label: string;
+  k: SortKey;
+  sort: { key: SortKey; desc: boolean };
+  setSort: (s: { key: SortKey; desc: boolean }) => void;
+  right?: boolean;
+}) {
+  const active = sort.key === k;
+  return (
+    <button
+      onClick={() => setSort({ key: k, desc: active ? !sort.desc : k !== "name" })}
+      className={`flex items-center gap-0.5 hover:text-fg ${right ? "justify-end" : ""} ${active ? "text-fg-soft" : ""}`}
+    >
+      {label}
+      {active && (sort.desc ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />)}
+    </button>
+  );
+}

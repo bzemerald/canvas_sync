@@ -72,6 +72,15 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 [search.abbreviations]
 # Added to the built-in ones (mt = midterm, hw = homework, sol = solution, ...).
 # exam = ["midterm", "final", "prelim"]
+
+# Smart folders: saved searches the app shows as folders (also editable in the app).
+#
+# [[smart_folders]]
+# name = "Midterm 1"
+# query = "mt1"
+# courses = [12345]                   # optional: only these courses
+# kinds = ["file", "announcement"]    # optional: file | page | assignment | announcement | syllabus
+# content = false                     # true: also match text inside files and pages, not just names
 """
 
 CHOICES = {
@@ -96,6 +105,18 @@ class Rule:
     skip: bool = False
 
 
+KINDS = {"file", "page", "assignment", "announcement", "syllabus"}
+
+
+@dataclass
+class SmartFolder:
+    name: str
+    query: str = ""
+    courses: list[int] = field(default_factory=list)
+    kinds: list[str] = field(default_factory=list)
+    content: bool = False  # also match the text inside, not just titles and folder names
+
+
 @dataclass
 class Settings:
     select: str = "active"
@@ -115,6 +136,7 @@ class Settings:
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
+    smart_folders: list[SmartFolder] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -145,6 +167,7 @@ class Settings:
                 str(k).lower(): [x.lower() for x in _strings(v)]
                 for k, v in data.get("search", {}).get("abbreviations", {}).items()
             },
+            smart_folders=[_smart_folder(f) for f in data.get("smart_folders", [])],
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -157,6 +180,52 @@ class Settings:
 
 def _strings(v: Any) -> list[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
+
+
+def _smart_folder(f: dict[str, Any]) -> SmartFolder:
+    if not f.get("name"):
+        raise ConfigError(f"smart folder without `name`: {f}")
+    kinds = _strings(f.get("kinds", []))
+    if bad := set(kinds) - KINDS:
+        raise ConfigError(f"smart folder {f['name']!r}: unknown kinds {sorted(bad)}; use {sorted(KINDS)}")
+    return SmartFolder(str(f["name"]), str(f.get("query", "")), [int(c) for c in f.get("courses", [])], kinds,
+                       bool(f.get("content", False)))
+
+
+def save_smart_folder(path: Path, folder: SmartFolder, replaces: str | None = None) -> None:
+    """Add `folder`, or replace the one called `replaces` (or `folder.name`) in place."""
+    if set(folder.kinds) - KINDS:
+        raise ConfigError(f"unknown kinds {sorted(set(folder.kinds) - KINDS)}")
+    doc = tomlkit.parse(path.read_text())
+    folders = doc.setdefault("smart_folders", tomlkit.aot())
+    table = tomlkit.table()
+    table["name"] = folder.name
+    table["query"] = folder.query
+    if folder.courses:
+        table["courses"] = folder.courses
+    if folder.kinds:
+        table["kinds"] = folder.kinds
+    if folder.content:
+        table["content"] = True
+    names = [str(t.get("name")) for t in folders]
+    if folder.name != replaces and folder.name in names:
+        raise ConfigError(f"a smart folder called {folder.name!r} already exists")
+    old = replaces if replaces is not None else folder.name
+    if old in names:
+        folders[names.index(old)] = table
+    else:
+        folders.append(table)
+    path.write_text(tomlkit.dumps(doc))
+
+
+def delete_smart_folder(path: Path, name: str) -> None:
+    doc = tomlkit.parse(path.read_text())
+    folders = doc.get("smart_folders", [])
+    names = [str(t.get("name")) for t in folders]
+    if name not in names:
+        raise LookupError(f"no smart folder called {name!r}")
+    del folders[names.index(name)]
+    path.write_text(tomlkit.dumps(doc))
 
 
 def _rule(r: dict[str, Any]) -> Rule:
