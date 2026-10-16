@@ -77,7 +77,8 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
         <input
           value={"emoji" in choice ? choice.emoji : ""}
           onChange={(e) => {
-            const emoji = [...e.target.value].slice(-2).join("").trim(); // the last one typed (some are two code points)
+            // The last emoji typed (one can be several code points: 👍🏽, 🧑‍💻); letters don't count.
+            const emoji = lastEmoji(e.target.value);
             if (emoji) pick({ emoji });
           }}
           placeholder="🧪"
@@ -87,4 +88,9 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
       {error && <p className="mt-2 text-danger">{error}</p>}
     </Dialog>
   );
+}
+
+function lastEmoji(text: string): string | null {
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map((g) => g.segment);
+  return graphemes.reverse().find((g) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(g)) ?? null;
 }
