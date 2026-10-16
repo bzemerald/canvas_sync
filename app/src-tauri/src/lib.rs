@@ -175,20 +175,31 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match (window.label(), event) {
             // Like Spotlight: clicking elsewhere dismisses the search window.
-            if window.label() == LAUNCHER {
-                if let WindowEvent::Focused(false) = event {
+            (LAUNCHER, WindowEvent::Focused(false)) => {
+                let _ = window.hide();
+            }
+            // On macOS closing the window leaves the app (and its search shortcut) running, as
+            // Mac apps do; the Dock icon brings the window back. Elsewhere there's no tray icon
+            // yet to get back to a hidden app, so closing the window quits.
+            ("main", WindowEvent::CloseRequested { api, .. }) => {
+                if cfg!(target_os = "macos") {
+                    api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    window.app_handle().exit(0);
                 }
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![backend, hide_launcher, show_main])
         .build(tauri::generate_context!())
         .expect("error while building the app")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
-                stop_backend(app);
-            }
+        .run(|app, event| match event {
+            RunEvent::Exit => stop_backend(app),
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => show_main(app.clone()), // the Dock icon was clicked
+            _ => {}
         });
 }

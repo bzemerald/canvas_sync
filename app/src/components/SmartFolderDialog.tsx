@@ -51,7 +51,10 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
 
   const byTerm = useMemo(() => {
     const m = new Map<string, Course[]>();
-    for (const c of courses) m.set(c.term ?? "无学期", [...(m.get(c.term ?? "无学期") ?? []), c]);
+    for (const c of courses) {
+      const term = c.term_label ?? "无学期";
+      m.set(term, [...(m.get(term) ?? []), c]);
+    }
     return [...m.entries()];
   }, [courses]);
 
@@ -107,7 +110,7 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
                 {list.map((c) => (
                   <label key={c.id} className="flex items-center gap-2 py-0.5">
                     <input type="checkbox" checked={picked.has(c.id)} onChange={() => setPicked(toggle(picked, c.id))} />
-                    <span className="truncate">{c.display_code}</span>
+                    <span className="truncate">{c.label}</span>
                   </label>
                 ))}
               </div>

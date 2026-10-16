@@ -31,9 +31,10 @@ from pydantic import BaseModel
 from . import __version__
 from .api import CanvasClient, CanvasError
 from .config import (
-    Account, ConfigError, PinnedFolder, SmartFolder, delete_smart_folder, move_pinned, pin_folder, save_smart_folder,
-    unpin_folder,
+    Account, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder, move_pinned, pin,
+    save_pinned, save_smart_folder, unpin,
 )
+from .search import course_label
 from .engine import Engine
 from .local import open_path
 from .plan import Kind, Scope
@@ -95,6 +96,11 @@ class RestoreRequest(ScopeRequest):
 
 class PathRequest(BaseModel):
     path: str
+
+
+class PinRequest(BaseModel):
+    path: str | None = None    # a folder
+    course: int | None = None  # or a course
 
 
 class PathsRequest(BaseModel):
@@ -169,10 +175,14 @@ def create_app(account: Account, token: str) -> FastAPI:
             out = []
             for c in e.state.courses():
                 d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
+                term_renamed = len(d.parts) > 1 and d.parent.name != canonical.parent.name
                 out.append({
                     **asdict(c), "dir": d.as_posix(),
                     "display_code": e.settings.course_names.get(c.id) or c.code,
-                    "folder_name": d.name if d.name != canonical.name else None,  # renamed in the app
+                    "label": course_label(c, e.settings),       # what the app calls it
+                    "renamed": d.name != canonical.name,         # you gave it a name
+                    "default_name": canonical.name,              # renaming to this undoes that
+                    "term_label": d.parent.name if term_renamed else c.term,
                 })
             return out
 
@@ -270,12 +280,20 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     @api.get("/pinned")
     def pinned() -> list[dict[str, Any]]:
-        """The sidebar's pinned list: folders and smart folders, in order."""
+        """The sidebar's pinned list: courses, folders and smart folders, in order."""
         with engine() as e:
             dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
+            items = list(e.settings.pinned)
+            # A course's folder pinned before courses could be: it's the course that was meant.
+            if any(isinstance(i, PinnedFolder) and i.path in dirs for i in items):
+                converted = [PinnedCourse(dirs[i.path]) if isinstance(i, PinnedFolder) and i.path in dirs else i for i in items]
+                items = [i for n, i in enumerate(converted) if i not in converted[:n]]  # (pinned twice: once)
+                save_pinned(config, items)
             out: list[dict[str, Any]] = []
-            for item in e.settings.pinned:
-                if isinstance(item, PinnedFolder):
+            for item in items:
+                if isinstance(item, PinnedCourse):
+                    out.append({"type": "course", "id": item.course, "exists": item.course in dirs.values()})
+                elif isinstance(item, PinnedFolder):
                     course = next((cid for d, cid in dirs.items() if item.path == d or item.path.startswith(d + "/")), None)
                     out.append({"type": "folder", "path": item.path, "course_id": course,
                                 "exists": (account.root / item.path).is_dir()})
@@ -283,17 +301,29 @@ def create_app(account: Account, token: str) -> FastAPI:
                     out.append({"type": "smart", **asdict(item)})
             return out
 
-    @api.post("/pinned")
-    def pin(req: PathRequest) -> list[dict[str, Any]]:
+    def pin_item(req: PinRequest) -> PinnedFolder | PinnedCourse:
+        if req.course is not None:
+            return PinnedCourse(req.course)
+        if req.path is None:
+            raise HTTPException(400, "say what to pin")
         if not inside(req.path).is_dir():
             raise HTTPException(404, f"{req.path} is not a folder")
-        pin_folder(config, req.path)
+        return PinnedFolder(req.path.strip("/"))
+
+    @api.post("/pinned")
+    def add_pin(req: PinRequest) -> list[dict[str, Any]]:
+        item = pin_item(req)
+        with engine() as e:
+            dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
+        if isinstance(item, PinnedFolder) and item.path in dirs:
+            item = PinnedCourse(dirs[item.path])  # a course's own folder: pin the course
+        pin(config, item)
         return pinned()
 
     @api.post("/pinned/remove")
-    def unpin(req: PathRequest) -> list[dict[str, Any]]:
+    def remove_pin(req: PinRequest) -> list[dict[str, Any]]:
         try:
-            unpin_folder(config, req.path)
+            unpin(config, PinnedCourse(req.course) if req.course is not None else PinnedFolder((req.path or "").strip("/")))
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()

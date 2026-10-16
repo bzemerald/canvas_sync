@@ -21,8 +21,11 @@ export interface Course {
   code: string;
   display_code: string;
   term: string | null;
-  dir: string;
-  folder_name: string | null; // set if you renamed the course's folder
+  dir: string; // where its files are (an implementation detail the UI mostly keeps to itself)
+  label: string; // what to call it: the name you gave it, else its course code
+  renamed: boolean;
+  default_name: string; // renaming to this gives it its original name back
+  term_label: string | null; // the term, as you named it
 }
 
 export interface Entry {
@@ -58,6 +61,7 @@ export interface SmartFolder {
 
 /** A sidebar entry: a pinned folder, or a smart folder (a saved search). */
 export type PinnedItem =
+  | { type: "course"; id: number; exists: boolean }
   | { type: "folder"; path: string; course_id: number | null; exists: boolean }
   | ({ type: "smart" } & SmartFolder);
 
@@ -139,6 +143,8 @@ const post = <T,>(path: string, body: unknown) => api<T>(path, { method: "POST",
 export const pinned = () => api<PinnedItem[]>("/pinned");
 export const pinFolder = (path: string) => post<PinnedItem[]>("/pinned", { path });
 export const unpinFolder = (path: string) => post<PinnedItem[]>("/pinned/remove", { path });
+export const pinCourse = (course: number) => post<PinnedItem[]>("/pinned", { course });
+export const unpinCourse = (course: number) => post<PinnedItem[]>("/pinned/remove", { course });
 export const movePinned = (index: number, to: number) => post<PinnedItem[]>("/pinned/move", { index, to });
 export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
   post<PinnedItem[]>("/smart-folders", { ...folder, replaces });

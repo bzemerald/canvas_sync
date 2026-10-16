@@ -18,6 +18,7 @@ type SortKey = "name" | "date" | "size";
 
 interface Props {
   path: string;
+  root: string; // don't go above this (a course's own folder, or "" for everything)
   version: number; // bump to reload (after a sync, a restore, or the window regaining focus)
   mode: ViewMode;
   showDeleted: boolean;
@@ -64,7 +65,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onDelete,
+  path, root, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
@@ -173,7 +174,7 @@ export function FileBrowser({
     const picked = chosen();
     let handled = true;
     if (command === "open") picked.forEach(activate);
-    else if (command === "parent") path && onNavigate(parentOf(path));
+    else if (command === "parent") path !== root && path && onNavigate(parentOf(path));
     else if (command === "selectAll") sel.all();
     else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
     else if (command === "rename") cur && canRename(cur.entry) ? onStartRename(cur.entry) : (handled = false);

@@ -148,6 +148,13 @@ def _fts_term(term: str, exact: bool = False) -> str:
 # -- query parsing -----------------------------------------------------------------
 
 
+def course_label(c: Course, settings: Settings) -> str:
+    """What the app calls a course: the name you gave it, else its course code."""
+    layout = Layout(settings)
+    renamed = settings.folder_names.get(layout.canonical_course_dir(c).as_posix())
+    return renamed or settings.course_names.get(c.id) or c.code
+
+
 def code_keys(code: str) -> set[str]:
     """The parts of a course code people type: "COMPSCI 70-LEC-001" -> compsci, 70;
     "CS61B SP26" -> cs, 61b, cs61b; "DATA C8" -> data, c8, 8. Only up to the course
@@ -383,7 +390,7 @@ class Index:
             q.course_ids = sorted(set(course_ids) & set(q.course_ids)) if q.course_ids else list(course_ids)
             if not q.course_ids:
                 return []
-        codes = {c.id: settings.course_names.get(c.id) or c.code for c in courses}
+        codes = {c.id: course_label(c, settings) for c in courses}
         where, args = [], []
         if q.course_ids:
             where.append(f"i.course_id IN ({','.join('?' * len(q.course_ids))})")

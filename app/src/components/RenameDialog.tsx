@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Button, Dialog } from "./Dialog";
 
 /** Rename from the sidebar, where there's no room to edit in place. */
-export function RenameDialog({ current, what, onClose, onSubmit }: {
+export function RenameDialog({ current, what, hint, onClose, onSubmit }: {
   current: string;
-  what: string; // e.g. "课程文件夹"
+  what: string; // 课程 / 学期 / 文件夹
+  hint?: string;
   onClose: () => void;
   onSubmit: (name: string) => void;
 }) {
@@ -29,7 +30,7 @@ export function RenameDialog({ current, what, onClose, onSubmit }: {
         onKeyDown={(e) => e.key === "Enter" && ok && onSubmit(name.trim())}
         className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
       />
-      <p className="mt-2 text-xs text-muted">只改本地文件夹的名字。以后 Canvas 上这里的新文件和更新，仍然会同步到这个文件夹里。</p>
+      <p className="mt-2 text-xs text-muted">{hint ?? "只改本地的名字，同步不受影响：Canvas 上这里的新文件和更新照常同步进来。"}</p>
     </Dialog>
   );
 }

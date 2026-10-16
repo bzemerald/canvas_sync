@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Sparkles,
+  ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, GraduationCap, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search,
+  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
@@ -18,8 +19,11 @@ import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys"
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 
+// A course is its own kind of place, not "a folder": today it shows the course's files,
+// later also its other Canvas pages. `path` is the folder being looked at inside it.
 type View =
   | { kind: "home" }
+  | { kind: "course"; id: number; path: string; select?: string }
   | { kind: "browse"; path: string; select?: string }
   | { kind: "smart"; name: string };
 
@@ -36,7 +40,7 @@ function termRank(term: string | null): number {
 function groupByTerm(list: Course[]): [string, Course[]][] {
   const groups = new Map<string, Course[]>();
   for (const c of list) {
-    const term = c.term ?? "无学期";
+    const term = c.term_label ?? "无学期";
     groups.set(term, [...(groups.get(term) ?? []), c]);
   }
   return [...groups.entries()].sort(([a], [b]) => termRank(b) - termRank(a));
@@ -63,7 +67,7 @@ export function MainWindow() {
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
-  const [renameDialog, setRenameDialog] = useState<{ path: string; what: string } | null>(null);
+  const [renameDialog, setRenameDialog] = useState<{ path: string; what: string; current: string; hint?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
@@ -133,8 +137,15 @@ export function MainWindow() {
   }, [showDeleted]);
 
   // -- where we are ---------------------------------------------------------------------
-  const browsing = view.kind === "browse" ? view.path : null;
-  const course = browsing !== null ? courseList.find((c) => under(browsing, c.dir)) ?? null : null;
+  const filesView = view.kind === "browse" || view.kind === "course";
+  const browsing = filesView ? view.path : null;
+  const course = view.kind === "course" ? courseList.find((c) => c.id === view.id) ?? null : null;
+  const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
+  /** Go to a folder: inside a course, that's the course's page; elsewhere, a plain folder. */
+  const goPath = (path: string, select?: string) => {
+    const c = courseAt(path);
+    go(c ? { kind: "course", id: c.id, path, select } : { kind: "browse", path, select });
+  };
   const smart = pinned.filter((p): p is PinnedItem & { type: "smart" } => p.type === "smart");
   const folder = view.kind === "smart" ? smart.find((f) => f.name === view.name) ?? null : null;
   const scopeCourses = useMemo(() => {
@@ -142,7 +153,7 @@ export function MainWindow() {
     return courseList.filter((c) => under(c.dir, browsing) || under(browsing, c.dir)).map((c) => c.id);
   }, [browsing, courseList]);
 
-  const searching = view.kind === "home" || (view.kind === "browse" && query.trim() !== "");
+  const searching = view.kind === "home" || (filesView && query.trim() !== "");
   const results = useSearch(
     view.kind === "smart" ? `${folder?.query}|${folder?.courses}|${folder?.kinds}|${folder?.content}` : query,
     () => {
@@ -175,6 +186,11 @@ export function MainWindow() {
   const fail = (what: string) => (e: unknown) => say(`${what}：${friendly((e as Error).message)}`);
 
   const isPinned = (path: string) => pinned.some((p) => p.type === "folder" && p.path === path);
+  const isCoursePinned = (id: number) => pinned.some((p) => p.type === "course" && p.id === id);
+  const coursePinItem = (c: Course): MenuItem =>
+    isCoursePinned(c.id)
+      ? { label: "取消置顶", onSelect: () => api.unpinCourse(c.id).then(setPinned, fail("取消置顶失败")) }
+      : { label: "置顶", onSelect: () => api.pinCourse(c.id).then(setPinned, fail("置顶失败")) };
   const pinItem = (path: string): MenuItem =>
     isPinned(path)
       ? { label: "取消置顶", onSelect: () => api.unpinFolder(path).then(setPinned, fail("取消置顶失败")) }
@@ -196,11 +212,11 @@ export function MainWindow() {
       const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
       setHist((h) => ({
         ...h,
-        stack: h.stack.map((v) => (v.kind === "browse" ? { ...v, path: move(v.path), select: v.select && move(v.select) } : v)),
+        stack: h.stack.map((v) => (v.kind === "browse" || v.kind === "course" ? { ...v, path: move(v.path), select: v.select && move(v.select) } : v)),
       }));
       setHist((h) => {
         const cur = h.stack[h.i];
-        if (cur.kind !== "browse" || cur.path !== parentOf(renamed)) return h;
+        if ((cur.kind !== "browse" && cur.kind !== "course") || cur.path !== parentOf(renamed)) return h;
         const stack = [...h.stack];
         stack[h.i] = { ...cur, select: renamed }; // keep the renamed folder selected
         return { ...h, stack };
@@ -236,10 +252,14 @@ export function MainWindow() {
     }
     if (e.type === "dir") {
       return [
-        { label: "打开", hint: shortcut.open, onSelect: () => go({ kind: "browse", path: e.path }) },
+        { label: "打开", hint: shortcut.open, onSelect: () => goPath(e.path) },
         { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
         "separator",
-        pinItem(e.path),
+        // A course's own folder (seen in 全部文件) pins the course.
+        ...(() => {
+          const c = courseList.find((x) => x.id === e.course_id && x.dir === e.path);
+          return [c ? coursePinItem(c) : pinItem(e.path)];
+        })(),
         { label: "重命名…", hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
         "separator",
         { label: "从 Canvas 同步此文件夹", disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
@@ -257,7 +277,7 @@ export function MainWindow() {
       { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
     ];
     if (e.url) items.push({ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(e.url!) });
-    if (e.link) items.push({ label: "显示原始文件", onSelect: () => go({ kind: "browse", path: parentOf(e.link!), select: e.link! }) });
+    if (e.link) items.push({ label: "显示原始文件", onSelect: () => goPath(parentOf(e.link!), e.link!) });
     if (e.states.includes("untracked")) {
       items.push("separator", { label: "恢复同步", disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
     } else if (e.file_id !== null) {
@@ -312,7 +332,7 @@ export function MainWindow() {
       ...(h.path && isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
       ...(h.path
         ? [
-            { label: "在文件夹中显示", onSelect: () => go({ kind: "browse", path: parentOf(h.path!), select: h.path! }) },
+            { label: "在文件夹中显示", onSelect: () => goPath(parentOf(h.path!), h.path!) },
             { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(h.path!) },
           ]
         : []),
@@ -322,15 +342,20 @@ export function MainWindow() {
   };
 
   const courseMenu = (c: Course): MenuItem[] => [
-    { label: "打开", onSelect: () => go({ kind: "browse", path: c.dir }) },
-    { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(c.dir) },
+    { label: "打开", onSelect: () => goPath(c.dir) },
     { label: "在 Canvas 中打开", onSelect: () => void api.openUrl(`/courses/${c.id}`) },
+    { label: `在 ${fileManager} 中显示课程文件`, onSelect: () => reveal(c.dir) },
     "separator",
-    { label: "从 Canvas 同步此课程", disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.display_code) },
-    { label: "恢复此课程的原版…", disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.display_code }) },
+    { label: "从 Canvas 同步此课程", disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },
+    { label: "恢复此课程的原版…", disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
     "separator",
-    pinItem(c.dir),
-    { label: "重命名文件夹…", disabled: syncBusy, onSelect: () => setRenameDialog({ path: c.dir, what: "课程文件夹" }) },
+    coursePinItem(c),
+    {
+      label: "重命名课程…", disabled: syncBusy,
+      onSelect: () => setRenameDialog({ path: c.dir, what: "课程", current: c.label, hint: "只改在这里显示的名字，同步不受影响。" }),
+    },
+    ...(c.renamed ? [{ label: `恢复原名（${c.default_name}）`, disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
+    "separator",
     { label: "新建智能文件夹（限此课程）…", onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
   ];
 
@@ -342,20 +367,38 @@ export function MainWindow() {
       { label: `从 Canvas 同步 ${term}`, disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
       { label: `恢复 ${term} 的原版…`, disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
       ...(termDir
-        ? ["separator" as const, pinItem(termDir), { label: "重命名文件夹…", disabled: syncBusy, onSelect: () => setRenameDialog({ path: termDir, what: "学期文件夹" }) }]
+        ? [
+            "separator" as const,
+            {
+              label: "重命名学期…", disabled: syncBusy,
+              onSelect: () => setRenameDialog({ path: termDir, what: "学期", current: term, hint: "只改在这里显示的名字，同步不受影响。" }),
+            },
+            ...(list[0].term && list[0].term !== term
+              ? [{ label: `恢复原名（${list[0].term}）`, disabled: syncBusy, onSelect: () => void renameFolder(termDir, list[0].term!) }]
+              : []),
+          ]
         : []),
     ];
   };
 
   const pinnedFolderMenu = (item: PinnedItem & { type: "folder" }): MenuItem[] => [
-    { label: "打开", disabled: !item.exists, onSelect: () => go({ kind: "browse", path: item.path }) },
+    { label: "打开", disabled: !item.exists, onSelect: () => goPath(item.path) },
     { label: `在 ${fileManager} 中显示`, disabled: !item.exists, onSelect: () => reveal(item.path) },
-    { label: "重命名…", disabled: !item.exists || syncBusy, onSelect: () => setRenameDialog({ path: item.path, what: "文件夹" }) },
+    {
+      label: "重命名…", disabled: !item.exists || syncBusy,
+      onSelect: () => setRenameDialog({ path: item.path, what: "文件夹", current: item.path.split("/").pop() ?? "" }),
+    },
     "separator",
     ...moveItems(item),
     "separator",
     { label: "取消置顶", onSelect: () => api.unpinFolder(item.path).then(setPinned, fail("取消置顶失败")) },
   ];
+
+  const pinnedCourseMenu = (item: PinnedItem & { type: "course" }): MenuItem[] => {
+    const c = courseList.find((x) => x.id === item.id);
+    const unpinIt: MenuItem = { label: "取消置顶", onSelect: () => api.unpinCourse(item.id).then(setPinned, fail("取消置顶失败")) };
+    return c ? [...courseMenu(c), "separator", ...moveItems(item)] : [...moveItems(item), "separator", unpinIt];
+  };
 
   const smartMenu = (f: PinnedItem & { type: "smart" }): MenuItem[] => [
     { label: "编辑…", onSelect: () => setEditing({ folder: f }) },
@@ -371,16 +414,21 @@ export function MainWindow() {
     },
   ];
 
-  const addMenu = (): MenuItem[] => [
-    { label: "新建智能文件夹…", onSelect: () => setEditing({ folder: null }) },
-    ...(browsing && !isPinned(browsing) ? [{ label: `置顶当前文件夹（${browsing.split("/").pop()}）`, onSelect: () => api.pinFolder(browsing).then(setPinned, fail("置顶失败")) }] : []),
-  ];
+  const addMenu = (): MenuItem[] => {
+    const here: MenuItem[] = [];
+    if (course && browsing === course.dir && !isCoursePinned(course.id)) {
+      here.push({ label: `置顶此课程（${course.label}）`, onSelect: () => api.pinCourse(course.id).then(setPinned, fail("置顶失败")) });
+    } else if (browsing && !isPinned(browsing)) {
+      here.push({ label: `置顶当前文件夹（${browsing.split("/").pop()}）`, onSelect: () => api.pinFolder(browsing).then(setPinned, fail("置顶失败")) });
+    }
+    return [{ label: "新建智能文件夹…", onSelect: () => setEditing({ folder: null }) }, ...here];
+  };
 
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
-  const isActive = (v: View) =>
-    v.kind === view.kind && (v.kind !== "browse" || (view.kind === "browse" && v.path === view.path)) && (v.kind !== "smart" || (view.kind === "smart" && v.name === view.name));
+  const pinnedHere = pinned.some((p) => p.type === "folder" && p.path === browsing); // highlight that, not also its course
+  const smartActive = (name: string) => view.kind === "smart" && view.name === name;
 
   return (
     <div className="flex h-screen bg-bg text-fg">
@@ -399,38 +447,56 @@ export function MainWindow() {
         </div>
         <SyncStatus sync={sync} label={syncLabel} />
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          <NavItem icon={<Search className="size-4" />} active={isActive({ kind: "home" })} onClick={() => go({ kind: "home" })} title="搜索" />
-          <NavItem icon={<FolderTree className="size-4" />} active={isActive({ kind: "browse", path: "" })} onClick={() => go({ kind: "browse", path: "" })} title="全部文件" />
+          <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title="搜索" />
+          <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title="全部文件" />
 
           <SectionHeader title="置顶" action={{ label: "添加到置顶", icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
           {pinned.length === 0 && (
             <p className="px-2 py-1 text-xs leading-relaxed text-muted">
-              右键任意文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。
+              右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。
             </p>
           )}
-          {pinned.map((item) =>
-            item.type === "folder" ? (
-              <NavItem
-                key={`folder:${item.path}`}
-                icon={<Folder className="size-4" />}
-                title={item.path.split("/").pop() ?? item.path}
-                subtitle={item.exists ? pinnedWhere(item, courseList) : "找不到这个文件夹了"}
-                muted={!item.exists}
-                active={isActive({ kind: "browse", path: item.path })}
-                onClick={() => item.exists && go({ kind: "browse", path: item.path })}
-                onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
-              />
-            ) : (
+          {pinned.map((item) => {
+            if (item.type === "course") {
+              const c = courseList.find((x) => x.id === item.id);
+              return (
+                <NavItem
+                  key={`course:${item.id}`}
+                  icon={<GraduationCap className="size-4" />}
+                  title={c?.label ?? `课程 #${item.id}`}
+                  subtitle={c ? (c.term_label ?? undefined) : "找不到这门课了"}
+                  muted={!c}
+                  active={course?.id === item.id && !pinnedHere}
+                  onClick={() => c && goPath(c.dir)}
+                  onMenu={(x, y) => openMenu(pinnedCourseMenu(item), x, y)}
+                />
+              );
+            }
+            if (item.type === "folder") {
+              return (
+                <NavItem
+                  key={`folder:${item.path}`}
+                  icon={<Folder className="size-4" />}
+                  title={item.path.split("/").pop() ?? item.path}
+                  subtitle={item.exists ? pinnedWhere(item, courseList) : "找不到这个文件夹了"}
+                  muted={!item.exists}
+                  active={browsing === item.path}
+                  onClick={() => item.exists && goPath(item.path)}
+                  onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
+                />
+              );
+            }
+            return (
               <NavItem
                 key={`smart:${item.name}`}
                 icon={<Sparkles className="size-4" />}
                 title={item.name}
-                active={isActive({ kind: "smart", name: item.name })}
+                active={smartActive(item.name)}
                 onClick={() => go({ kind: "smart", name: item.name })}
                 onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
               />
-            ),
-          )}
+            );
+          })}
 
           {groupByTerm(courseList).map(([term, list]) => (
             <section key={term}>
@@ -438,11 +504,11 @@ export function MainWindow() {
               {list.map((c) => (
                 <NavItem
                   key={c.id}
-                  title={c.folder_name ?? c.display_code}
-                  subtitle={c.folder_name ? c.display_code : c.name !== c.display_code ? c.name : undefined}
-                  active={course?.id === c.id}
+                  title={c.label}
+                  subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
+                  active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
                   badge={changes[c.id] ? `${changes[c.id]} 个文件有本地改动` : undefined}
-                  onClick={() => go({ kind: "browse", path: c.dir })}
+                  onClick={() => goPath(c.dir)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
                 />
               ))}
@@ -458,20 +524,21 @@ export function MainWindow() {
             <ToolButton title={`前进 (${shortcut.forward})`} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
           </div>
           <div className="min-w-0 flex-1">
-            {view.kind === "browse" && <Breadcrumb path={view.path} onGo={(p) => go({ kind: "browse", path: p })} />}
+            {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goPath} />}
+            {view.kind === "course" && course && <Breadcrumb path={view.path} root={{ path: course.dir, label: course.label }} onGo={goPath} />}
             {view.kind === "smart" && folder && <SmartTitle folder={folder} courses={courseList} />}
             {view.kind === "home" && <span className="text-sm font-medium">搜索所有课程</span>}
           </div>
           {view.kind !== "home" && (
             <>
-              {view.kind === "browse" && (
-                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? `在 ${course.display_code} 中搜索` : "搜索"} compact />
+              {filesView && (
+                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? `在 ${course.label} 中搜索` : "搜索"} compact />
               )}
               <div className="flex shrink-0 rounded-md border border-line p-0.5">
                 <ToolButton title="列表" pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
                 <ToolButton title="图标" pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
               </div>
-              {view.kind === "browse" && (
+              {filesView && (
                 <>
                   <ToolButton
                     title={`${showDeleted ? "隐藏你删除的文件" : "显示你删除的文件"}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
@@ -484,13 +551,13 @@ export function MainWindow() {
                     title="此文件夹的操作"
                     onClick={(ev) => {
                       const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-                      const here = view.path;
-                      const label = here ? here.split("/").pop()! : "全部文件";
+                      const here = browsing ?? "";
+                      const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : "全部文件";
                       openMenu([
                         { label: "从 Canvas 同步此文件夹", disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, "全部课程")) },
                         { label: "恢复此文件夹的原版…", onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
                         { label: `在 ${fileManager} 中显示`, onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
-                        ...(course ? ["separator" as const, { label: "在 Canvas 中打开此课程", onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : []),
+                        ...(course ? ["separator" as const, { label: "在 Canvas 中打开这门课", onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : []),
                       ], r.right - 200, r.bottom + 4);
                     }}
                   >
@@ -511,14 +578,15 @@ export function MainWindow() {
           </div>
         )}
 
-        {view.kind === "browse" && !searching ? (
+        {(view.kind === "browse" || view.kind === "course") && !searching ? (
           <FileBrowser
             path={view.path}
+            root={course?.dir ?? ""}
             select={view.select}
             version={version}
             mode={mode}
             showDeleted={showDeleted}
-            onNavigate={(p) => go({ kind: "browse", path: p })}
+            onNavigate={goPath}
             onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}
             onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
@@ -537,7 +605,7 @@ export function MainWindow() {
             mode={view.kind === "home" ? "list" : mode}
             query={query}
             results={results}
-            showCourse={view.kind !== "browse" || !course}
+            showCourse={!course}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
             onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
@@ -547,8 +615,9 @@ export function MainWindow() {
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
       {renameDialog && (
         <RenameDialog
-          current={renameDialog.path.split("/").pop() ?? ""}
+          current={renameDialog.current}
           what={renameDialog.what}
+          hint={renameDialog.hint}
           onClose={() => setRenameDialog(null)}
           onSubmit={(name) => void renameFolder(renameDialog.path, name)}
         />
@@ -599,8 +668,8 @@ export function MainWindow() {
 /** Where a pinned folder is, for its subtitle: its course (or term), else its parent folder. */
 function pinnedWhere(item: { path: string; course_id: number | null }, courses: Course[]): string {
   const c = courses.find((x) => x.id === item.course_id);
-  if (c && item.path === c.dir) return c.term ?? "";
-  if (c) return c.folder_name ?? c.display_code;
+  if (c && item.path === c.dir) return c.term_label ?? "";
+  if (c) return c.label;
   return parentOf(item.path) || "全部文件";
 }
 
@@ -691,16 +760,23 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
   );
 }
 
-function Breadcrumb({ path, onGo }: { path: string; onGo: (p: string) => void }) {
-  const parts = path ? path.split("/") : [];
+/** Where you are. In a course it starts at the course (its name, not where its files live). */
+function Breadcrumb({ path, root = { path: "", label: "全部文件" }, onGo }: {
+  path: string;
+  root?: { path: string; label: string };
+  onGo: (p: string) => void;
+}) {
+  const rest = path.slice(root.path.length).replace(/^\//, "");
+  const parts = rest ? rest.split("/") : [];
+  const prefix = root.path ? root.path + "/" : "";
   return (
     <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label="位置">
-      <button onClick={() => onGo("")} className={`shrink-0 rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>全部文件</button>
+      <button onClick={() => onGo(root.path)} className={`shrink-0 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>{root.label}</button>
       {parts.map((p, i) => (
         <span key={i} className="flex min-w-0 items-center gap-0.5">
           <ChevronRight className="size-3.5 shrink-0 text-muted" />
           <button
-            onClick={() => onGo(parts.slice(0, i + 1).join("/"))}
+            onClick={() => onGo(prefix + parts.slice(0, i + 1).join("/"))}
             className={`truncate rounded px-1.5 py-0.5 hover:bg-chip ${i === parts.length - 1 ? "font-medium" : "text-muted"}`}
           >
             {p}
@@ -712,7 +788,7 @@ function Breadcrumb({ path, onGo }: { path: string; onGo: (p: string) => void })
 }
 
 function SmartTitle({ folder, courses }: { folder: SmartFolder; courses: Course[] }) {
-  const names = folder.courses.map((id) => courses.find((c) => c.id === id)?.display_code ?? `#${id}`);
+  const names = folder.courses.map((id) => courses.find((c) => c.id === id)?.label ?? `#${id}`);
   const bits = [
     folder.query && `“${folder.query}”`,
     names.length ? names.join("、") : "所有课程",

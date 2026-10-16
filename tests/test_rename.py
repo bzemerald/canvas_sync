@@ -146,5 +146,22 @@ def test_api_rename_and_pin(api, root):
 
     api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
     [course] = api.get("/api/courses").json()
-    assert course["dir"] == "Fall 2026/Linear Algebra" and course["folder_name"] == "Linear Algebra"
+    assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "Linear Algebra" and course["renamed"]
+    assert course["default_name"] == "MATH 221" and course["term_label"] == "Fall 2026"
     assert api.post("/api/pinned/remove", json={"path": "Fall 2026/Linear Algebra/Modules/Week One"}).json() == []
+    # Search results call the course by its new name too.
+    assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"Linear Algebra"}
+
+
+def test_pinned_courses(api, root):
+    cfg = root / ".canvas/config.toml"
+    # A course's folder pinned the old way turns into the course.
+    pin_folder(cfg, COURSE)
+    assert api.get("/api/pinned").json() == [{"type": "course", "id": 1, "exists": True}]
+    assert "course = 1" in cfg.read_text()
+    assert api.post("/api/pinned", json={"path": COURSE}).json() == [{"type": "course", "id": 1, "exists": True}]
+    api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
+    assert api.get("/api/pinned").json()[0]["exists"]  # by id: renaming doesn't matter
+    assert api.post("/api/pinned/remove", json={"course": 1}).json() == []
+    api.post("/api/rename", json={"path": "Fall 2026", "name": "2026 秋"})
+    assert api.get("/api/courses").json()[0]["term_label"] == "2026 秋"

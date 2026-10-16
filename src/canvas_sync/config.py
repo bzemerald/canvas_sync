@@ -84,6 +84,9 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # The app's sidebar: pinned folders, and smart folders (saved searches), in order.
 #
 # [[pinned]]
+# course = 12345                        # a course
+#
+# [[pinned]]
 # path = "Fall 2026/MATH 221/Modules"   # a folder
 #
 # [[pinned]]
@@ -133,7 +136,12 @@ class PinnedFolder:
     path: str  # relative to the sync folder
 
 
-Pinned = PinnedFolder | SmartFolder
+@dataclass(frozen=True)
+class PinnedCourse:
+    course: int  # Canvas course id: a course, not its folder, so it survives renames and layouts
+
+
+Pinned = PinnedFolder | PinnedCourse | SmartFolder
 
 
 @dataclass
@@ -221,6 +229,8 @@ def _smart_folder(f: dict[str, Any]) -> SmartFolder:
 
 
 def _pinned_item(d: dict[str, Any]) -> Pinned:
+    if "course" in d:
+        return PinnedCourse(int(d["course"]))
     if "path" in d:
         return PinnedFolder(str(d["path"]).strip("/"))
     return _smart_folder(d)
@@ -230,6 +240,9 @@ def _pinned_table(item: Pinned) -> Any:
     t = tomlkit.table()
     if isinstance(item, PinnedFolder):
         t["path"] = item.path
+        return t
+    if isinstance(item, PinnedCourse):
+        t["course"] = item.course
         return t
     t["name"] = item.name
     t["query"] = item.query
@@ -290,17 +303,25 @@ def delete_smart_folder(path: Path, name: str) -> None:
     save_pinned(path, items)
 
 
-def pin_folder(path: Path, folder: str) -> None:
+def pin(path: Path, item: PinnedFolder | PinnedCourse) -> None:
     items = load_pinned(path)
-    if PinnedFolder(folder.strip("/")) not in items:
-        save_pinned(path, [*items, PinnedFolder(folder.strip("/"))])
+    if item not in items:
+        save_pinned(path, [*items, item])
+
+
+def unpin(path: Path, item: PinnedFolder | PinnedCourse) -> None:
+    items = load_pinned(path)
+    if item not in items:
+        raise LookupError(f"{item} is not pinned")
+    save_pinned(path, [i for i in items if i != item])
+
+
+def pin_folder(path: Path, folder: str) -> None:
+    pin(path, PinnedFolder(folder.strip("/")))
 
 
 def unpin_folder(path: Path, folder: str) -> None:
-    items = load_pinned(path)
-    if PinnedFolder(folder.strip("/")) not in items:
-        raise LookupError(f"{folder} is not pinned")
-    save_pinned(path, [i for i in items if i != PinnedFolder(folder.strip("/"))])
+    unpin(path, PinnedFolder(folder.strip("/")))
 
 
 def move_pinned(path: Path, index: int, to: int) -> None:
