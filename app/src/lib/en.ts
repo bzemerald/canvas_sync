@@ -23,6 +23,7 @@ export const en: Record<string, string | [string, string]> = {
   "取消置顶": "Unpin",
   "取消置顶失败": "Couldn't unpin",
   "置顶": "Pin",
+  "置顶@@heading": "Pinned",
   "置顶失败": "Couldn't pin",
   "上移": "Move up",
   "移动失败": "Couldn't move",

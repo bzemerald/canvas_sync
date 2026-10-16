@@ -25,7 +25,7 @@ export default function App() {
 
   if (isLauncher) return <Launcher />;
   if (error) return <StartupError message={error} />;
-  if (setUp === null) return <div className="h-screen bg-bg" />;
+  if (setUp === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
   // Signing in starts the first sync; the main window picks it up.
   if (!setUp) return <SignInPage onDone={() => setSetUp(true)} />;
   return <MainWindow />;

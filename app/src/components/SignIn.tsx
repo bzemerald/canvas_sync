@@ -95,7 +95,7 @@ export function SignInForm({ initial, submitLabel, onDone, onCancel }: {
 /** The whole window, before there's an account. */
 export function SignInPage({ onDone }: { onDone: () => void }) {
   return (
-    <div className="flex min-h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
+    <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
       <div className="w-full max-w-md">
         <h1 className="mb-1 text-xl font-semibold">{t("连接 Canvas")}</h1>
         <p className="mb-5 text-sm text-muted">{t("登录后，课程文件会同步到这台电脑上；公告、作业和成绩也能直接在这里看。")}</p>

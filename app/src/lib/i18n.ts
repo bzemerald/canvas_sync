@@ -47,10 +47,14 @@ export function applyLanguage(pref: LangPref): void {
 
 type Vars = Record<string, string | number>;
 
+// The same Chinese can need different English: "置顶" is "Pin" on a menu and "Pinned" as a
+// heading. The heading is written t("置顶@@heading"); what follows @@ only tells them apart.
+const CONTEXT = "@@";
+
 /** `zh` in the current language, with `{name}` filled in from `vars`. English entries can be
  * [singular, plural], chosen by `vars.n`. */
 export function t(zh: string, vars?: Vars): string {
-  let s = zh;
+  let s = zh.includes(CONTEXT) ? zh.slice(0, zh.indexOf(CONTEXT)) : zh;
   if (lang === "en") {
     const e = en[zh];
     if (e === undefined) {

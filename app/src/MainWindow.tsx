@@ -22,6 +22,7 @@ import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope,
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
+import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
 
@@ -81,6 +82,7 @@ export function MainWindow() {
   const [notice, setNotice] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
+  const trafficLights = useTrafficLights();
 
   const view = hist.stack[hist.i];
   const go = useCallback((v: View) => {
@@ -486,8 +488,8 @@ export function MainWindow() {
   return (
     <div className="flex h-screen bg-bg text-fg">
       <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-sidebar">
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <h1 className="text-sm font-semibold">Canvas Sync</h1>
+        {/* The title bar: the window controls (macOS), then the sync button. Empty space drags the window. */}
+        <div data-tauri-drag-region="deep" className={`flex h-13 shrink-0 items-center justify-end pr-3 ${trafficLights ? "pl-20" : "pl-4"}`}>
           <button
             onClick={() => startSync({}, t("全部课程"))}
             disabled={syncBusy}
@@ -509,7 +511,7 @@ export function MainWindow() {
           <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("搜索")} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
-          <SectionHeader title={t("置顶")} action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
+          <SectionHeader title={t("置顶@@heading")} action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
           {pinned.length === 0 && (
             <p className="px-2 py-1 text-xs leading-relaxed text-muted">
               {t("右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。")}
@@ -585,7 +587,7 @@ export function MainWindow() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+        <header data-tauri-drag-region="deep" className="flex h-13 shrink-0 items-center gap-2 border-b border-line px-4">
           <div className="flex shrink-0">
             <ToolButton title={t("后退 ({back})", { back: shortcut.back })} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
             <ToolButton title={t("前进 ({forward})", { forward: shortcut.forward })} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
@@ -1080,7 +1082,7 @@ function Welcome() {
 
 export function StartupError({ message }: { message: string }) {
   return (
-    <div className="flex h-screen items-center justify-center bg-bg p-8 text-fg">
+    <div data-tauri-drag-region className="flex h-screen items-center justify-center bg-bg p-8 text-fg">
       <div className="max-w-lg">
         <h1 className="mb-2 text-lg font-semibold">{t("后台服务没有启动")}</h1>
         <pre className="overflow-auto rounded-md bg-chip p-3 text-xs whitespace-pre-wrap text-danger">{message}</pre>
