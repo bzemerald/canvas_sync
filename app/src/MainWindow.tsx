@@ -91,7 +91,7 @@ export function MainWindow() {
   const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
   const [collapsed, setCollapsed] = usePref<string[]>("sidebar-collapsed", []); // "pinned", "term:<term>"
   const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
-  const [hiding, setHiding] = useState<Course | null>(null);
+  const [hiding, setHiding] = useState<{ courses: Course[]; term?: string } | null>(null);
   const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
   const [tabs, setTabs] = useState<{ order: CourseTab[]; hidden: CourseTab[] }>({ order: arrangeTabs([]), hidden: [] });
   const [cards, setCards] = useState<{ order: OverviewCard[]; hidden: OverviewCard[] }>({ order: arrangeCards([]), hidden: [] });
@@ -490,6 +490,12 @@ export function MainWindow() {
       say(c.excluded ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
       refresh();
     }, fail(t("操作失败")));
+  /** A hidden term back, synced again: its courses each as they were before hiding. */
+  const unhideTerm = (term: string, list: Course[]) =>
+    api.hideCourses(list.map((c) => c.id), false, list.some((c) => c.excluded) ? true : undefined).then(() => {
+      say(t("“{name}”回来了", { name: term }));
+      refresh();
+    }, fail(t("操作失败")));
   const hiddenCourseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
     { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
@@ -515,7 +521,7 @@ export function MainWindow() {
     "separator",
     { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
     "separator",
-    { label: t("隐藏此课程…"), onSelect: () => setHiding(c) },
+    { label: t("隐藏此课程…"), onSelect: () => setHiding({ courses: [c] }) },
   ];
 
   const termMenu = (term: string, list: Course[]): MenuItem[] => {
@@ -537,6 +543,8 @@ export function MainWindow() {
               : []),
           ]
         : []),
+      "separator",
+      { label: t("隐藏此学期…"), onSelect: () => setHiding({ courses: list, term }) },
     ];
   };
 
@@ -724,17 +732,30 @@ export function MainWindow() {
                 collapsed={!hiddenOpen}
                 onToggle={() => setHiddenOpen(!hiddenOpen)}
               />
-              {hiddenOpen && hiddenCourses.map((c) => (
-                <NavItem
-                  key={c.id}
-                  icon={<CourseIcon course={c} />}
-                  title={c.label}
-                  subtitle={c.excluded ? t("不再同步") : (c.term_label ?? undefined)}
-                  muted
-                  active={course?.id === c.id}
-                  onClick={() => openCourse(c)}
-                  onMenu={(x, y) => openMenu(hiddenCourseMenu(c), x, y)}
-                />
+              {hiddenOpen && groupByTerm(hiddenCourses).map(([term, list]) => (
+                <div key={term}>
+                  <p
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      openMenu([{ label: t("取消隐藏整个学期"), onSelect: () => void unhideTerm(term, list) }], e.clientX, e.clientY);
+                    }}
+                    className="px-2 pt-1.5 pb-0.5 text-[11px] text-muted"
+                  >
+                    {term}
+                  </p>
+                  {list.map((c) => (
+                    <NavItem
+                      key={c.id}
+                      icon={<CourseIcon course={c} />}
+                      title={c.label}
+                      subtitle={c.excluded ? t("不再同步") : undefined}
+                      muted
+                      active={course?.id === c.id}
+                      onClick={() => openCourse(c)}
+                      onMenu={(x, y) => openMenu(hiddenCourseMenu(c), x, y)}
+                    />
+                  ))}
+                </div>
               ))}
             </>
           )}
@@ -942,11 +963,12 @@ export function MainWindow() {
       )}
       {hiding && (
         <HideCourseDialog
-          course={hiding}
+          courses={hiding.courses}
+          term={hiding.term}
           onClose={() => setHiding(null)}
           onDone={() => {
-            say(t("已隐藏“{name}”", { name: hiding.label }));
-            if (view.kind === "course" && view.id === hiding.id) go({ kind: "home" });
+            say(t("已隐藏“{name}”", { name: hiding.term ?? hiding.courses[0].label }));
+            if (view.kind === "course" && hiding.courses.some((c) => c.id === view.id)) go({ kind: "home" });
             setHiding(null);
             refresh();
           }}

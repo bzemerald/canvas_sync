@@ -329,6 +329,9 @@ export const sidebarOrder = () => api<SidebarOrder>("/sidebar");
 /** A course's icon: {icon, color}, {emoji}, {icon: "none"}; null: the app's pick. */
 export const setCourseIcon = (course: number, icon: { icon?: string; color?: string; emoji?: string } | null) =>
   post<{ icon: Course["icon"] }>(`/courses/${course}/icon`, icon ?? {});
+/** The same for several courses (a whole term). */
+export const hideCourses = (courses: number[], hidden: boolean, syncing?: boolean) =>
+  post<{ hidden: number[]; excluded: number[] }>("/courses/hide", { courses, hidden, syncing: syncing ?? null });
 /** Hide a course (syncing: false also stops syncing it), or show it again (syncing: true resumes). */
 export const hideCourse = (course: number, hidden: boolean, syncing?: boolean) =>
   post<{ hidden: boolean; excluded: boolean }>(`/courses/${course}/hide`, { hidden, syncing: syncing ?? null });

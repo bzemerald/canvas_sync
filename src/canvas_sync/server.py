@@ -39,8 +39,8 @@ from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
-    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_hidden, set_course_icon,
-    set_course_select, unpin,
+    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_icon, set_course_select,
+    set_courses_hidden, unpin,
 )
 from .search import course_label
 from .engine import Engine
@@ -148,6 +148,7 @@ class IconRequest(BaseModel):
 class HideRequest(BaseModel):
     hidden: bool
     syncing: bool | None = None  # False: also stop syncing it; True: sync it again; None: leave as is
+    courses: list[int] = []      # /courses/hide: which (a whole term)
 
 
 class SidebarRequest(BaseModel):
@@ -640,17 +641,29 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         with engine() as e:
             return {"icon": e.settings.course_icons.get(course_id)}
 
+    def hide(course_ids: list[int], req: HideRequest) -> None:
+        if req.hidden:
+            for course_id in course_ids:
+                try:
+                    unpin(config(), PinnedCourse(course_id))  # a hidden course isn't on show anywhere
+                except LookupError:
+                    pass  # it wasn't pinned
+        set_courses_hidden(config(), course_ids, req.hidden, syncing=req.syncing)
+
     @api.post("/courses/{course_id}/hide")
     def hide_course(course_id: int, req: HideRequest) -> dict[str, Any]:
         """Hide a course from the app (and maybe stop syncing it), or bring it back."""
-        if req.hidden:
-            try:
-                unpin(config(), PinnedCourse(course_id))  # a hidden course isn't on show anywhere
-            except LookupError:
-                pass  # it wasn't pinned
-        set_course_hidden(config(), course_id, req.hidden, syncing=req.syncing)
+        hide([course_id], req)
         with engine() as e:
             return {"hidden": course_id in e.settings.hidden, "excluded": course_id in e.settings.exclude}
+
+    @api.post("/courses/hide")
+    def hide_courses(req: HideRequest) -> dict[str, Any]:
+        """The same for several courses (a whole term)."""
+        hide(req.courses, req)
+        with engine() as e:
+            return {"hidden": [c for c in req.courses if c in e.settings.hidden],
+                    "excluded": [c for c in req.courses if c in e.settings.exclude]}
 
     @api.get("/sidebar")
     def sidebar() -> dict[str, Any]:

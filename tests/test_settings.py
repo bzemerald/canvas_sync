@@ -199,3 +199,15 @@ def test_course_icons(root, tmp_path, keychain):
         assert api.post("/api/courses/1/icon", json={"icon": "../x"}).status_code == 400
         assert api.post("/api/courses/2/icon", json={}).json() == {"icon": None}  # back to the app's pick
     assert Settings.load(root / ".canvas" / "config.toml").course_icons == {1: {"icon": "atom", "color": "blue"}}
+
+
+def test_hide_a_whole_term(root, tmp_path, keychain):
+    with client(Account(BASE, root), tmp_path) as api:
+        api.post("/api/pinned", json={"course": 2})
+        r = api.post("/api/courses/hide", json={"courses": [1, 2, 3], "hidden": True, "syncing": False}).json()
+        assert r == {"hidden": [1, 2, 3], "excluded": [1, 2, 3]}
+        assert api.get("/api/pinned").json() == []
+        r = api.post("/api/courses/hide", json={"courses": [1, 2], "hidden": False, "syncing": True}).json()
+        assert r == {"hidden": [], "excluded": []}
+    settings = Settings.load(root / ".canvas" / "config.toml")
+    assert (settings.hidden, settings.exclude) == ([3], [3])

@@ -468,6 +468,14 @@ export const en: Record<string, string | [string, string]> = {
   "输入课程名搜索…": "Type a course name…",
   "没有匹配的课程": "No matching course",
 
+  // -- hiding a term
+  "隐藏“{term}”的 {n} 门课？": ["Hide the 1 course in “{term}”?", "Hide the {n} courses in “{term}”?"],
+  "它们会从侧栏、搜索和新内容提醒里消失。随时可以在侧栏最下面的“已隐藏的课程”里找回。":
+    "They leave the sidebar, search and what's new. You can bring them back anytime from “Hidden courses” at the bottom of the sidebar.",
+  "同时停止同步这些课": "Also stop syncing these courses",
+  "隐藏此学期…": "Hide this term…",
+  "取消隐藏整个学期": "Unhide the whole term",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

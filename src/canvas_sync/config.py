@@ -429,23 +429,29 @@ def set_course_select(path: Path, select: str) -> None:
 def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool | None = None) -> None:
     """Hide a course in the app, or show it again; `syncing` False also stops syncing it (into
     `exclude`), True takes it out of `exclude` again (it syncs if `select` picks it)."""
+    set_courses_hidden(path, [course_id], hidden, syncing=syncing)
+
+
+def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, syncing: bool | None = None) -> None:
+    """set_course_hidden for several courses at once (a whole term)."""
     doc = tomlkit.parse(path.read_text())
     courses = doc.setdefault("courses", tomlkit.table())
     for key in ("hidden", "exclude", "include"):
         if key not in courses:
             courses[key] = tomlkit.array()
 
-    def put(key: str, present: bool) -> None:
+    def put(key: str, course_id: int, present: bool) -> None:
         if present and course_id not in courses[key]:
             courses[key].append(course_id)
         elif not present and course_id in courses[key]:
             courses[key].remove(course_id)
 
-    put("hidden", hidden)
-    if syncing is not None:
-        put("exclude", not syncing)
-        if not syncing:
-            put("include", False)
+    for course_id in course_ids:
+        put("hidden", course_id, hidden)
+        if syncing is not None:
+            put("exclude", course_id, not syncing)
+            if not syncing:
+                put("include", course_id, False)
     path.write_text(tomlkit.dumps(doc))
 
 
