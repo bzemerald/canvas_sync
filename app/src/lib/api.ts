@@ -187,6 +187,16 @@ export type PinnedItem =
   | { type: "folder"; path: string; course_id: number | null; exists: boolean }
   | ({ type: "smart" } & SmartFolder);
 
+/** What can be pinned to the sidebar (besides smart folders, which are made in their dialog). */
+export type PinTarget =
+  | { course: number } // a course
+  | { path: string } // a folder
+  | { file: string } // a file
+  | { course: number; kind: DocKind; id: string; title: string } // an announcement, assignment or page
+  | { course: number; module: number; title: string } // a module
+  | { course: number; tool: number; title: string } // an external tool
+  | { url: string; title: string }; // a web link
+
 /** A term, course, folder or file: what a sync or restore applies to. */
 export interface Scope {
   paths?: string[];

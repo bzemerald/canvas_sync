@@ -1,141 +1,169 @@
-// Reordering short lists by dragging them: the sidebar, a course's tabs, the overview's cards.
-// Pointer events rather than HTML5 drag and drop, which on Windows fights the webview's own
-// handling of files dropped on the window, and leaves no say over what dragging looks like.
-// A press only becomes a drag once the pointer has moved a few pixels, so clicks stay clicks.
-import { useEffect, useRef, useState } from "react";
+// Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards.
+// What's dragged follows the pointer (see drag.ts); in a row or a column the others slide
+// aside to open a gap where it will land; among cards, the one it will take the place of is
+// outlined. Things that can be pinned can also be dropped on 置顶 (see pinZone.ts).
+import { useRef, useState } from "react";
+import type { PinTarget } from "./api";
+import { trackDrag } from "./drag";
+import { pinZones } from "./pinZone";
 
-/** "y": a column; "x": a row; "grid": rows that wrap (before or after the nearest item);
- * "cards": anything (columns of cards): dropped on a card, an item takes its place. */
-export type Axis = "x" | "y" | "grid" | "cards";
+/** "y": a column; "x": a row; "cards": anything (columns of cards): dropped on a card, an item
+ * takes its place. */
+export type Axis = "x" | "y" | "cards";
 
-type Drag = { from: number; target: number };
-/** Where a dragged item would land, relative to one item. */
-export type Mark = "before" | "after" | "onto" | null; // target: where it would go, as an index between items (0..count)
+/** Where a dragged item would land, relative to one item (only "onto", for cards). */
+export type Mark = "onto" | null;
 
-export function useReorder(count: number, onMove: (from: number, to: number) => void, axis: Axis = "y") {
+export function useReorder(
+  count: number,
+  onMove: (from: number, to: number) => void,
+  axis: Axis = "y",
+  pin?: (index: number) => PinTarget | null, // what dropping it on 置顶 pins
+) {
   const elements = useRef(new Map<number, HTMLElement>());
-  const press = useRef<{ index: number; x: number; y: number; dragging: boolean } | null>(null);
-  const current = useRef<Drag | null>(null);
-  const [drag, setDrag] = useState<Drag | null>(null);
+  const [drag, setDrag] = useState<{ from: number; target: number } | null>(null);
   const moveRef = useRef(onMove);
   moveRef.current = onMove;
+  const pinRef = useRef(pin);
+  pinRef.current = pin;
 
-  useEffect(() => {
-    const targetAt = (x: number, y: number): number => {
-      const rects = Array.from({ length: count }, (_, i) => elements.current.get(i)?.getBoundingClientRect() ?? null);
-      if (axis === "cards") {
-        // The card under the pointer, else the nearest one.
-        const under = rects.findIndex((r) => r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
-        if (under >= 0) return under;
-      }
-      if (axis === "grid" || axis === "cards") {
-        let best = -1;
-        let bestDistance = Infinity;
-        rects.forEach((r, i) => {
-          if (!r) return;
-          const d = (r.left + r.width / 2 - x) ** 2 + (r.top + r.height / 2 - y) ** 2;
-          if (d < bestDistance) [best, bestDistance] = [i, d];
-        });
-        if (best < 0) return 0;
-        if (axis === "cards") return best;
-        const r = rects[best]!;
-        return x > r.left + r.width / 2 ? best + 1 : best;
-      }
-      for (let i = 0; i < count; i++) {
-        const r = rects[i];
-        if (r && (axis === "x" ? x < r.left + r.width / 2 : y < r.top + r.height / 2)) return i;
-      }
-      return count;
-    };
-    const end = () => {
-      press.current = null;
-      current.current = null;
-      setDrag(null);
-      document.body.style.cursor = "";
-    };
-    const onPointerMove = (e: PointerEvent) => {
-      const p = press.current;
-      if (!p) return;
-      if (!p.dragging) {
-        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return;
-        p.dragging = true;
-        document.body.style.cursor = "grabbing";
-      }
-      const next = { from: p.index, target: targetAt(e.clientX, e.clientY) };
-      if (next.target !== current.current?.target) {
-        current.current = next;
-        setDrag(next);
-      }
-    };
-    const onPointerUp = () => {
-      const p = press.current;
-      const d = current.current;
-      end();
-      if (!p?.dragging) return;
-      if (d) {
-        const to = axis === "cards" ? d.target : d.target > d.from ? d.target - 1 : d.target;
-        if (to !== d.from) moveRef.current(d.from, to);
-      }
-      // The click that ends a drag isn't a click on what was dragged.
-      const swallow = (ev: MouseEvent) => {
-        ev.stopPropagation();
-        ev.preventDefault();
+  const handle = (index: number) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]")) return;
+      const source = elements.current.get(index);
+      if (!source) return;
+      const target = pinRef.current?.(index) ?? null;
+      const shifts = new Map<number, number>(); // px each item is moved aside, now
+      let size = 0; // the gap to open: the dragged item's length, with the space after it
+      let at = index; // insertion point (0..count) for rows/columns; the card to take for cards
+
+      // Where the items were when the drag began (sliding them aside doesn't move their landing
+      // spots, and they're mid-animation half the time), kept in step with scrolling.
+      const measure = () => Array.from({ length: count }, (_, i) => elements.current.get(i)?.getBoundingClientRect() ?? null);
+      let base: (DOMRect | null)[] = [];
+      const box = scrollParent(source);
+      const scrolled = () => ({ x: box?.scrollLeft ?? 0, y: box?.scrollTop ?? 0 });
+      let from0 = scrolled();
+      const rects = () => {
+        const now = scrolled();
+        const [dx, dy] = [now.x - from0.x, now.y - from0.y];
+        return base.map((r) => r && new DOMRect(r.x - dx, r.y - dy, r.width, r.height));
       };
-      window.addEventListener("click", swallow, { capture: true, once: true });
-      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && press.current?.dragging) end();
-    };
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", end);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", end);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [count, axis]);
+      const landing = (x: number, y: number): number => {
+        const rs = rects();
+        if (axis === "cards") {
+          const hit = rs.findIndex((r) => r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+          if (hit >= 0) return hit;
+          let best = index;
+          let bestDistance = Infinity;
+          rs.forEach((r, i) => {
+            if (!r) return;
+            const d = (r.left + r.width / 2 - x) ** 2 + (r.top + r.height / 2 - y) ** 2;
+            if (d < bestDistance) [best, bestDistance] = [i, d];
+          });
+          return best;
+        }
+        for (let i = 0; i < count; i++) {
+          const r = rs[i];
+          if (r && (axis === "x" ? x < r.left + r.width / 2 : y < r.top + r.height / 2)) return i;
+        }
+        return count;
+      };
+      // Rows and columns: the items between where it was and where it goes slide over.
+      const slide = (to: number) => {
+        if (axis === "cards") return;
+        for (let i = 0; i < count; i++) {
+          const el = elements.current.get(i);
+          if (!el || i === index) continue;
+          const d = index < to && i > index && i < to ? -size : to <= i && i < index ? size : 0;
+          if ((shifts.get(i) ?? 0) === d) continue;
+          shifts.set(i, d);
+          el.style.transition = "transform 160ms ease";
+          el.style.transform = d ? (axis === "x" ? `translateX(${d}px)` : `translateY(${d}px)`) : "";
+        }
+      };
+      const reset = () => {
+        elements.current.forEach((el) => {
+          el.style.transition = "none";
+          el.style.transform = "";
+          el.style.opacity = "";
+        });
+        shifts.clear();
+        setDrag(null);
+      };
 
-  /** On the element that is the item (what's measured to decide where it goes). */
+      trackDrag(e, source, {
+        onStart: () => {
+          base = measure();
+          from0 = scrolled();
+          const rs = rects();
+          const me = rs[index];
+          const next = rs[index + 1] ?? rs[index - 1];
+          if (me) {
+            const gap = next ? (axis === "x" ? Math.abs(next.left - me.left) - me.width : Math.abs(next.top - me.top) - me.height) : 0;
+            size = (axis === "x" ? me.width : me.height) + Math.max(0, gap);
+          }
+          // The copy under the pointer stands in for it; its place shows as a gap.
+          source.style.transition = "opacity 120ms ease";
+          source.style.opacity = axis === "cards" ? "0.35" : "0";
+          setDrag({ from: index, target: index });
+        },
+        onMove: (x, y) => {
+          if (pinZones.update(x, y, !!target)) {
+            // Over 置顶: it'll be pinned, not moved; the list closes up again.
+            at = index;
+            slide(index);
+            setDrag({ from: index, target: index });
+            return;
+          }
+          const next = landing(x, y);
+          if (next === at) return;
+          at = next;
+          slide(axis === "cards" ? index : at);
+          setDrag({ from: index, target: at });
+        },
+        onDrop: (x, y) => {
+          reset();
+          if (pinZones.drop(x, y, target)) return;
+          const to = axis === "cards" ? at : at > index ? at - 1 : at;
+          if (to !== index) moveRef.current(index, to);
+        },
+        onCancel: () => {
+          reset();
+          pinZones.end();
+        },
+      });
+    },
+  });
+
+  /** On the element that is the item (what moves, and what's measured). */
   const ref = (index: number) => (el: HTMLElement | null) => {
     if (el) elements.current.set(index, el);
     else elements.current.delete(index);
   };
-  /** On what you grab it by: the item itself, or a header or handle in it. */
-  const handle = (index: number) => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]")) return;
-      press.current = { index, x: e.clientX, y: e.clientY, dragging: false };
-    },
-  });
-  /** Where the dragged item would land, relative to item `index`; null when it wouldn't move. */
-  const mark = (index: number): Mark => {
-    if (axis === "cards") return drag && drag.target === index && index !== drag.from ? "onto" : null;
-    if (!drag || drag.target === drag.from || drag.target === drag.from + 1) return null;
-    if (drag.target === index) return "before";
-    return drag.target === count && index === count - 1 ? "after" : null;
-  };
   return {
     dragging: drag?.from ?? null,
     ref,
+    /** On what you grab it by: the item itself, or a header in it. */
     handle,
     item: (index: number) => ({ ref: ref(index), ...handle(index) }),
-    mark,
+    /** For cards: outline the one a dragged card would take the place of. */
+    mark: (index: number): Mark => (axis === "cards" && drag && drag.target === index && index !== drag.from ? "onto" : null),
   };
 }
 
-/** The line that shows where a dragged item will land (in a `relative` item); for "onto", an
- * outline around the item whose place it takes. */
-export function DropMark({ at, axis = "y" }: { at: Mark; axis?: Axis }) {
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const style = getComputedStyle(p);
+    if (/(auto|scroll)/.test(style.overflowY + style.overflowX)) return p;
+  }
+  return null;
+}
+
+/** The outline around the card a dragged one will take the place of (in a `relative` item). */
+export function DropMark({ at }: { at: Mark }) {
   if (!at) return null;
-  if (at === "onto") return <span aria-hidden className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] ring-2 ring-accent" />;
-  const line = axis === "y"
-    ? `inset-x-1 h-0.5 ${at === "before" ? "-top-px" : "-bottom-px"}`
-    : `inset-y-1 w-0.5 ${at === "before" ? "-left-px" : "-right-px"}`;
-  return <span aria-hidden className={`pointer-events-none absolute z-10 rounded-full bg-accent ${line}`} />;
+  return <span aria-hidden className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] ring-2 ring-accent" />;
 }
 
 /** `list` with the item at `from` moved to `to` (as the hook reports it). */

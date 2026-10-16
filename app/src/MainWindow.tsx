@@ -28,7 +28,7 @@ import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys"
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
-import { DropMark, moved, useReorder, type Mark } from "./lib/reorder";
+import { moved, useReorder } from "./lib/reorder";
 import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
@@ -693,8 +693,7 @@ export function MainWindow() {
             </p>
           )}
           {!isCollapsed("pinned") && pinned.map((item, i) => (
-            <div key={pinnedKey(item)} {...pinDrag.item(i)} className={`relative ${pinDrag.dragging === i ? "opacity-40" : ""}`}>
-              <DropMark at={pinDrag.mark(i)} />
+            <div key={pinnedKey(item)} {...pinDrag.item(i)}>
               {renderPinned(item)}
             </div>
           ))}
@@ -708,8 +707,6 @@ export function MainWindow() {
               group={g}
               sectionRef={termDrag.ref(i)}
               grab={termDrag.handle(i)}
-              mark={termDrag.mark(i)}
-              dragging={termDrag.dragging === i}
               collapsed={isCollapsed(`term:${g.key}`)}
               onToggle={() => toggle(`term:${g.key}`)}
               onMenu={(x, y) => openMenu(termMenu(g.label, g.courses), x, y)}
@@ -1011,12 +1008,10 @@ const pinnedKey = (item: PinnedItem) =>
 
 /** A term in the sidebar: its header folds it and drags it among the terms; its courses drag
  * among themselves. */
-function TermSection({ group, sectionRef, grab, mark, dragging, collapsed, onToggle, onMenu, onReorder, renderCourse }: {
+function TermSection({ group, sectionRef, grab, collapsed, onToggle, onMenu, onReorder, renderCourse }: {
   group: TermGroup;
   sectionRef: (el: HTMLElement | null) => void;
   grab: { onPointerDown: (e: React.PointerEvent) => void };
-  mark: Mark;
-  dragging: boolean;
   collapsed: boolean;
   onToggle: () => void;
   onMenu: (x: number, y: number) => void;
@@ -1026,8 +1021,7 @@ function TermSection({ group, sectionRef, grab, mark, dragging, collapsed, onTog
   const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)));
   const fresh = group.courses.reduce((n, c) => n + c.new, 0);
   return (
-    <section ref={sectionRef} className={`relative ${dragging ? "opacity-40" : ""}`}>
-      <DropMark at={mark} />
+    <section ref={sectionRef}>
       <SectionHeader
         title={group.label}
         collapsed={collapsed}
@@ -1038,8 +1032,7 @@ function TermSection({ group, sectionRef, grab, mark, dragging, collapsed, onTog
         onMenu={onMenu}
       />
       {!collapsed && group.courses.map((c, i) => (
-        <div key={c.id} {...drag.item(i)} className={`relative ${drag.dragging === i ? "opacity-40" : ""}`}>
-          <DropMark at={drag.mark(i)} />
+        <div key={c.id} {...drag.item(i)}>
           {renderCourse(c)}
         </div>
       ))}

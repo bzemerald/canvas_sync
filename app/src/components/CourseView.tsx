@@ -136,9 +136,8 @@ export function CourseTabs({ tab, overview, order, hidden, onTab, onMarkAllSeen,
             onMenu(menu(id), e.clientX, e.clientY);
           }}
           aria-current={tab === id ? "page" : undefined}
-          className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${drag.dragging === i ? "opacity-40" : ""}`}
+          className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
         >
-          <DropMark at={drag.mark(i)} axis="x" />
           {TAB_LABEL[id]}
           {!!fresh[id] && <Count n={fresh[id]!} label={t("{n} 个新的", { n: fresh[id]! })} />}
         </button>
@@ -417,7 +416,6 @@ export function CourseOverview({ course, overview, cards, hiddenCards, onArrange
                   cardRef={drag.ref(i)}
                   grab={drag.handle(i)}
                   mark={drag.mark(i)}
-                  dragging={drag.dragging === i}
                   title={c === "links" && !tools.length ? t("链接") : CARD_LABEL[c]}
                   onMenu={(x, y) => onMenu(cardMenu(c), x, y)}
                   {...head[c]}
@@ -433,7 +431,7 @@ export function CourseOverview({ course, overview, cards, hiddenCards, onArrange
   );
 }
 
-function Card({ title, icon, more, action, cardRef, grab, mark, dragging, onMenu, children }: {
+function Card({ title, icon, more, action, cardRef, grab, mark, onMenu, children }: {
   title: string;
   icon: React.ReactNode;
   more?: () => void;
@@ -441,13 +439,12 @@ function Card({ title, icon, more, action, cardRef, grab, mark, dragging, onMenu
   cardRef: (el: HTMLElement | null) => void;
   grab: { onPointerDown: (e: React.PointerEvent) => void };
   mark: Mark;
-  dragging: boolean;
   onMenu: (x: number, y: number) => void;
   children: React.ReactNode;
 }) {
   return (
-    <section ref={cardRef} className={`relative rounded-xl border border-line bg-panel ${dragging ? "opacity-40" : ""}`}>
-      <DropMark at={mark} axis="cards" />
+    <section ref={cardRef} className="relative rounded-xl border border-line bg-panel">
+      <DropMark at={mark} />
       <header
         {...grab}
         onContextMenu={(e) => (e.preventDefault(), onMenu(e.clientX, e.clientY))}
