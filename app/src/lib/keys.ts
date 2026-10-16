@@ -1,5 +1,6 @@
 // Keyboard behavior follows the platform's own file manager: Finder on macOS, File
 // Explorer on Windows, and the Explorer-like conventions GNOME Files / Dolphin share on Linux.
+import { t } from "./i18n";
 
 export type Platform = "mac" | "windows" | "linux";
 
@@ -37,7 +38,7 @@ export function fileCommand(e: Key): FileCommand | null {
   return null;
 }
 
-export type AppCommand = "back" | "forward" | "search" | "toggleDeleted";
+export type AppCommand = "back" | "forward" | "search" | "toggleDeleted" | "settings";
 
 /** Window-wide keys. `typing` is true when the key went to a text field. */
 export function appCommand(e: Key, typing: boolean): AppCommand | null {
@@ -47,6 +48,7 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
     if (e.metaKey && k === "]") return "forward";
     if (e.metaKey && k === "f") return "search";
     if (e.metaKey && e.shiftKey && e.code === "Period") return "toggleDeleted"; // like ⌘⇧. for hidden files
+    if (e.metaKey && k === ",") return "settings";
     return null;
   }
   if (e.altKey && k === "ArrowLeft") return "back";
@@ -54,16 +56,20 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
   if (k === "Backspace" && !typing && platform === "windows") return "back";
   if (e.ctrlKey && k === "f") return "search";
   if (e.ctrlKey && k === "h" && platform === "linux") return "toggleDeleted"; // like Ctrl+H for hidden files
+  if (e.ctrlKey && k === ",") return "settings";
   return null;
 }
 
 /** How to write each shortcut in menus and tooltips. */
 export const shortcut = isMac
-  ? { open: "⌘O", rename: "↩", preview: "空格", delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F", toggleDeleted: "⌘⇧." }
+  ? {
+      open: "⌘O", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
+      toggleDeleted: "⌘⇧.", settings: "⌘,", launcher: "⌘⇧Space",
+    }
   : {
       open: "Enter", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
-      toggleDeleted: platform === "linux" ? "Ctrl+H" : "",
+      toggleDeleted: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", launcher: "Ctrl+Shift+Space",
     };
 
-export const trashName = isMac ? "废纸篓" : "回收站";
-export const fileManager = isMac ? "Finder" : platform === "windows" ? "文件资源管理器" : "文件管理器";
+export const trashName = isMac ? t("废纸篓") : t("回收站");
+export const fileManager = isMac ? "Finder" : platform === "windows" ? t("文件资源管理器") : t("文件管理器");

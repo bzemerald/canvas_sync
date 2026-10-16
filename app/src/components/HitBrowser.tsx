@@ -10,6 +10,7 @@ import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import type { ViewMode } from "./FileBrowser";
 import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
 import { Thumb } from "./Thumb";
+import { t } from "../lib/i18n";
 
 export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onDelete }: {
   hits: Hit[];
@@ -113,7 +114,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onD
               key={hitKey(h)}
               role="option"
               {...itemProps(h)}
-              title={h.path ? "双击打开文件" : "双击在 Canvas 中打开"}
+              title={h.path ? t("双击打开文件") : t("双击在 Canvas 中打开")}
               className={`group flex items-start gap-2 rounded-lg px-2 py-2 ${shade(h)}`}
             >
               <div className="min-w-0 flex-1">
@@ -121,12 +122,12 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onD
               </div>
               <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100">
                 {h.path && (
-                  <IconButton title={`在 ${fileManager} 中显示`} onClick={() => void api.openHit(h, true)}>
+                  <IconButton title={t("在 {app} 中显示", { app: fileManager })} onClick={() => void api.openHit(h, true)}>
                     <FolderOpen className="size-4" />
                   </IconButton>
                 )}
                 {h.url && (
-                  <IconButton title="在 Canvas 中打开" onClick={() => void api.openCanvas(h)}>
+                  <IconButton title={t("在 Canvas 中打开")} onClick={() => void api.openCanvas(h)}>
                     <ExternalLink className="size-4" />
                   </IconButton>
                 )}

@@ -1,12 +1,13 @@
 import { BookOpen, ClipboardList, FileText, Megaphone, ScrollText, type LucideIcon } from "lucide-react";
 import type { Hit, Kind } from "../lib/api";
+import { locale, t } from "../lib/i18n";
 
 export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
-  file: { icon: FileText, label: "文件" },
-  page: { icon: BookOpen, label: "页面" },
-  assignment: { icon: ClipboardList, label: "作业" },
-  announcement: { icon: Megaphone, label: "公告" },
-  syllabus: { icon: ScrollText, label: "大纲" },
+  file: { icon: FileText, label: t("文件") },
+  page: { icon: BookOpen, label: t("页面") },
+  assignment: { icon: ClipboardList, label: t("作业") },
+  announcement: { icon: Megaphone, label: t("公告") },
+  syllabus: { icon: ScrollText, label: t("大纲") },
 };
 
 export { fileManager, isMac } from "../lib/keys";
@@ -16,7 +17,7 @@ export function formatDate(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString("zh-CN", sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+  return d.toLocaleDateString(locale, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function hitKey(h: Hit): string {
@@ -33,7 +34,7 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate font-medium text-fg">{hit.title}</span>
-          {!hit.path && hit.kind === "file" && <span className="shrink-0 text-xs text-muted">(未下载)</span>}
+          {!hit.path && hit.kind === "file" && <span className="shrink-0 text-xs text-muted">{t("(未下载)")}</span>}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
           {showCourse && <span className="shrink-0 rounded bg-chip px-1.5 py-px text-fg-soft">{hit.course}</span>}
@@ -69,7 +70,7 @@ export function firstContentMatch(hits: Hit[]): number {
 export function ContentDivider({ className = "" }: { className?: string }) {
   return (
     <div role="separator" className={`flex items-center gap-2 px-2 pt-3 pb-1 text-xs text-muted ${className}`}>
-      正文中提到
+      {t("正文中提到")}
       <span className="h-px flex-1 bg-line" />
     </div>
   );

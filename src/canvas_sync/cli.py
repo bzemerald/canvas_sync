@@ -349,7 +349,7 @@ def serve(
     """Run the local API the desktop app talks to. Prints {"port", "token"} as the first line."""
     from .server import serve as run
 
-    run(account(), port, exit_with_stdin=exit_with_stdin)
+    run(Account.load(), port, exit_with_stdin=exit_with_stdin)  # not set up yet: the app signs you in
 
 
 @app.command("open")

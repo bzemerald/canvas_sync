@@ -6,6 +6,7 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
+import { t } from "../lib/i18n";
 
 export type CourseLink = { tab: "pages" | "assignments" | "announcements" | "syllabus" | "modules"; id?: string };
 
@@ -19,7 +20,7 @@ function prepare(html: string): string {
   doc.querySelectorAll("iframe, video, audio, object, embed").forEach((el) => {
     const src = el.getAttribute("src") || el.querySelector("source")?.getAttribute("src") || el.getAttribute("data");
     const a = doc.createElement("a");
-    a.textContent = "▶ 嵌入的内容（在浏览器中打开）";
+    a.textContent = t("▶ 嵌入的内容（在浏览器中打开）");
     if (src) a.setAttribute("href", src);
     el.replaceWith(a);
   });
@@ -63,7 +64,7 @@ export function RichText({ html, courseId, files, onNavigate, className = "" }: 
           urls.push(url);
           img.src = url;
         } else {
-          img.alt = img.alt || "（图片无法加载）";
+          img.alt = img.alt || t("（图片无法加载）");
         }
       });
     });

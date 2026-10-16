@@ -34,6 +34,7 @@ class FakeCanvas:
         self.launch_status = 200
         self.launch_url = f"{BASE}/courses/1/external_tools/sessionless_launch?verifier=v"
         self.seen_auth: list[str | None] = []
+        self.valid_tokens: set[str] | None = None  # None: any token works
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
             listed: bool = True) -> None:
@@ -51,7 +52,7 @@ class FakeCanvas:
         path = req.url.path
         public = lambda f: {k: v for k, v in f.items() if not k.startswith("_")}  # noqa: E731
         routes = {
-            "/api/v1/users/self": lambda: {"name": "Test"},
+            "/api/v1/users/self": lambda: {"id": 42, "name": "Test"},
             "/api/v1/courses": lambda: [self.course],
             "/api/v1/courses/1": lambda: self.course,
             "/api/v1/courses/1/folders": lambda: self.folders,
@@ -61,6 +62,8 @@ class FakeCanvas:
             "/api/v1/announcements": lambda: self.announcements,
         }
         self.seen_auth.append(req.headers.get("authorization"))
+        if self.valid_tokens is not None and req.headers.get("authorization") not in {f"Bearer {t}" for t in self.valid_tokens}:
+            return httpx.Response(401, json={"errors": [{"message": "Invalid access token."}]})
         if path == "/api/v1/courses/1/modules" and self.modules_status != 200:
             return httpx.Response(self.modules_status, json={"errors": [{"message": "nope"}]})
         if path == "/api/v1/courses/1/tabs" and self.tabs is not None:

@@ -17,17 +17,17 @@ import socket
 import sys
 import threading
 import webbrowser
-from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
@@ -37,8 +37,8 @@ from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
-    Account, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder, move_pinned, pin,
-    save_pinned, save_smart_folder, unpin,
+    PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
+    move_pinned, pin, save_pinned, save_smart_folder, set_course_select, unpin,
 )
 from .search import course_label
 from .engine import Engine
@@ -52,6 +52,13 @@ APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.loc
 
 TRANSFERS = (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT)
 MEDIA_MAX_BYTES = 25 * 1024 * 1024
+DEFAULT_ROOT = Path("~/Canvas")
+# What works before an account is set up: enough to set one up.
+SETUP_PATHS = {"/health", "/prefs", "/account", "/account/setup", "/open"}
+# Opening the app syncs, unless it synced this recently.
+LAUNCH_GRACE = timedelta(minutes=10)
+STARTUP_DELAY = 3.0  # seconds before that first sync, so the app comes up first
+TICK = 60.0          # how often to see whether an automatic sync is due
 
 
 def _now() -> str:
@@ -107,6 +114,24 @@ class ScopeRequest(BaseModel):
         return Scope(self.paths, set(self.file_ids)) if self.paths or self.file_ids else None
 
 
+class PrefsRequest(BaseModel):
+    """What to change; what's left out stays."""
+    language: str | None = None
+    auto_sync: int | None = None
+    sync_on_launch: bool | None = None
+    select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
+
+
+class SetupRequest(BaseModel):
+    url: str                 # the Canvas site, e.g. bcourses.berkeley.edu
+    token: str
+    root: str | None = None  # the sync folder; default: the current one, or ~/Canvas
+
+
+class TokenRequest(BaseModel):
+    token: str
+
+
 class SyncRequest(ScopeRequest):
     courses: list[int] | None = None  # default: every course `pull` would sync
 
@@ -152,8 +177,18 @@ class SmartFolderRequest(BaseModel):
     replaces: str | None = None  # renaming: the old name
 
 
-def create_app(account: Account, token: str) -> FastAPI:
-    app = FastAPI(title="canvas-sync", version=__version__)
+def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FILE, background: bool = False) -> FastAPI:
+    """The API. `account` None: not set up yet (the app shows its sign-in). `background`:
+    also sync automatically, as the preferences say."""
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        timer = asyncio.create_task(scheduler()) if background else None
+        yield
+        if timer:
+            timer.cancel()
+
+    app = FastAPI(title="canvas-sync", version=__version__, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=APP_ORIGINS, allow_methods=["*"], allow_headers=["*"],
     )
@@ -164,13 +199,23 @@ def create_app(account: Account, token: str) -> FastAPI:
         if not secrets.compare_digest(authorization, f"Bearer {token}"):
             raise HTTPException(401, "bad token")
 
+    def ready(request: Request) -> None:
+        if account is None:
+            path = request.url.path
+            if path[path.find("/api") + 4:] not in SETUP_PATHS:
+                raise HTTPException(409, "not set up")
+
+    def prefs() -> AppPrefs:
+        return AppPrefs.load(prefs_path)
+
     @contextmanager
     def engine() -> Iterator[Engine]:
         # One Engine per request: SQLite connections belong to the thread that made them.
+        assert account is not None  # (see `ready`)
         with Engine(account.root) as e:
             yield e
 
-    api = FastAPI(dependencies=[Depends(authorized)])
+    api = FastAPI(dependencies=[Depends(authorized), Depends(ready)])
 
     def inside(rel: str) -> Path:
         """root/rel, refusing anything that resolves outside the sync folder or into .canvas."""
@@ -188,7 +233,115 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     @api.get("/health")
     def health() -> dict[str, Any]:
-        return {"ok": True, "version": __version__, "root": str(account.root), "canvas": account.base_url}
+        return {"ok": True, "version": __version__, "set_up": account is not None,
+                "root": str(account.root) if account else None, "canvas": account.base_url if account else None}
+
+    # -- preferences and the account --------------------------------------------------------
+
+    @api.get("/prefs")
+    def get_prefs() -> dict[str, Any]:
+        out: dict[str, Any] = asdict(prefs())
+        if account is not None:
+            with engine() as e:
+                out["select"] = e.settings.select
+        return out
+
+    @api.post("/prefs")
+    def set_prefs(req: PrefsRequest) -> dict[str, Any]:
+        changes = {k: v for k, v in req.model_dump().items() if v is not None and k != "select"}
+        try:
+            replace(prefs(), **changes).save(prefs_path)
+            if req.select is not None:
+                if account is None:
+                    raise HTTPException(409, "not set up")
+                set_course_select(account.root / META_DIR / "config.toml", req.select)
+        except ConfigError as err:
+            raise HTTPException(400, str(err))
+        return get_prefs()
+
+    def account_info() -> dict[str, Any]:
+        if account is None:
+            return {"set_up": False, "signed_in": False, "base_url": None, "root": None, "user": None}
+        return {"set_up": True, "signed_in": bool(account.token()), "base_url": account.base_url,
+                "root": str(account.root), "user": account.user}
+
+    @api.get("/account")
+    def get_account() -> dict[str, Any]:
+        return account_info()
+
+    @api.get("/account/check")
+    async def check_account() -> dict[str, Any]:
+        """Whether the saved token still works (it expires, or can be revoked on Canvas)."""
+        assert account is not None
+        if not (saved := account.token()):
+            return {"ok": False, "error": "not signed in"}
+        try:
+            me = await _who(account.base_url, saved)
+        except HTTPException as err:
+            return {"ok": False, "error": err.detail}
+        if me.get("name") and me["name"] != account.user:
+            account.user = me["name"]
+            account.save()
+        return {"ok": True, "user": account.user}
+
+    @api.post("/account/setup")
+    async def set_up(req: SetupRequest) -> dict[str, Any]:
+        """Sign in, or switch to another account or school: check the token, settle on the
+        sync folder, save both. The folder's files and settings are left as they are."""
+        nonlocal account
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        url, new_token = _canvas_site(req.url), req.token.strip()
+        if not new_token:
+            raise HTTPException(400, "token rejected")
+        me = await _who(url, new_token)
+        root = Path(req.root).expanduser() if req.root else (account.root if account else DEFAULT_ROOT.expanduser())
+        if root.exists() and not root.is_dir():
+            raise HTTPException(400, "not a folder")
+        ours = (root / META_DIR).is_dir()
+        if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
+            raise HTTPException(400, "folder not empty")
+        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
+            raise HTTPException(400, "folder belongs to another Canvas site")
+        new = Account(url, Engine.init_root(root), me.get("name") or None)
+        if account and account.base_url != url:
+            account.clear_token()  # signed out of the old site
+        new.save()
+        new.set_token(new_token)
+        account = new
+        try:
+            start_sync(SyncRequest())  # what you signed in for
+        except HTTPException:
+            pass
+        return account_info()
+
+    @api.post("/account/token")
+    async def replace_token(req: TokenRequest) -> dict[str, Any]:
+        """A new token for the same account (the old one expired, or was revoked)."""
+        assert account is not None
+        new_token = req.token.strip()
+        me = await _who(account.base_url, new_token)
+        account.user = me.get("name") or account.user
+        account.save()
+        account.set_token(new_token)
+        return account_info()
+
+    @api.post("/account/signout")
+    def sign_out() -> dict[str, Any]:
+        """Forget the token. Files, settings and what's been synced stay; signing in again resumes."""
+        assert account is not None
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        account.clear_token()
+        return account_info()
+
+    @api.post("/open/config")
+    def open_config() -> dict[str, str]:
+        """The sync folder's config.toml, in your text editor: the settings the app doesn't show."""
+        assert account is not None
+        target = account.root / META_DIR / "config.toml"
+        open_path(target)
+        return {"opened": str(target)}
 
     @api.get("/courses")
     def courses() -> list[dict[str, Any]]:
@@ -383,7 +536,10 @@ def create_app(account: Account, token: str) -> FastAPI:
             e.reindex()
             return {"files": n}
 
-    config = account.root / META_DIR / "config.toml"
+    def config() -> Path:
+        """The sync folder's config.toml (pinned items live there)."""
+        assert account is not None
+        return account.root / META_DIR / "config.toml"
 
     @api.get("/pinned")
     def pinned() -> list[dict[str, Any]]:
@@ -395,7 +551,7 @@ def create_app(account: Account, token: str) -> FastAPI:
             if any(isinstance(i, PinnedFolder) and i.path in dirs for i in items):
                 converted = [PinnedCourse(dirs[i.path]) if isinstance(i, PinnedFolder) and i.path in dirs else i for i in items]
                 items = [i for n, i in enumerate(converted) if i not in converted[:n]]  # (pinned twice: once)
-                save_pinned(config, items)
+                save_pinned(config(), items)
             out: list[dict[str, Any]] = []
             for item in items:
                 if isinstance(item, PinnedCourse):
@@ -424,13 +580,13 @@ def create_app(account: Account, token: str) -> FastAPI:
             dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
         if isinstance(item, PinnedFolder) and item.path in dirs:
             item = PinnedCourse(dirs[item.path])  # a course's own folder: pin the course
-        pin(config, item)
+        pin(config(), item)
         return pinned()
 
     @api.post("/pinned/remove")
     def remove_pin(req: PinRequest) -> list[dict[str, Any]]:
         try:
-            unpin(config, PinnedCourse(req.course) if req.course is not None else PinnedFolder((req.path or "").strip("/")))
+            unpin(config(), PinnedCourse(req.course) if req.course is not None else PinnedFolder((req.path or "").strip("/")))
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
@@ -438,7 +594,7 @@ def create_app(account: Account, token: str) -> FastAPI:
     @api.post("/pinned/move")
     def move(req: MoveRequest) -> list[dict[str, Any]]:
         try:
-            move_pinned(config, req.index, req.to)
+            move_pinned(config(), req.index, req.to)
         except LookupError as err:
             raise HTTPException(400, str(err))
         return pinned()
@@ -464,7 +620,7 @@ def create_app(account: Account, token: str) -> FastAPI:
             raise HTTPException(400, "a smart folder needs a name")
         folder = SmartFolder(req.name.strip(), req.query.strip(), req.courses, req.kinds, req.content)
         try:
-            save_smart_folder(config, folder, req.replaces)
+            save_smart_folder(config(), folder, req.replaces)
         except ConfigError as err:
             raise HTTPException(400, str(err))
         return pinned()
@@ -472,7 +628,7 @@ def create_app(account: Account, token: str) -> FastAPI:
     @api.delete("/smart-folders/{name}")
     def delete_folder(name: str) -> list[dict[str, Any]]:
         try:
-            delete_smart_folder(config, name)
+            delete_smart_folder(config(), name)
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
@@ -484,7 +640,10 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     @api.post("/open")
     def open_(req: OpenRequest) -> dict[str, str]:
-        if req.path is not None:
+        if account is None and not req.external:
+            raise HTTPException(409, "not set up")
+        assert account is not None or req.external
+        if req.path is not None and account is not None:
             target = inside(req.path)
             if not target.exists():
                 raise HTTPException(404, f"{req.path} does not exist")
@@ -499,7 +658,7 @@ def create_app(account: Account, token: str) -> FastAPI:
                 raise HTTPException(400, "only web links")
             webbrowser.open(req.external)
             return {"opened": req.external}
-        if req.url:
+        if req.url and account is not None:
             if not req.url.startswith("/"):
                 raise HTTPException(400, "url must be relative to the Canvas site")
             webbrowser.open(account.base_url + req.url)
@@ -549,26 +708,100 @@ def create_app(account: Account, token: str) -> FastAPI:
 
     @api.get("/sync")
     def sync_state() -> dict[str, Any]:
-        return {**asdict(job), "running": job.running}
+        last = None if job.running else last_synced()
+        return {**asdict(job), "running": job.running, "last_synced": last.isoformat() if last else None}
 
-    @api.post("/sync", status_code=202)
-    async def sync(req: SyncRequest | None = None) -> dict[str, Any]:
+    def start_sync(req: SyncRequest) -> None:
         nonlocal job
+        assert account is not None
         if job.running:
             raise HTTPException(409, "a sync is already running")
         canvas_token = account.token()
         if not canvas_token:
-            raise HTTPException(400, "no Canvas token; run `canvas init`")
-        req = req or SyncRequest()
+            raise HTTPException(400, "not signed in to Canvas")
         scope_paths(req)
         job = SyncJob(phase="checking", started_at=_now(), scope=req.paths)
         task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
+
+    @api.post("/sync", status_code=202)
+    async def sync(req: SyncRequest | None = None) -> dict[str, Any]:
+        start_sync(req or SyncRequest())
         return sync_state()
+
+    # -- syncing by itself ----------------------------------------------------------------------
+
+    def last_synced() -> datetime | None:
+        """When a sync last finished (any sync; including one before the app started)."""
+        times = [datetime.fromisoformat(job.finished_at)] if job.finished_at else []
+        if account is not None:
+            with engine() as e:
+                if stored := e.state.last_synced():
+                    times.append(stored)
+        return max(times, default=None)
+
+    def sync_if_due(within: timedelta) -> None:
+        if account is None or not _due(last_synced(), within, datetime.now(timezone.utc)):
+            return
+        try:
+            start_sync(SyncRequest())
+        except HTTPException:
+            pass  # signed out, or already syncing
+
+    async def scheduler() -> None:
+        """Sync when the app opens (unless it just did), then as often as the preferences say."""
+        await asyncio.sleep(STARTUP_DELAY)
+        if prefs().sync_on_launch:
+            sync_if_due(LAUNCH_GRACE)
+        while True:
+            await asyncio.sleep(TICK)
+            try:
+                p = prefs()
+                if p.auto_sync:
+                    sync_if_due(timedelta(minutes=p.auto_sync))
+            except Exception:  # keep the timer alive whatever one round runs into
+                pass
 
     app.mount("/api", api)
     return app
+
+
+def _due(last: datetime | None, every: timedelta, now: datetime) -> bool:
+    return last is None or now - last >= every
+
+
+def _canvas_site(url: str) -> str:
+    """"bcourses.berkeley.edu" or a link to any page there -> "https://bcourses.berkeley.edu"."""
+    url = url.strip()
+    if "://" not in url:
+        url = "https://" + url
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme not in ("http", "https") or parts.username or not ("." in host or host == "localhost"):
+        raise HTTPException(400, "not a web address")
+    if parts.scheme == "http" and parts.hostname not in ("localhost", "127.0.0.1"):
+        raise HTTPException(400, "https only")  # the token would travel unencrypted
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+async def _who(url: str, token: str) -> dict[str, Any]:
+    """Your profile on that Canvas, if the token works there; else a 400 saying why. One try,
+    no retries: this is someone waiting on a sign-in form."""
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as http:
+            resp = await http.get(f"{url}/api/v1/users/self", headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError:
+        raise HTTPException(400, "can't reach the site")
+    if resp.status_code == 401:
+        raise HTTPException(400, "token rejected")
+    try:
+        me = resp.json()
+    except ValueError:
+        me = None
+    if not resp.is_success or not isinstance(me, dict) or "id" not in me:
+        raise HTTPException(400, "not a Canvas site")
+    return me
 
 
 async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, scope: Scope | None,
@@ -633,7 +866,7 @@ def _exit_when_stdin_closes() -> None:
     threading.Thread(target=watch, name="parent-watch", daemon=True).start()
 
 
-def serve(account: Account, port: int = 0, token: str | None = None, exit_with_stdin: bool = False) -> None:
+def serve(account: Account | None, port: int = 0, token: str | None = None, exit_with_stdin: bool = False) -> None:
     import uvicorn
 
     if exit_with_stdin:
@@ -644,5 +877,5 @@ def serve(account: Account, port: int = 0, token: str | None = None, exit_with_s
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", port))
     print(json.dumps({"port": sock.getsockname()[1], "token": token}), flush=True)
-    config = uvicorn.Config(create_app(account, token), log_level="warning")
+    config = uvicorn.Config(create_app(account, token, background=True), log_level="warning")
     uvicorn.Server(config).run(sockets=[sock])

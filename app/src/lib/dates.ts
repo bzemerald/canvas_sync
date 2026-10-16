@@ -1,4 +1,5 @@
 // Dates the way a student thinks about them: how long until it's due.
+import { locale, t } from "./i18n";
 
 const DAY = 24 * 3600 * 1000;
 
@@ -13,12 +14,12 @@ export function shortDate(iso: string | null | undefined, withTime = true): stri
   if (Number.isNaN(d.getTime())) return "";
   const days = Math.round((startOfDay(d) - startOfDay(new Date())) / DAY);
   const day =
-    days === 0 ? "今天"
-    : days === 1 ? "明天"
-    : days === -1 ? "昨天"
-    : days > 1 && days < 7 ? d.toLocaleDateString("zh-CN", { weekday: "short" })
-    : d.toLocaleDateString("zh-CN", d.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
-  const time = withTime && (d.getHours() || d.getMinutes()) ? ` ${d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` : "";
+    days === 0 ? t("今天")
+    : days === 1 ? t("明天")
+    : days === -1 ? t("昨天")
+    : days > 1 && days < 7 ? d.toLocaleDateString(locale, { weekday: "short" })
+    : d.toLocaleDateString(locale, d.getFullYear() === new Date().getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+  const time = withTime && (d.getHours() || d.getMinutes()) ? ` ${d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}` : "";
   return day + time;
 }
 
@@ -29,8 +30,10 @@ export function untilDue(iso: string | null | undefined): { text: string; urgent
   if (Number.isNaN(ms)) return null;
   const past = ms < 0;
   const abs = Math.abs(ms);
-  const amount = abs < 3600 * 1000 ? `${Math.max(1, Math.round(abs / 60000))} 分钟`
-    : abs < DAY ? `${Math.round(abs / 3600000)} 小时`
-    : `${Math.round(abs / DAY)} 天`;
-  return { text: past ? `已截止 ${amount}` : `还有 ${amount}`, urgent: !past && ms < 2 * DAY, past };
+  const text = abs < 3600 * 1000
+    ? (past ? t("已截止 {n} 分钟", { n: Math.max(1, Math.round(abs / 60000)) }) : t("还有 {n} 分钟", { n: Math.max(1, Math.round(abs / 60000)) }))
+    : abs < DAY
+      ? (past ? t("已截止 {n} 小时", { n: Math.round(abs / 3600000) }) : t("还有 {n} 小时", { n: Math.round(abs / 3600000) }))
+      : (past ? t("已截止 {n} 天", { n: Math.round(abs / DAY) }) : t("还有 {n} 天", { n: Math.round(abs / DAY) }));
+  return { text, urgent: !past && ms < 2 * DAY, past };
 }

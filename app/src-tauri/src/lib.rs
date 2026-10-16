@@ -159,6 +159,7 @@ fn launcher_shortcut() -> Shortcut {
 pub fn run() {
     tauri::Builder::default()
         .manage(BackendState::default())
+        .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {

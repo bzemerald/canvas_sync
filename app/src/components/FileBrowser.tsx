@@ -12,6 +12,7 @@ import { FileIcon } from "./FileIcon";
 import { RenameInput } from "./RenameInput";
 import { NewDot, StatusBadges, StatusDot } from "./Status";
 import { Thumb } from "./Thumb";
+import { locale, t } from "../lib/i18n";
 
 export type ViewMode = "list" | "grid";
 type SortKey = "name" | "date" | "size";
@@ -55,8 +56,8 @@ export function formatTime(seconds: number | null): string {
   if (seconds == null) return "";
   const d = new Date(seconds * 1000);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return `今天 ${d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
-  return d.toLocaleDateString("zh-CN", d.getFullYear() === now.getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+  if (d.toDateString() === now.toDateString()) return t("今天 {time}", { time: d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) });
+  return d.toLocaleDateString(locale, d.getFullYear() === now.getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function parentOf(path: string): string {
@@ -217,16 +218,16 @@ export function FileBrowser({
     <div ref={box} tabIndex={0} onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
       {mode === "list" && (
         <div className="grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] gap-3 border-b border-line px-6 py-1.5 text-xs text-muted">
-          <SortHeader label="名称" k="name" sort={sort} setSort={setSort} />
-          <span>状态</span>
-          <SortHeader label="修改日期" k="date" sort={sort} setSort={setSort} />
-          <SortHeader label="大小" k="size" sort={sort} setSort={setSort} right />
+          <SortHeader label={t("名称")} k="name" sort={sort} setSort={setSort} />
+          <span>{t("状态")}</span>
+          <SortHeader label={t("修改日期")} k="date" sort={sort} setSort={setSort} />
+          <SortHeader label={t("大小")} k="size" sort={sort} setSort={setSort} right />
         </div>
       )}
       <div ref={scroller} onMouseDown={marquee.onMouseDown} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-1 pb-10">
         <MarqueeBox box={marquee.box} />
         {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
-        {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">这个文件夹是空的</p>}
+        {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("这个文件夹是空的")}</p>}
 
         {mode === "list" ? (
           <ul role="tree" aria-multiselectable>
@@ -242,7 +243,7 @@ export function FileBrowser({
                   {e.type === "dir" && !e.deleted ? (
                     <button
                       tabIndex={-1}
-                      aria-label={expanded.has(e.path) ? "收起" : "展开"}
+                      aria-label={expanded.has(e.path) ? t("收起") : t("展开")}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         toggle(e.path);
@@ -253,7 +254,7 @@ export function FileBrowser({
                     </button>
                   ) : (
                     <span className="flex w-4.5 shrink-0 justify-center">
-                      {e.new && <NewDot label={e.new === "updated" ? "有新版本，你还没打开过" : "新文件，你还没打开过"} />}
+                      {e.new && <NewDot label={e.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} />}
                     </span>
                   )}
                   <FileIcon name={e.name} dir={e.type === "dir"} />
@@ -263,8 +264,8 @@ export function FileBrowser({
                     <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
                   )}
                   {e.link && (
-                    <span title={`快捷方式，原文件在 ${e.link}`}>
-                      <CornerUpRight className="size-3 shrink-0 text-muted" aria-label="快捷方式" />
+                    <span title={t("快捷方式，原文件在 {link}", { link: e.link })}>
+                      <CornerUpRight className="size-3 shrink-0 text-muted" aria-label={t("快捷方式")} />
                     </span>
                   )}
                 </span>
@@ -281,7 +282,7 @@ export function FileBrowser({
                 key={e.path}
                 role="option"
                 {...itemProps(e)}
-                title={e.link ? `${e.name}（快捷方式，原文件在 ${e.link}）` : e.name}
+                title={e.link ? t("{name}（快捷方式，原文件在 {link}）", { name: e.name, link: e.link }) : e.name}
                 className={`flex flex-col items-center gap-1.5 rounded-lg p-2 ${shade(e)} ${e.deleted ? "opacity-55" : ""}`}
               >
                 <div className="relative">
@@ -290,7 +291,7 @@ export function FileBrowser({
                   ) : (
                     <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
                   )}
-                  {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label="快捷方式" />}
+                  {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label={t("快捷方式")} />}
                 </div>
                 {renaming === e.path ? (
                   <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="w-full text-center text-xs" />

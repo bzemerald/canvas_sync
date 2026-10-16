@@ -1,9 +1,11 @@
-"""Two kinds of configuration.
+"""Three kinds of configuration.
 
 * The account (Canvas URL + which folder to sync into) lives in ~/.config/canvas-sync,
   the token in the macOS Keychain.
 * Everything about *how* to sync lives in <root>/.canvas/config.toml, which is meant
   to be edited by hand (comments are preserved when the CLI edits it).
+* The desktop app's own preferences (language, automatic syncing) live in
+  ~/.config/canvas-sync/app.toml: they belong to this computer, not to a sync folder.
 """
 
 from __future__ import annotations
@@ -14,10 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import keyring
+import keyring.errors
 import tomlkit
 
 KEYRING_SERVICE = "canvas-sync"
 ACCOUNT_FILE = Path(os.environ.get("CANVAS_SYNC_HOME", "~/.config/canvas-sync")).expanduser() / "config.toml"
+PREFS_FILE = ACCOUNT_FILE.parent / "app.toml"
 
 DEFAULT_VIEW_DIRS = {"modules": "Modules", "files": "Files", "attachments": "Attachments"}
 
@@ -377,6 +381,15 @@ def _rule(r: dict[str, Any]) -> Rule:
     )
 
 
+def set_course_select(path: Path, select: str) -> None:
+    """Sync the active courses or the favorites, keeping the file's comments."""
+    if select not in CHOICES["select"]:
+        raise ConfigError(f"select must be one of {sorted(CHOICES['select'])}")
+    doc = tomlkit.parse(path.read_text())
+    doc.setdefault("courses", tomlkit.table())["select"] = select
+    path.write_text(tomlkit.dumps(doc))
+
+
 def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
     """Move a course id into `include` (sync=True) or `exclude`, keeping the file's comments."""
     doc = tomlkit.parse(path.read_text())
@@ -395,10 +408,55 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
 # -- account ------------------------------------------------------------------
 
 
+# -- the app's preferences ----------------------------------------------------
+
+LANGUAGES = ("system", "zh", "en")
+AUTO_SYNC_MINUTES = (0, 30, 60, 180, 360, 1440)  # 0: off
+
+
+@dataclass
+class AppPrefs:
+    language: str = "system"     # system | zh | en
+    auto_sync: int = 60          # minutes between syncs while the app runs; 0: off
+    sync_on_launch: bool = True  # sync when the app starts (unless it just did)
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> AppPrefs:
+        """What's saved; anything missing or unrecognized is the default."""
+        path = path or PREFS_FILE
+        try:
+            data = tomlkit.parse(path.read_text()).unwrap() if path.exists() else {}
+        except Exception:
+            data = {}
+        d = cls()
+        language = data.get("language", d.language)
+        auto_sync = data.get("auto_sync", d.auto_sync)
+        return cls(
+            language=language if language in LANGUAGES else d.language,
+            auto_sync=auto_sync if auto_sync in AUTO_SYNC_MINUTES else d.auto_sync,
+            sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
+        )
+
+    def save(self, path: Path | None = None) -> None:
+        if self.language not in LANGUAGES:
+            raise ConfigError(f"language must be one of {LANGUAGES}")
+        if self.auto_sync not in AUTO_SYNC_MINUTES:
+            raise ConfigError(f"auto_sync must be one of {AUTO_SYNC_MINUTES} (minutes)")
+        path = path or PREFS_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = tomlkit.document()
+        doc.add(tomlkit.comment("The canvas-sync desktop app's preferences (set in its 设置 / Settings)."))
+        doc["language"] = self.language
+        doc["auto_sync"] = self.auto_sync
+        doc["sync_on_launch"] = self.sync_on_launch
+        path.write_text(tomlkit.dumps(doc))
+
+
 @dataclass
 class Account:
     base_url: str
     root: Path
+    user: str | None = None  # your name on Canvas, as of signing in
 
     @classmethod
     def load(cls) -> Account | None:
@@ -409,13 +467,15 @@ class Account:
         root = os.environ.get("CANVAS_ROOT") or data.get("root")
         if not url or not root:
             return None
-        return cls(url.rstrip("/"), Path(root).expanduser())
+        return cls(url.rstrip("/"), Path(root).expanduser(), data.get("user") or None)
 
     def save(self) -> None:
         ACCOUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
         doc["base_url"] = self.base_url
         doc["root"] = str(self.root)
+        if self.user:
+            doc["user"] = self.user
         ACCOUNT_FILE.write_text(tomlkit.dumps(doc))
 
     def token(self) -> str | None:
@@ -423,3 +483,10 @@ class Account:
 
     def set_token(self, token: str) -> None:
         keyring.set_password(KEYRING_SERVICE, self.base_url, token)
+
+    def clear_token(self) -> None:
+        """Sign out: forget the token (the files stay)."""
+        try:
+            keyring.delete_password(KEYRING_SERVICE, self.base_url)
+        except keyring.errors.PasswordDeleteError:
+            pass

@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { FileStatus, Scope } from "../lib/api";
 import { Button, Dialog } from "./Dialog";
-import { fileManager, isMac } from "./Result";
+import { fileManager, trashName } from "../lib/keys";
+import { t } from "../lib/i18n";
 
-const WHY: Record<string, string> = { modified: "改回原版", missing: "重新放回", ignored: "重新放回" };
-const trash = isMac ? "废纸篓" : "回收站";
+const WHY: Record<string, string> = { modified: t("改回原版"), missing: t("重新放回"), ignored: t("重新放回") };
 
 /** Shows exactly which files a restore would touch, then does it. */
 export function RestoreDialog({ scope, label, onClose, onDone }: {
@@ -35,27 +35,27 @@ export function RestoreDialog({ scope, label, onClose, onDone }: {
   const edited = files?.filter((f) => f.states.includes("modified")).length ?? 0;
   return (
     <Dialog
-      title={`恢复 ${label} 的 Canvas 原版`}
+      title={t("恢复 {label} 的 Canvas 原版", { label })}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{files?.length ? "取消" : "关闭"}</Button>
+          <Button onClick={onClose}>{files?.length ? t("取消") : t("关闭")}</Button>
           {!!files?.length && (
             <Button primary onClick={go} disabled={busy}>
-              恢复 {files.length} 个文件
+              {t("恢复 {n} 个文件", { n: files.length })}
             </Button>
           )}
         </>
       }
     >
       {error && <p className="text-danger">{error}</p>}
-      {!files && !error && <p className="text-muted">正在检查…</p>}
-      {files?.length === 0 && <p className="text-fg-soft">这里没有你修改或删除过的 Canvas 文件，不需要恢复。</p>}
+      {!files && !error && <p className="text-muted">{t("正在检查…")}</p>}
+      {files?.length === 0 && <p className="text-fg-soft">{t("这里没有你修改或删除过的 Canvas 文件，不需要恢复。")}</p>}
       {!!files?.length && (
         <>
           <p className="mb-3 text-fg-soft">
-            这些文件会变回上次从 Canvas 下载的版本。
-            {edited > 0 && <>你修改过的 {edited} 个文件会先移到{trash}，需要时可以从那里找回。</>}
+            {t("这些文件会变回上次从 Canvas 下载的版本。")}
+            {edited > 0 && <>{t("你修改过的 {n} 个文件会先移到{trash}，需要时可以从那里找回。", { n: edited, trash: trashName })}</>}
           </p>
           <ul className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-line p-2 text-xs">
             {files.map((f) => (
@@ -65,7 +65,7 @@ export function RestoreDialog({ scope, label, onClose, onDone }: {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-muted">移动过的文件会留在你放的位置（{fileManager}里的整理会被保留）。</p>
+          <p className="mt-2 text-xs text-muted">{t("移动过的文件会留在你放的位置（{app}里的整理会被保留）。", { app: fileManager })}</p>
         </>
       )}
     </Dialog>

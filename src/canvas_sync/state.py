@@ -184,6 +184,14 @@ class State:
             (c.id, c.name, c.code, c.term, _now()),
         )
 
+    def last_synced(self) -> datetime | None:
+        """When a pull last stored a course."""
+        row = self.db.execute("SELECT max(synced_at) FROM courses").fetchone()
+        try:
+            return datetime.fromisoformat(row[0]) if row and row[0] else None
+        except ValueError:
+            return None
+
     def courses(self) -> list[Course]:
         rows = self.db.execute("SELECT id, name, code, term FROM courses ORDER BY term, code")
         return [Course(r["id"], r["name"], r["code"], r["term"]) for r in rows]

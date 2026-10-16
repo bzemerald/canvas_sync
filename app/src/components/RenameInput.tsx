@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { t } from "../lib/i18n";
 
 /** In-place name editor: Enter or clicking away saves, Escape cancels. */
 export function RenameInput({ initial, onSubmit, onCancel, className = "" }: {
@@ -27,7 +28,7 @@ export function RenameInput({ initial, onSubmit, onCancel, className = "" }: {
     <input
       ref={input}
       defaultValue={initial}
-      aria-label="新名称"
+      aria-label={t("新名称")}
       onKeyDown={(e) => {
         e.stopPropagation(); // the list's own keys (arrows, Enter, Space) don't apply while typing
         if (e.key === "Enter") finish(true);

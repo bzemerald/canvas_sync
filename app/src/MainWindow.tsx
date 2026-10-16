@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, GraduationCap, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search,
-  Sparkles,
+  Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
@@ -14,13 +14,16 @@ import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { KIND } from "./components/Result";
 import { RenameDialog } from "./components/RenameDialog";
 import { RestoreDialog } from "./components/RestoreDialog";
+import { Settings } from "./components/Settings";
 import { Count } from "./components/Status";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
-import type { Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
+import { friendly } from "./lib/errors";
+import { t, tx } from "./lib/i18n";
 
 // A course is its own kind of place, not "a folder": it opens on an overview, with tabs for
 // its announcements, assignments, files, syllabus and pages. `path` is the folder the 文件
@@ -29,7 +32,8 @@ type View =
   | { kind: "home" }
   | { kind: "course"; id: number; tab: CourseTab; path: string; select?: string; item?: string }
   | { kind: "browse"; path: string; select?: string }
-  | { kind: "smart"; name: string };
+  | { kind: "smart"; name: string }
+  | { kind: "settings" };
 
 const SEASON: Record<string, number> = { winter: 0, spring: 1, summer: 2, fall: 3, autumn: 3 };
 
@@ -44,7 +48,7 @@ function termRank(term: string | null): number {
 function groupByTerm(list: Course[]): [string, Course[]][] {
   const groups = new Map<string, Course[]>();
   for (const c of list) {
-    const term = c.term_label ?? "无学期";
+    const term = c.term_label ?? t("无学期");
     groups.set(term, [...(groups.get(term) ?? []), c]);
   }
   return [...groups.entries()].sort(([a], [b]) => termRank(b) - termRank(a));
@@ -53,7 +57,7 @@ function groupByTerm(list: Course[]): [string, Course[]][] {
 const under = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(dir + "/");
 const RESTORABLE = new Set(["modified", "missing", "ignored"]);
 const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-const countLabel = (names: string[]) => (names.length === 1 ? names[0] : `${names.length} 项`);
+const countLabel = (names: string[]) => (names.length === 1 ? names[0] : t("{n} 项", { n: names.length }));
 
 export function MainWindow() {
   const [courseList, setCourseList] = useState<Course[]>([]);
@@ -63,6 +67,7 @@ export function MainWindow() {
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
   const [showDeleted, setShowDeleted] = usePref("showDeleted", false);
   const [sync, setSync] = useState<SyncState | null>(null);
+  const [account, setAccount] = useState<AccountInfo | null>(null);
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -72,7 +77,7 @@ export function MainWindow() {
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
-  const [renameDialog, setRenameDialog] = useState<{ path: string; what: string; current: string; hint?: string } | null>(null);
+  const [renameDialog, setRenameDialog] = useState<{ path: string; title: string; current: string; hint?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
@@ -98,7 +103,14 @@ export function MainWindow() {
     api.courses().then(setCourseList, (e) => setStartupError(String(e.message ?? e)));
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
-  useEffect(() => void api.syncState().then(setSync).catch(() => {}), []);
+  useEffect(() => void api.account().then(setAccount, () => {}), []);
+  const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
+  useEffect(() => {
+    void api.syncState().then((s) => {
+      finished.current = s.finished_at;
+      setSync(s);
+    }, () => {});
+  }, []);
   useEffect(() => {
     api.status().then((all) => {
       const counts: Record<number, number> = {};
@@ -113,14 +125,18 @@ export function MainWindow() {
     return () => void off.then((f) => f());
   }, []);
 
-  // While a sync runs, poll its progress; when it ends, reload what it changed.
+  // While a sync runs, poll its progress; when it ends, reload what it changed. Otherwise look
+  // now and then: the backend syncs by itself too (设置 → 自动同步).
   useEffect(() => {
-    if (!sync?.running) return;
     const timer = setInterval(async () => {
-      const next = await api.syncState();
+      const next = await api.syncState().catch(() => null);
+      if (!next) return;
       setSync(next);
-      if (!next.running) refresh();
-    }, 500);
+      if (!next.running && next.finished_at !== finished.current) {
+        finished.current = next.finished_at;
+        refresh();
+      }
+    }, sync?.running ? 500 : 15000);
     return () => clearInterval(timer);
   }, [sync?.running]);
 
@@ -133,6 +149,7 @@ export function MainWindow() {
       else if (command === "forward") step(1);
       else if (command === "search") searchBox.current?.focus();
       else if (command === "toggleDeleted") setShowDeleted(!showDeleted);
+      else if (command === "settings") go({ kind: "settings" });
       else return;
       e.preventDefault();
     };
@@ -203,7 +220,9 @@ export function MainWindow() {
   );
 
   // -- actions --------------------------------------------------------------------------
+  const signedOut = account !== null && !account.signed_in;
   const startSync = async (scope: Scope, label: string) => {
+    if (signedOut) return go({ kind: "settings" }); // sign in first
     setSyncLabel(label);
     try {
       setSync(await api.startSync(scope));
@@ -216,23 +235,23 @@ export function MainWindow() {
   const reveal = (path: string) => void api.openPath(path, { reveal: true });
 
   const say = (message: string) => setNotice(message);
-  const fail = (what: string) => (e: unknown) => say(`${what}：${friendly((e as Error).message)}`);
+  const fail = (what: string) => (e: unknown) => say(t("{what}：{why}", { what, why: friendly((e as Error).message) }));
 
   const isPinned = (path: string) => pinned.some((p) => p.type === "folder" && p.path === path);
   const isCoursePinned = (id: number) => pinned.some((p) => p.type === "course" && p.id === id);
   const coursePinItem = (c: Course): MenuItem =>
     isCoursePinned(c.id)
-      ? { label: "取消置顶", onSelect: () => api.unpinCourse(c.id).then(setPinned, fail("取消置顶失败")) }
-      : { label: "置顶", onSelect: () => api.pinCourse(c.id).then(setPinned, fail("置顶失败")) };
+      ? { label: t("取消置顶"), onSelect: () => api.unpinCourse(c.id).then(setPinned, fail(t("取消置顶失败"))) }
+      : { label: t("置顶"), onSelect: () => api.pinCourse(c.id).then(setPinned, fail(t("置顶失败"))) };
   const pinItem = (path: string): MenuItem =>
     isPinned(path)
-      ? { label: "取消置顶", onSelect: () => api.unpinFolder(path).then(setPinned, fail("取消置顶失败")) }
-      : { label: "置顶", onSelect: () => api.pinFolder(path).then(setPinned, fail("置顶失败")) };
+      ? { label: t("取消置顶"), onSelect: () => api.unpinFolder(path).then(setPinned, fail(t("取消置顶失败"))) }
+      : { label: t("置顶"), onSelect: () => api.pinFolder(path).then(setPinned, fail(t("置顶失败"))) };
   const moveItems = (item: PinnedItem): MenuItem[] => {
     const i = pinned.indexOf(item);
     return [
-      { label: "上移", disabled: i <= 0, onSelect: () => api.movePinned(i, i - 1).then(setPinned, fail("移动失败")) },
-      { label: "下移", disabled: i >= pinned.length - 1, onSelect: () => api.movePinned(i, i + 1).then(setPinned, fail("移动失败")) },
+      { label: t("上移"), disabled: i <= 0, onSelect: () => api.movePinned(i, i - 1).then(setPinned, fail(t("移动失败"))) },
+      { label: t("下移"), disabled: i >= pinned.length - 1, onSelect: () => api.movePinned(i, i + 1).then(setPinned, fail(t("移动失败"))) },
     ];
   };
 
@@ -256,69 +275,69 @@ export function MainWindow() {
       });
       refresh();
     } catch (e) {
-      fail("重命名失败")(e);
+      fail(t("重命名失败"))(e);
     }
   };
 
   const askDelete = (paths: string[], names: string[]) => paths.length > 0 && setDeleting({ paths, label: countLabel(names) });
   const untrack = (paths: string[], names: string[]) =>
     api.untrack(paths).then(() => {
-      say(`已停止同步 ${countLabel(names)}：文件留在原处，现在是你自己的了`);
+      say(t("已停止同步 {what}：文件留在原处，现在是你自己的了", { what: countLabel(names) }));
       refresh();
-    }, fail("停止同步失败"));
+    }, fail(t("停止同步失败")));
   const track = (paths: string[], names: string[]) =>
     api.track(paths).then(() => {
-      say(`已恢复同步 ${countLabel(names)}，下次同步时会更新`);
+      say(t("已恢复同步 {what}，下次同步时会更新", { what: countLabel(names) }));
       refresh();
-    }, fail("恢复同步失败"));
+    }, fail(t("恢复同步失败")));
   const deleteItem = (e: Entry): MenuItem => ({
-    label: `移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy, onSelect: () => askDelete([e.path], [e.name]),
+    label: t("移到{trash}…", { trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy, onSelect: () => askDelete([e.path], [e.name]),
   });
   const restoreScope = (e: Entry): Scope => (e.type === "dir" ? { paths: [e.path] } : { file_ids: [e.file_id!] });
 
   const entryMenu = (e: Entry): MenuItem[] => {
     if (e.deleted) {
       return [
-        { label: "恢复…", onSelect: () => setRestoring({ scope: restoreScope(e), label: e.name }) },
-        ...(e.url ? [{ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(e.url!) }] : []),
+        { label: t("恢复…"), onSelect: () => setRestoring({ scope: restoreScope(e), label: e.name }) },
+        ...(e.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) }] : []),
       ];
     }
     if (e.type === "dir") {
       return [
-        { label: "打开", hint: shortcut.open, onSelect: () => goPath(e.path) },
-        { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
+        { label: t("打开"), hint: shortcut.open, onSelect: () => goPath(e.path) },
+        { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
         "separator",
         // A course's own folder (seen in 全部文件) pins the course.
         ...(() => {
           const c = courseList.find((x) => x.id === e.course_id && x.dir === e.path);
           return [c ? coursePinItem(c) : pinItem(e.path)];
         })(),
-        { label: "重命名…", hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
+        { label: t("重命名…"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
         "separator",
-        { label: "从 Canvas 同步此文件夹", disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
-        { label: "恢复此文件夹的原版…", disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
+        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
+        { label: t("恢复此文件夹的原版…"), disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
         e.skipped
-          ? { label: "恢复同步此文件夹", disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
-          : { label: "停止同步此文件夹（保留文件）", disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
+          ? { label: t("恢复同步此文件夹"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
+          : { label: t("停止同步此文件夹（保留文件）"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
         "separator",
         deleteItem(e),
       ];
     }
     const items: MenuItem[] = [
-      { label: "打开", hint: shortcut.open, onSelect: () => void api.openPath(e.path) },
-      ...(isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(e.path, { preview: true }) }] : []),
-      { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
+      { label: t("打开"), hint: shortcut.open, onSelect: () => void api.openPath(e.path) },
+      ...(isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void api.openPath(e.path, { preview: true }) }] : []),
+      { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
     ];
-    if (e.url) items.push({ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(e.url!) });
-    if (e.link) items.push({ label: "显示原始文件", onSelect: () => goPath(parentOf(e.link!), e.link!) });
+    if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
+    if (e.link) items.push({ label: t("显示原始文件"), onSelect: () => goPath(parentOf(e.link!), e.link!) });
     if (e.states.includes("untracked")) {
-      items.push("separator", { label: "恢复同步", disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
+      items.push("separator", { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
     } else if (e.file_id !== null) {
       items.push(
         "separator",
-        { label: "从 Canvas 同步", disabled: syncBusy, onSelect: () => startSync({ file_ids: [e.file_id!] }, e.name) },
-        { label: "恢复 Canvas 原版…", disabled: !e.states.includes("modified"), onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) },
-        { label: "停止同步（保留文件）", disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
+        { label: t("从 Canvas 同步"), disabled: syncBusy, onSelect: () => startSync({ file_ids: [e.file_id!] }, e.name) },
+        { label: t("恢复 Canvas 原版…"), disabled: !e.states.includes("modified"), onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) },
+        { label: t("停止同步（保留文件）"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
       );
     }
     items.push("separator", deleteItem(e));
@@ -337,14 +356,14 @@ export function MainWindow() {
       file_ids: es.filter((e) => e.type === "file" && e.file_id !== null).map((e) => e.file_id!),
     };
     return [
-      { label: `打开 ${files.length} 个文件`, disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
+      { label: t("打开 {n} 个文件", { n: files.length }), disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
       "separator",
-      { label: "从 Canvas 同步", disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
-      { label: "恢复原版…", onSelect: () => setRestoring({ scope, label }) },
-      { label: "停止同步（保留文件）", disabled: syncBusy || !synced.length, onSelect: () => void untrack(synced.map((e) => e.path), synced.map((e) => e.name)) },
+      { label: t("从 Canvas 同步"), disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
+      { label: t("恢复原版…"), onSelect: () => setRestoring({ scope, label }) },
+      { label: t("停止同步（保留文件）"), disabled: syncBusy || !synced.length, onSelect: () => void untrack(synced.map((e) => e.path), synced.map((e) => e.name)) },
       "separator",
       {
-        label: `把 ${countLabel(live.map((e) => e.name))} 移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy || !live.length,
+        label: t("把 {what} 移到{trash}…", { what: countLabel(live.map((e) => e.name)), trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy || !live.length,
         onSelect: () => askDelete(live.map((e) => e.path), live.map((e) => e.name)),
       },
     ];
@@ -353,44 +372,44 @@ export function MainWindow() {
   const hitsMenu = (hs: Hit[]): MenuItem[] => {
     const onDisk = hs.filter((h) => h.path);
     const del: MenuItem = {
-      label: `${hs.length > 1 ? `把 ${onDisk.length} 个文件` : ""}移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy || !onDisk.length,
+      label: hs.length > 1 ? t("把 {n} 个文件移到{trash}…", { n: onDisk.length, trash: trashName }) : t("移到{trash}…", { trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy || !onDisk.length,
       onSelect: () => askDelete(onDisk.map((h) => h.path!), onDisk.map((h) => h.title)),
     };
     if (hs.length > 1) {
-      return [{ label: `打开 ${hs.length} 项`, onSelect: () => hs.slice(0, 20).forEach(openHere) }, "separator", del];
+      return [{ label: t("打开 {n} 项", { n: hs.length }), onSelect: () => hs.slice(0, 20).forEach(openHere) }, "separator", del];
     }
     const h = hs[0];
     return [
-      { label: "打开", hint: shortcut.open, onSelect: () => openHere(h) },
-      ...(h.path && isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
+      { label: t("打开"), hint: shortcut.open, onSelect: () => openHere(h) },
+      ...(h.path && isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
       ...(h.path
         ? [
-            { label: "在文件夹中显示", onSelect: () => goPath(parentOf(h.path!), h.path!) },
-            { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(h.path!) },
+            { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(h.path!), h.path!) },
+            { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(h.path!) },
           ]
         : []),
-      ...(h.url ? [{ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(h.url!) }] : []),
+      ...(h.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(h.url!) }] : []),
       ...(h.path ? ["separator" as const, del] : []),
     ];
   };
 
   const courseMenu = (c: Course): MenuItem[] => [
-    { label: "打开", onSelect: () => openCourse(c) },
-    { label: "查看文件", onSelect: () => openCourse(c, "files") },
-    { label: "在 Canvas 中打开", onSelect: () => void api.openUrl(`/courses/${c.id}`) },
-    { label: `在 ${fileManager} 中显示课程文件`, onSelect: () => reveal(c.dir) },
+    { label: t("打开"), onSelect: () => openCourse(c) },
+    { label: t("查看文件"), onSelect: () => openCourse(c, "files") },
+    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
+    { label: t("在 {app} 中显示课程文件", { app: fileManager }), onSelect: () => reveal(c.dir) },
     "separator",
-    { label: "从 Canvas 同步此课程", disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },
-    { label: "恢复此课程的原版…", disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
+    { label: t("从 Canvas 同步此课程"), disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },
+    { label: t("恢复此课程的原版…"), disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
     "separator",
     coursePinItem(c),
     {
-      label: "重命名课程…", disabled: syncBusy,
-      onSelect: () => setRenameDialog({ path: c.dir, what: "课程", current: c.label, hint: "只改在这里显示的名字，同步不受影响。" }),
+      label: t("重命名课程…"), disabled: syncBusy,
+      onSelect: () => setRenameDialog({ path: c.dir, title: t("重命名课程"), current: c.label, hint: t("只改在这里显示的名字，同步不受影响。") }),
     },
-    ...(c.renamed ? [{ label: `恢复原名（${c.default_name}）`, disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
+    ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.default_name }), disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
     "separator",
-    { label: "新建智能文件夹（限此课程）…", onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
+    { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
   ];
 
   const termMenu = (term: string, list: Course[]): MenuItem[] => {
@@ -398,17 +417,17 @@ export function MainWindow() {
     const parents = [...new Set(list.map((c) => parentOf(c.dir)))];
     const termDir = parents.length === 1 && parents[0] ? parents[0] : null;
     return [
-      { label: `从 Canvas 同步 ${term}`, disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
-      { label: `恢复 ${term} 的原版…`, disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
+      { label: t("从 Canvas 同步 {term}", { term }), disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
+      { label: t("恢复 {term} 的原版…", { term }), disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
       ...(termDir
         ? [
             "separator" as const,
             {
-              label: "重命名学期…", disabled: syncBusy,
-              onSelect: () => setRenameDialog({ path: termDir, what: "学期", current: term, hint: "只改在这里显示的名字，同步不受影响。" }),
+              label: t("重命名学期…"), disabled: syncBusy,
+              onSelect: () => setRenameDialog({ path: termDir, title: t("重命名学期"), current: term, hint: t("只改在这里显示的名字，同步不受影响。") }),
             },
             ...(list[0].term && list[0].term !== term
-              ? [{ label: `恢复原名（${list[0].term}）`, disabled: syncBusy, onSelect: () => void renameFolder(termDir, list[0].term!) }]
+              ? [{ label: t("恢复原名（{name}）", { name: list[0].term! }), disabled: syncBusy, onSelect: () => void renameFolder(termDir, list[0].term!) }]
               : []),
           ]
         : []),
@@ -416,31 +435,31 @@ export function MainWindow() {
   };
 
   const pinnedFolderMenu = (item: PinnedItem & { type: "folder" }): MenuItem[] => [
-    { label: "打开", disabled: !item.exists, onSelect: () => goPath(item.path) },
-    { label: `在 ${fileManager} 中显示`, disabled: !item.exists, onSelect: () => reveal(item.path) },
+    { label: t("打开"), disabled: !item.exists, onSelect: () => goPath(item.path) },
+    { label: t("在 {app} 中显示", { app: fileManager }), disabled: !item.exists, onSelect: () => reveal(item.path) },
     {
-      label: "重命名…", disabled: !item.exists || syncBusy,
-      onSelect: () => setRenameDialog({ path: item.path, what: "文件夹", current: item.path.split("/").pop() ?? "" }),
+      label: t("重命名…"), disabled: !item.exists || syncBusy,
+      onSelect: () => setRenameDialog({ path: item.path, title: t("重命名文件夹"), current: item.path.split("/").pop() ?? "" }),
     },
     "separator",
     ...moveItems(item),
     "separator",
-    { label: "取消置顶", onSelect: () => api.unpinFolder(item.path).then(setPinned, fail("取消置顶失败")) },
+    { label: t("取消置顶"), onSelect: () => api.unpinFolder(item.path).then(setPinned, fail(t("取消置顶失败"))) },
   ];
 
   const pinnedCourseMenu = (item: PinnedItem & { type: "course" }): MenuItem[] => {
     const c = courseList.find((x) => x.id === item.id);
-    const unpinIt: MenuItem = { label: "取消置顶", onSelect: () => api.unpinCourse(item.id).then(setPinned, fail("取消置顶失败")) };
+    const unpinIt: MenuItem = { label: t("取消置顶"), onSelect: () => api.unpinCourse(item.id).then(setPinned, fail(t("取消置顶失败"))) };
     return c ? [...courseMenu(c), "separator", ...moveItems(item)] : [...moveItems(item), "separator", unpinIt];
   };
 
   const smartMenu = (f: PinnedItem & { type: "smart" }): MenuItem[] => [
-    { label: "编辑…", onSelect: () => setEditing({ folder: f }) },
+    { label: t("编辑…"), onSelect: () => setEditing({ folder: f }) },
     "separator",
     ...moveItems(f),
     "separator",
     {
-      label: "删除智能文件夹", danger: true,
+      label: t("删除智能文件夹"), danger: true,
       onSelect: async () => {
         setPinned(await api.deleteSmartFolder(f.name));
         if (view.kind === "smart" && view.name === f.name) go({ kind: "home" });
@@ -451,11 +470,11 @@ export function MainWindow() {
   const addMenu = (): MenuItem[] => {
     const here: MenuItem[] = [];
     if (course && browsing === course.dir && !isCoursePinned(course.id)) {
-      here.push({ label: `置顶此课程（${course.label}）`, onSelect: () => api.pinCourse(course.id).then(setPinned, fail("置顶失败")) });
+      here.push({ label: t("置顶此课程（{label}）", { label: course.label }), onSelect: () => api.pinCourse(course.id).then(setPinned, fail(t("置顶失败"))) });
     } else if (browsing && !isPinned(browsing)) {
-      here.push({ label: `置顶当前文件夹（${browsing.split("/").pop()}）`, onSelect: () => api.pinFolder(browsing).then(setPinned, fail("置顶失败")) });
+      here.push({ label: t("置顶当前文件夹（{name}）", { name: browsing.split("/").pop()! }), onSelect: () => api.pinFolder(browsing).then(setPinned, fail(t("置顶失败"))) });
     }
-    return [{ label: "新建智能文件夹…", onSelect: () => setEditing({ folder: null }) }, ...here];
+    return [{ label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) }, ...here];
   };
 
   if (startupError) return <StartupError message={startupError} />;
@@ -470,24 +489,30 @@ export function MainWindow() {
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h1 className="text-sm font-semibold">Canvas Sync</h1>
           <button
-            onClick={() => startSync({}, "全部课程")}
+            onClick={() => startSync({}, t("全部课程"))}
             disabled={syncBusy}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-fg-soft hover:bg-chip disabled:opacity-60"
-            title="从 Canvas 拉取所有课程的新文件"
+            title={t("从 Canvas 拉取所有课程的新文件")}
           >
             <RefreshCw className={`size-3.5 ${syncBusy ? "animate-spin" : ""}`} aria-hidden />
-            同步
+            {t("同步")}
           </button>
         </div>
-        <SyncStatus sync={sync} label={syncLabel} />
+        {signedOut ? (
+          <button onClick={() => go({ kind: "settings" })} className="mx-4 mb-2 rounded-md bg-warn-soft px-2.5 py-2 text-left text-xs text-warn hover:opacity-90">
+            {t("还没有登录 Canvas，不能同步。点这里登录。")}
+          </button>
+        ) : (
+          <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })} />
+        )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title="搜索" />
-          <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title="全部文件" />
+          <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("搜索")} />
+          <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
-          <SectionHeader title="置顶" action={{ label: "添加到置顶", icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
+          <SectionHeader title={t("置顶")} action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
           {pinned.length === 0 && (
             <p className="px-2 py-1 text-xs leading-relaxed text-muted">
-              右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。
+              {t("右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。")}
             </p>
           )}
           {pinned.map((item) => {
@@ -497,8 +522,8 @@ export function MainWindow() {
                 <NavItem
                   key={`course:${item.id}`}
                   icon={<GraduationCap className="size-4" />}
-                  title={c?.label ?? `课程 #${item.id}`}
-                  subtitle={c ? (c.term_label ?? undefined) : "找不到这门课了"}
+                  title={c?.label ?? t("课程 #{id}", { id: item.id })}
+                  subtitle={c ? (c.term_label ?? undefined) : t("找不到这门课了")}
                   count={c?.new}
                   muted={!c}
                   active={course?.id === item.id && !pinnedHere}
@@ -513,7 +538,7 @@ export function MainWindow() {
                   key={`folder:${item.path}`}
                   icon={<Folder className="size-4" />}
                   title={item.path.split("/").pop() ?? item.path}
-                  subtitle={item.exists ? pinnedWhere(item, courseList) : "找不到这个文件夹了"}
+                  subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件夹了")}
                   muted={!item.exists}
                   active={browsing === item.path}
                   onClick={() => item.exists && goPath(item.path)}
@@ -533,16 +558,19 @@ export function MainWindow() {
             );
           })}
 
+          {courseList.length === 0 && !signedOut && (
+            <p className="px-2 py-3 text-xs leading-relaxed text-muted">{sync?.running ? t("正在第一次同步，课程马上就会出现在这里。") : t("还没有课程。点上面的“同步”从 Canvas 拉取。")}</p>
+          )}
           {groupByTerm(courseList).map(([term, list]) => (
             <section key={term}>
-              <SectionHeader title={term} action={{ label: `${term} 的操作`, icon: <MoreHorizontal className="size-3.5" />, onClick: (x, y) => openMenu(termMenu(term, list), x, y) }} onMenu={(x, y) => openMenu(termMenu(term, list), x, y)} />
+              <SectionHeader title={term} action={{ label: t("{term} 的操作", { term }), icon: <MoreHorizontal className="size-3.5" />, onClick: (x, y) => openMenu(termMenu(term, list), x, y) }} onMenu={(x, y) => openMenu(termMenu(term, list), x, y)} />
               {list.map((c) => (
                 <NavItem
                   key={c.id}
                   title={c.label}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
-                  badge={changes[c.id] ? `${changes[c.id]} 个文件有本地改动` : undefined}
+                  badge={changes[c.id] ? t("{n} 个文件有本地改动", { n: changes[c.id] }) : undefined}
                   count={c.new}
                   onClick={() => openCourse(c)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
@@ -551,13 +579,16 @@ export function MainWindow() {
             </section>
           ))}
         </nav>
+        <div className="border-t border-line px-2 py-2">
+          <NavItem icon={<SettingsIcon className="size-4" />} active={view.kind === "settings"} onClick={() => go({ kind: "settings" })} title={t("设置")} />
+        </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
           <div className="flex shrink-0">
-            <ToolButton title={`后退 (${shortcut.back})`} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
-            <ToolButton title={`前进 (${shortcut.forward})`} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
+            <ToolButton title={t("后退 ({back})", { back: shortcut.back })} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
+            <ToolButton title={t("前进 ({forward})", { forward: shortcut.forward })} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
           </div>
           <div className="min-w-0 flex-1">
             {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goPath} />}
@@ -569,39 +600,40 @@ export function MainWindow() {
               />
             )}
             {view.kind === "smart" && folder && <SmartTitle folder={folder} courses={courseList} />}
-            {view.kind === "home" && <span className="text-sm font-medium">搜索所有课程</span>}
+            {view.kind === "home" && <span className="text-sm font-medium">{t("搜索所有课程")}</span>}
+            {view.kind === "settings" && <span className="text-sm font-medium">{t("设置")}</span>}
           </div>
-          {view.kind !== "home" && (
+          {view.kind !== "home" && view.kind !== "settings" && (
             <>
               {filesView && (
-                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? `在 ${course.label} 中搜索` : "搜索"} compact />
+                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? t("在 {label} 中搜索", { label: course.label }) : t("搜索")} compact />
               )}
               {(filesTab || view.kind === "smart" || searching) && (
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
-                  <ToolButton title="列表" pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
-                  <ToolButton title="图标" pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
+                  <ToolButton title={t("列表")} pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
+                  <ToolButton title={t("图标")} pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
                 </div>
               )}
               {filesTab && !searching && (
                 <>
                   <ToolButton
-                    title={`${showDeleted ? "隐藏你删除的文件" : "显示你删除的文件"}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
+                    title={`${showDeleted ? t("隐藏你删除的文件") : t("显示你删除的文件")}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
                     pressed={showDeleted}
                     onClick={() => setShowDeleted(!showDeleted)}
                   >
                     {showDeleted ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                   </ToolButton>
                   <ToolButton
-                    title="此文件夹的操作"
+                    title={t("此文件夹的操作")}
                     onClick={(ev) => {
                       const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
                       const here = browsing ?? "";
-                      const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : "全部文件";
+                      const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : t("全部文件");
                       openMenu([
-                        { label: "从 Canvas 同步此文件夹", disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, "全部课程")) },
-                        { label: "恢复此文件夹的原版…", onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
-                        { label: `在 ${fileManager} 中显示`, onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
-                        ...(course ? ["separator" as const, { label: "在 Canvas 中打开这门课", onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : []),
+                        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
+                        { label: t("恢复此文件夹的原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
+                        { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
+                        ...(course ? ["separator" as const, { label: t("在 Canvas 中打开这门课"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : []),
                       ], r.right - 200, r.bottom + 4);
                     }}
                   >
@@ -610,7 +642,7 @@ export function MainWindow() {
                 </>
               )}
               {view.kind === "smart" && folder && (
-                <Button onClick={() => setEditing({ folder })} className="shrink-0 text-xs">编辑</Button>
+                <Button onClick={() => setEditing({ folder })} className="shrink-0 text-xs">{t("编辑")}</Button>
               )}
             </>
           )}
@@ -618,7 +650,7 @@ export function MainWindow() {
 
         {view.kind === "home" && (
           <div className="border-b border-line px-6 py-3">
-            <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder="搜索所有课程… 例如 221 mt" autoFocus />
+            <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />
           </div>
         )}
 
@@ -627,11 +659,13 @@ export function MainWindow() {
             tab={view.tab}
             overview={overview}
             onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })}
-            onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail("标记失败"))}
+            onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
           />
         )}
 
-        {view.kind === "course" && course && !searching && view.tab === "overview" ? (
+        {view.kind === "settings" ? (
+          <Settings sync={sync} onSync={() => void startSync({}, t("全部课程"))} onAccount={(a) => (setAccount(a), refresh())} />
+        ) : view.kind === "course" && course && !searching && view.tab === "overview" ? (
           <CourseOverview
             course={course}
             overview={overview}
@@ -698,7 +732,7 @@ export function MainWindow() {
       {renameDialog && (
         <RenameDialog
           current={renameDialog.current}
-          what={renameDialog.what}
+          title={renameDialog.title}
           hint={renameDialog.hint}
           onClose={() => setRenameDialog(null)}
           onSubmit={(name) => void renameFolder(renameDialog.path, name)}
@@ -711,7 +745,7 @@ export function MainWindow() {
           label={deleting.label}
           onClose={() => setDeleting(null)}
           onDone={() => {
-            say(`已移到${trashName}：${deleting.label}`);
+            say(t("已移到{trash}：{label}", { trash: trashName, label: deleting.label }));
             setDeleting(null);
             refresh();
           }}
@@ -752,18 +786,7 @@ function pinnedWhere(item: { path: string; course_id: number | null }, courses: 
   const c = courses.find((x) => x.id === item.course_id);
   if (c && item.path === c.dir) return c.term_label ?? "";
   if (c) return c.label;
-  return parentOf(item.path) || "全部文件";
-}
-
-/** Backend messages, said the way the rest of the app talks. */
-function friendly(message: string): string {
-  if (/does not exist/.test(message)) return "找不到这个文件了（可能已经在别处删除或移动）";
-  if (/can't be changed/.test(message)) return "这个不能改";
-  if (/already exists/.test(message)) return "这里已经有同名的文件夹了";
-  if (/empty or start with a dot/.test(message)) return "名称不能为空，也不能以“.”开头";
-  if (/wait for the sync/.test(message)) return "正在同步，等同步完成再试";
-  if (/can't be renamed/.test(message)) return "这个文件夹不能重命名";
-  return message;
+  return parentOf(item.path) || t("全部文件");
 }
 
 /** A short message at the bottom of the window that goes away by itself. */
@@ -805,7 +828,7 @@ function Results({ view, mode, query, results, showCourse, onOpen, onMenu, onDel
     <>
       {hits.length > 0 && Object.keys(counts).length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1.5 px-2 text-xs">
-          <Chip active={!kind} onClick={() => setKind(null)}>全部 {hits.length}</Chip>
+          <Chip active={!kind} onClick={() => setKind(null)}>{t("全部")} {hits.length}</Chip>
           {(Object.keys(KIND) as Kind[]).filter((k) => counts[k]).map((k) => (
             <Chip key={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)}>{KIND[k].label} {counts[k]}</Chip>
           ))}
@@ -813,7 +836,7 @@ function Results({ view, mode, query, results, showCourse, onOpen, onMenu, onDel
       )}
       {error && <p className="px-2 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
       {!error && !asked && view.kind === "home" && <Welcome />}
-      {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">没有结果</p>}
+      {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
     </>
   );
   return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onMenu={onMenu} onDelete={onDelete} />;
@@ -844,7 +867,7 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
 }
 
 /** Where you are. In a course it starts at the course (its name, not where its files live). */
-function Breadcrumb({ path, root = { path: "", label: "全部文件" }, onGo }: {
+function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, onGo }: {
   path: string;
   root?: { path: string; label: string };
   onGo: (p: string) => void;
@@ -853,7 +876,7 @@ function Breadcrumb({ path, root = { path: "", label: "全部文件" }, onGo }: 
   const parts = rest ? rest.split("/") : [];
   const prefix = root.path ? root.path + "/" : "";
   return (
-    <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label="位置">
+    <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
       <button onClick={() => onGo(root.path)} className={`shrink-0 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>{root.label}</button>
       {parts.map((p, i) => (
         <span key={i} className="flex min-w-0 items-center gap-0.5">
@@ -874,9 +897,9 @@ function SmartTitle({ folder, courses }: { folder: SmartFolder; courses: Course[
   const names = folder.courses.map((id) => courses.find((c) => c.id === id)?.label ?? `#${id}`);
   const bits = [
     folder.query && `“${folder.query}”`,
-    names.length ? names.join("、") : "所有课程",
-    folder.kinds.length ? folder.kinds.map((k) => KIND[k].label).join("、") : "",
-    folder.content ? "含正文" : "只看名称",
+    names.length ? names.join(t("、")) : t("所有课程"),
+    folder.kinds.length ? folder.kinds.map((k) => KIND[k].label).join(t("、")) : "",
+    folder.content ? t("含正文") : t("只看名称"),
   ].filter(Boolean);
   return (
     <div className="flex min-w-0 items-baseline gap-2">
@@ -910,11 +933,11 @@ function NavItem({ icon, title, subtitle, active, badge, count, muted, onClick, 
           {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
         </span>
         {badge && <span title={badge} aria-label={badge} className="size-1.5 shrink-0 rounded-full bg-warn group-hover:hidden" />}
-        {!!count && <span className="group-hover:hidden"><Count n={count} label={`${count} 个新的`} /></span>}
+        {!!count && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
       </button>
       {onMenu && (
         <button
-          aria-label={`${title} 的操作`}
+          aria-label={t("{title} 的操作", { title })}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             onMenu(r.left, r.bottom + 2);
@@ -990,21 +1013,28 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 
 const PHASE: Record<SyncState["phase"], string> = {
   idle: "",
-  checking: "正在检查 Canvas…",
-  downloading: "正在下载",
-  indexing: "正在建立搜索索引",
-  done: "已同步",
-  failed: "同步失败",
+  checking: t("正在检查 Canvas…"),
+  downloading: t("正在下载"),
+  indexing: t("正在建立搜索索引"),
+  done: t("已同步"),
+  failed: t("同步失败"),
 };
 
-const CHANGE: Record<string, string> = {
-  download: "新文件", update: "更新", conflict: "冲突", move: "移动", ignore: "不再同步", remote_deleted: "已从 Canvas 删除", delete: "删除", pin: "记住新位置",
+const CHANGE: Record<string, (n: number) => string> = {
+  download: (n) => t("{n} 个新文件", { n }),
+  update: (n) => t("{n} 个更新", { n }),
+  conflict: (n) => t("{n} 个冲突", { n }),
+  move: (n) => t("移动了 {n} 个", { n }),
+  ignore: (n) => t("{n} 个不再同步", { n }),
+  remote_deleted: (n) => t("{n} 个已从 Canvas 删除", { n }),
+  delete: (n) => t("删除了 {n} 个", { n }),
+  pin: (n) => t("记住了 {n} 个新位置", { n }),
 };
 
-function SyncStatus({ sync, label }: { sync: SyncState | null; label: string }) {
+function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: string; onFix: () => void }) {
   if (!sync || sync.phase === "idle") return null;
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
-  const changes = Object.entries(sync.changes).map(([k, n]) => `${n} ${CHANGE[k] ?? k}`).join("，");
+  const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t("，"));
   return (
     <div className="mx-4 mb-2 rounded-md bg-chip px-2.5 py-2 text-xs text-fg-soft">
       <div className="flex justify-between gap-2">
@@ -1019,10 +1049,13 @@ function SyncStatus({ sync, label }: { sync: SyncState | null; label: string }) 
         </div>
       )}
       {sync.running && sync.current && <p className="mt-1 truncate text-muted">{sync.current.split("/").pop()}</p>}
-      {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || "没有新内容"}</p>}
+      {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || t("没有新内容")}</p>}
       {sync.errors.slice(0, 3).map((e) => (
         <p key={e} className="mt-1 break-words text-danger">{e}</p>
       ))}
+      {sync.errors.some((e) => /401|token/i.test(e)) && (
+        <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌可能过期了，到设置里更换")}</button>
+      )}
     </div>
   );
 }
@@ -1030,24 +1063,27 @@ function SyncStatus({ sync, label }: { sync: SyncState | null; label: string }) 
 function Welcome() {
   return (
     <div className="mx-auto max-w-md px-2 py-16 text-sm text-muted">
-      <p className="mb-4 text-base text-fg">在任何地方按 <kbd className="rounded border border-line bg-chip px-1.5">{isMac ? "⌘⇧Space" : "Ctrl+Shift+Space"}</kbd> 快速搜索。</p>
-      <p>输入课程名加关键词，例如 <code className="text-fg-soft">221 mt</code>、<code className="text-fg-soft">cs70 hw3 sol</code>、<code className="text-fg-soft">期中</code>。缩写会自动展开：mt = midterm，hw = homework，sol = solution。</p>
-      <p className="mt-3">左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。</p>
+      <p className="mb-4 text-base text-fg">
+        {tx("在任何地方按 {key} 快速搜索。", { key: <kbd className="rounded border border-line bg-chip px-1.5">{shortcut.launcher}</kbd> })}
+      </p>
+      <p>
+        {tx("输入课程名加关键词，例如 {a}、{b}、{c}。缩写会自动展开：mt = midterm，hw = homework，sol = solution。", {
+          a: <code className="text-fg-soft">221 mt</code>,
+          b: <code className="text-fg-soft">cs70 hw3 sol</code>,
+          c: <code className="text-fg-soft">{t("期中")}</code>,
+        })}
+      </p>
+      <p className="mt-3">{t("左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。")}</p>
     </div>
   );
 }
 
-function StartupError({ message }: { message: string }) {
-  const notSetUp = /not set up|canvas init/i.test(message);
+export function StartupError({ message }: { message: string }) {
   return (
     <div className="flex h-screen items-center justify-center bg-bg p-8 text-fg">
       <div className="max-w-lg">
-        <h1 className="mb-2 text-lg font-semibold">{notSetUp ? "还没有连接 Canvas" : "后台服务没有启动"}</h1>
-        {notSetUp ? (
-          <p className="text-sm text-fg-soft">先在终端运行 <code>canvas init</code> 和 <code>canvas pull</code>，然后重新打开应用。</p>
-        ) : (
-          <pre className="overflow-auto rounded-md bg-chip p-3 text-xs whitespace-pre-wrap text-danger">{message}</pre>
-        )}
+        <h1 className="mb-2 text-lg font-semibold">{t("后台服务没有启动")}</h1>
+        <pre className="overflow-auto rounded-md bg-chip p-3 text-xs whitespace-pre-wrap text-danger">{message}</pre>
       </div>
     </div>
   );

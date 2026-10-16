@@ -58,7 +58,7 @@ def tools(state: State, course_id: int) -> list[dict[str, Any]]:
     for t in sorted(state.tabs(course_id), key=lambda t: t.get("position") or 0):
         m = re.fullmatch(r"context_external_tool_(\d+)", str(t.get("id") or ""))
         if t.get("type") == "external" and m and not t.get("hidden"):
-            out.append({"id": int(m[1]), "label": t.get("label") or "外部工具", "url": relative_url(t.get("html_url"))})
+            out.append({"id": int(m[1]), "label": t.get("label") or None, "url": relative_url(t.get("html_url"))})
     return out
 
 

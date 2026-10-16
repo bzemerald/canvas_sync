@@ -1,5 +1,6 @@
 // Talks to the Python backend (`canvas serve`) that the shell starts for us.
 import { invoke } from "@tauri-apps/api/core";
+import type { LangPref } from "./i18n";
 
 export type Kind = "file" | "page" | "assignment" | "announcement" | "syllabus";
 
@@ -51,7 +52,7 @@ export interface ItemSummary {
 /** An external tool in the course's menu (Gradescope, Ed, Zoom…). */
 export interface Tool {
   id: number;
-  label: string;
+  label: string | null;
   url: string | null; // its page on Canvas
 }
 
@@ -199,6 +200,23 @@ export interface SyncState {
   errors: string[];
   warnings: string[];
   finished_at: string | null;
+  last_synced?: string | null; // when a sync last finished, this run of the app or before
+}
+
+/** The app's preferences (this computer's), and which courses the sync folder syncs. */
+export interface Prefs {
+  language: LangPref;
+  auto_sync: number; // minutes between automatic syncs; 0: off
+  sync_on_launch: boolean;
+  select?: "active" | "favorites"; // (once an account is set up)
+}
+
+export interface AccountInfo {
+  set_up: boolean; // false: show the sign-in
+  signed_in: boolean; // a token is saved
+  base_url: string | null;
+  root: string | null; // the sync folder
+  user: string | null; // your name on Canvas
 }
 
 interface Backend {
@@ -262,7 +280,7 @@ export async function media(url: string): Promise<string | null> {
   });
   return res.ok ? URL.createObjectURL(await res.blob()) : null;
 }
-export const health = () => api<{ root: string; canvas: string }>("/health");
+export const health = () => api<{ root: string | null; canvas: string | null; set_up: boolean; version: string }>("/health");
 export const status = () => api<FileStatus[]>("/status");
 export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
 
@@ -330,9 +348,21 @@ export function openExternal(url: string) {
   return api("/open", { method: "POST", body: JSON.stringify({ external: url }) });
 }
 
-let canvasBase: Promise<string> | null = null;
+let canvasBase: Promise<string | null> | null = null;
 /** The Canvas site's address, e.g. https://bcourses.berkeley.edu */
 export const canvasSite = () => (canvasBase ??= health().then((h) => h.canvas));
+
+export const prefs = () => api<Prefs>("/prefs");
+export const setPrefs = (changes: Partial<Prefs>) => post<Prefs>("/prefs", changes);
+export const account = () => api<AccountInfo>("/account");
+/** Whether the saved token still works (asks Canvas). */
+export const checkAccount = () => api<{ ok: boolean; user?: string; error?: string }>("/account/check");
+/** Sign in (or switch account / school): checks the token, then starts the first sync. */
+export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
+export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
+export const signOut = () => post<AccountInfo>("/account/signout", {});
+/** The sync folder's config.toml, in a text editor. */
+export const openConfig = () => post<{ opened: string }>("/open/config", {});
 
 /** Open a result: the local file if we have one, else its Canvas page in the browser. */
 export function openHit(hit: Hit, reveal = false) {
