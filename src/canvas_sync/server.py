@@ -121,6 +121,8 @@ class PrefsRequest(BaseModel):
     language: str | None = None
     auto_sync: int | None = None
     sync_on_launch: bool | None = None
+    tab_order: list[str] | None = None
+    hidden_tabs: list[str] | None = None
     select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
 
 

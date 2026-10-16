@@ -211,6 +211,8 @@ export interface Prefs {
   language: LangPref;
   auto_sync: number; // minutes between automatic syncs; 0: off
   sync_on_launch: boolean;
+  tab_order?: string[]; // a course's tabs, as you dragged them
+  hidden_tabs?: string[];
   select?: "active" | "favorites"; // (once an account is set up)
 }
 

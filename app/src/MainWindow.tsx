@@ -7,7 +7,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
+import {
+  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, arrangeTabs, useOverview, type CourseTab,
+} from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
@@ -99,6 +101,7 @@ export function MainWindow() {
   const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
   const [hiding, setHiding] = useState<Course | null>(null);
   const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
+  const [tabs, setTabs] = useState<{ order: CourseTab[]; hidden: CourseTab[] }>({ order: arrangeTabs([]), hidden: [] });
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -136,6 +139,9 @@ export function MainWindow() {
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
+  useEffect(() => {
+    void api.prefs().then((p) => setTabs({ order: arrangeTabs(p.tab_order ?? []), hidden: (p.hidden_tabs ?? []) as CourseTab[] }), () => {});
+  }, []);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
   useEffect(() => {
@@ -210,7 +216,17 @@ export function MainWindow() {
     const c = courseAt(path);
     go(c ? { kind: "course", id: c.id, tab: "files", path, select } : { kind: "browse", path, select });
   };
-  const openCourse = (c: Course, tab: CourseTab = "overview") => go({ kind: "course", id: c.id, tab, path: c.dir });
+  /** The tab a course opens on: 概览, unless you hid it (then your first tab). */
+  const firstTab = tabs.order.find((x) => !tabs.hidden.includes(x)) ?? "overview";
+  const openCourse = (c: Course, tab: CourseTab = firstTab) => go({ kind: "course", id: c.id, tab, path: c.dir });
+  const arrangeCourseTabs = (order: CourseTab[], hidden: CourseTab[]) => {
+    setTabs({ order, hidden });
+    void api.setPrefs({ tab_order: order, hidden_tabs: hidden }).catch(fail(t("操作失败")));
+    // Hid the tab you're on: go to the first one left.
+    if (view.kind === "course" && hidden.includes(view.tab)) {
+      replaceView({ ...view, tab: order.find((x) => !hidden.includes(x)) ?? "overview", item: undefined });
+    }
+  };
   /** An announcement, assignment, page or the syllabus, shown in its course's page. */
   const openDoc = (courseId: number, kind: DocKind, id: string) => {
     const c = courseList.find((x) => x.id === courseId);
@@ -762,6 +778,10 @@ export function MainWindow() {
           <CourseTabs
             tab={view.tab}
             overview={overview}
+            order={tabs.order}
+            hidden={tabs.hidden}
+            onArrange={arrangeCourseTabs}
+            onMenu={openMenu}
             onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })}
             onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
           />

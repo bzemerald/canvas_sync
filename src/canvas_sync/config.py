@@ -486,6 +486,11 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
 
 LANGUAGES = ("system", "zh", "en")
 AUTO_SYNC_MINUTES = (0, 30, 60, 180, 360, 1440)  # 0: off
+COURSE_TABS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
+
+
+def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
+    return [n for n in dict.fromkeys(names) if n in allowed] if isinstance(names, list) else []
 
 
 @dataclass
@@ -493,6 +498,8 @@ class AppPrefs:
     language: str = "system"     # system | zh | en
     auto_sync: int = 60          # minutes between syncs while the app runs; 0: off
     sync_on_launch: bool = True  # sync when the app starts (unless it just did)
+    tab_order: list[str] = field(default_factory=list)    # a course's tabs, as dragged; [] = the usual
+    hidden_tabs: list[str] = field(default_factory=list)  # tabs you hid (in every course)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppPrefs:
@@ -509,6 +516,8 @@ class AppPrefs:
             language=language if language in LANGUAGES else d.language,
             auto_sync=auto_sync if auto_sync in AUTO_SYNC_MINUTES else d.auto_sync,
             sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
+            tab_order=_known(data.get("tab_order"), COURSE_TABS),
+            hidden_tabs=_known(data.get("hidden_tabs"), COURSE_TABS),
         )
 
     def save(self, path: Path | None = None) -> None:
@@ -516,6 +525,9 @@ class AppPrefs:
             raise ConfigError(f"language must be one of {LANGUAGES}")
         if self.auto_sync not in AUTO_SYNC_MINUTES:
             raise ConfigError(f"auto_sync must be one of {AUTO_SYNC_MINUTES} (minutes)")
+        for name in [*self.tab_order, *self.hidden_tabs]:
+            if name not in COURSE_TABS:
+                raise ConfigError(f"no tab {name!r}; tabs are {COURSE_TABS}")
         path = path or PREFS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
@@ -523,6 +535,8 @@ class AppPrefs:
         doc["language"] = self.language
         doc["auto_sync"] = self.auto_sync
         doc["sync_on_launch"] = self.sync_on_launch
+        doc["tab_order"] = list(dict.fromkeys(self.tab_order))
+        doc["hidden_tabs"] = list(dict.fromkeys(self.hidden_tabs))
         path.write_text(tomlkit.dumps(doc))
 
 

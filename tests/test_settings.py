@@ -48,10 +48,14 @@ def client(account: Account | None, tmp_path: Path, background: bool = False) ->
 
 def test_prefs(root, tmp_path, keychain):
     with client(Account(BASE, root), tmp_path) as api:
-        assert api.get("/api/prefs").json() == {"language": "system", "auto_sync": 60, "sync_on_launch": True, "select": "active"}
+        assert api.get("/api/prefs").json() == {"language": "system", "auto_sync": 60, "sync_on_launch": True,
+                                                "tab_order": [], "hidden_tabs": [], "select": "active"}
         got = api.post("/api/prefs", json={"language": "en", "auto_sync": 180}).json()
         assert (got["language"], got["auto_sync"], got["sync_on_launch"]) == ("en", 180, True)
         assert AppPrefs.load(tmp_path / PREFS) == AppPrefs("en", 180, True)
+        got = api.post("/api/prefs", json={"tab_order": ["files", "overview"], "hidden_tabs": ["pages"]}).json()
+        assert (got["tab_order"], got["hidden_tabs"], got["language"]) == (["files", "overview"], ["pages"], "en")
+        assert api.post("/api/prefs", json={"hidden_tabs": ["movies"]}).status_code == 400
         assert api.post("/api/prefs", json={"auto_sync": 7}).status_code == 400
         assert api.post("/api/prefs", json={"language": "fr"}).status_code == 400
         assert api.post("/api/prefs", json={"select": "favorites"}).json()["select"] == "favorites"

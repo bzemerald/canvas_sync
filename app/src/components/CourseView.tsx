@@ -11,7 +11,9 @@ import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, 
 import { usePref } from "../lib/prefs";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
+import { DropMark, moved, useReorder } from "../lib/reorder";
 import { FileIcon } from "./FileIcon";
+import type { MenuItem } from "./Menu";
 import { Count, NewDot } from "./Status";
 import { RichText, type CourseLink } from "./RichText";
 import { t } from "../lib/i18n";
@@ -52,36 +54,93 @@ function useLaunch(courseId: number) {
 
 export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files : 0);
 
-export function CourseTabs({ tab, overview, onTab, onMarkAllSeen }: {
+export const DEFAULT_TABS: CourseTab[] = ["overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages"];
+
+export const TAB_LABEL: Record<CourseTab, string> = {
+  overview: t("概览"), modules: t("模块"), announcements: t("公告"), assignments: t("作业"), grades: t("成绩"),
+  files: t("文件"), syllabus: t("大纲"), pages: t("页面"),
+};
+
+/** Every tab, in the order you dragged them into (any you never placed go at the end). */
+export function arrangeTabs(saved: string[]): CourseTab[] {
+  const placed = saved.filter((x): x is CourseTab => (DEFAULT_TABS as string[]).includes(x));
+  return [...placed, ...DEFAULT_TABS.filter((x) => !placed.includes(x))];
+}
+
+/** `all` with the items of `subset` (in it) put back in the order of `reordered`; the rest stay put. */
+function refill<T>(all: T[], subset: T[], reordered: T[]): T[] {
+  const queue = [...reordered];
+  return all.map((x) => (subset.includes(x) ? queue.shift()! : x));
+}
+
+/** A course's tabs. Drag to reorder, right-click to hide (in every course). Tabs with nothing
+ * in them aren't shown; 概览 and 文件 always are, unless you hid them. */
+export function CourseTabs({ tab, overview, order, hidden, onTab, onMarkAllSeen, onArrange, onMenu }: {
   tab: CourseTab;
   overview: Overview | null;
+  order: CourseTab[];
+  hidden: CourseTab[];
   onTab: (t: CourseTab) => void;
   onMarkAllSeen: () => void;
+  onArrange: (order: CourseTab[], hidden: CourseTab[]) => void;
+  onMenu: (items: MenuItem[], x: number, y: number) => void;
 }) {
   const c = overview?.counts;
   const n = overview?.new;
-  // Tabs with nothing in them aren't shown; 概览 and 文件 always are.
-  const tabs: [CourseTab, string, boolean, number][] = [
-    ["overview", t("概览"), true, 0],
-    ["modules", t("模块"), !!c?.modules, 0],
-    ["announcements", t("公告"), !!c?.announcements, n?.announcements ?? 0],
-    ["assignments", t("作业"), !!c?.assignments, n?.assignments ?? 0],
-    ["grades", t("成绩"), !!c?.grades, 0],
-    ["files", t("文件"), true, n?.files ?? 0],
-    ["syllabus", t("大纲"), !!c?.syllabus, 0],
-    ["pages", t("页面"), !!c?.pages, n?.pages ?? 0],
-  ];
+  const has: Record<CourseTab, boolean> = {
+    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, assignments: !!c?.assignments,
+    grades: !!c?.grades, files: true, syllabus: !!c?.syllabus, pages: !!c?.pages,
+  };
+  const fresh: Partial<Record<CourseTab, number>> = {
+    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages,
+  };
+  const visible = order.filter((id) => !hidden.includes(id) && (has[id] || id === tab));
+  const drag = useReorder(visible.length, (from, to) => onArrange(refill(order, visible, moved(visible, from, to)), hidden), "x");
+
+  const menu = (id: CourseTab | null): MenuItem[] => {
+    const showAgain: MenuItem[] = hidden.map((h) => ({
+      label: t("显示“{name}”标签", { name: TAB_LABEL[h] }), onSelect: () => onArrange(order, hidden.filter((x) => x !== h)),
+    }));
+    const usual = hidden.length === 0 && order.every((x, i) => x === DEFAULT_TABS[i]);
+    const items: MenuItem[] = [
+      ...(id ? [{
+        label: t("隐藏“{name}”标签", { name: TAB_LABEL[id] }),
+        disabled: order.filter((x) => !hidden.includes(x)).length <= 1,
+        onSelect: () => onArrange(order, [...hidden, id]),
+      }] : []),
+      ...(showAgain.length ? ["separator" as const, ...showAgain] : []),
+      "separator",
+      { label: t("恢复默认的标签"), disabled: usual, onSelect: () => onArrange(DEFAULT_TABS, []) },
+    ];
+    while (items[0] === "separator") items.shift(); // (no tab under the pointer: nothing to hide)
+    return items;
+  };
+
   return (
-    <nav className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4" aria-label={t("课程")}>
-      {tabs.filter(([id, , shown]) => shown || id === tab).map(([id, label, , fresh]) => (
+    <nav
+      className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4"
+      aria-label={t("课程")}
+      onContextMenu={(e) => {
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        onMenu(menu(null), e.clientX, e.clientY);
+      }}
+    >
+      {visible.map((id, i) => (
         <button
           key={id}
+          {...drag.item(i)}
           onClick={() => onTab(id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onMenu(menu(id), e.clientX, e.clientY);
+          }}
           aria-current={tab === id ? "page" : undefined}
-          className={`-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
+          className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${drag.dragging === i ? "opacity-40" : ""}`}
         >
-          {label}
-          {fresh > 0 && <Count n={fresh} label={t("{n} 个新的", { n: fresh })} />}
+          <DropMark at={drag.mark(i)} axis="x" />
+          {TAB_LABEL[id]}
+          {!!fresh[id] && <Count n={fresh[id]!} label={t("{n} 个新的", { n: fresh[id]! })} />}
         </button>
       ))}
       {totalNew(n) > 0 && (
