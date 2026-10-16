@@ -22,6 +22,7 @@ export interface Course {
   display_code: string;
   term: string | null;
   dir: string;
+  folder_name: string | null; // set if you renamed the course's folder
 }
 
 export interface Entry {
@@ -53,6 +54,11 @@ export interface SmartFolder {
   kinds: Kind[];
   content: boolean; // also match text inside files and pages, not just names
 }
+
+/** A sidebar entry: a pinned folder, or a smart folder (a saved search). */
+export type PinnedItem =
+  | { type: "folder"; path: string; course_id: number | null; exists: boolean }
+  | ({ type: "smart" } & SmartFolder);
 
 /** A term, course, folder or file: what a sync or restore applies to. */
 export interface Scope {
@@ -127,11 +133,19 @@ export const restorePreview = (scope: Scope) =>
 export const restore = (scope: Scope) =>
   api<{ restored: string[] }>("/restore", { method: "POST", body: JSON.stringify(scope) });
 
-export const smartFolders = () => api<SmartFolder[]>("/smart-folders");
+const post = <T,>(path: string, body: unknown) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
+
+export const pinned = () => api<PinnedItem[]>("/pinned");
+export const pinFolder = (path: string) => post<PinnedItem[]>("/pinned", { path });
+export const unpinFolder = (path: string) => post<PinnedItem[]>("/pinned/remove", { path });
+export const movePinned = (index: number, to: number) => post<PinnedItem[]>("/pinned/move", { index, to });
 export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
-  api<SmartFolder[]>("/smart-folders", { method: "POST", body: JSON.stringify({ ...folder, replaces }) });
+  post<PinnedItem[]>("/smart-folders", { ...folder, replaces });
 export const deleteSmartFolder = (name: string) =>
-  api<SmartFolder[]>(`/smart-folders/${encodeURIComponent(name)}`, { method: "DELETE" });
+  api<PinnedItem[]>(`/smart-folders/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+/** Rename a folder; syncing keeps putting Canvas's files in it. Returns the new path. */
+export const rename = (path: string, name: string) => post<{ path: string }>("/rename", { path, name });
 
 /** A JPEG preview as an object URL, or null if the file has none. */
 export async function thumb(path: string, size: number): Promise<string | null> {

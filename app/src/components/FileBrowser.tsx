@@ -1,11 +1,12 @@
 // A folder's contents, Finder-style: a list whose folders expand in place, or an icon grid.
 // Keyboard: arrows move, → / ← expand and collapse (list), Enter opens, Space previews,
-// ⌘↑ / Backspace goes to the enclosing folder.
+// F2 renames a folder, ⌘↑ / Backspace goes to the enclosing folder.
 import { ChevronDown, ChevronRight, ChevronUp, CornerUpRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Entry } from "../lib/api";
 import { FileIcon } from "./FileIcon";
+import { RenameInput } from "./RenameInput";
 import { StatusBadges, StatusDot } from "./Status";
 import { Thumb } from "./Thumb";
 import { isMac } from "./Result";
@@ -23,7 +24,13 @@ interface Props {
   onOpen: (e: Entry) => void;
   onPreview: (e: Entry) => void;
   onMenu: (e: Entry, x: number, y: number) => void;
+  renaming: string | null; // path of the folder being renamed in place
+  onStartRename: (e: Entry) => void;
+  onRename: (e: Entry, name: string) => void;
+  onRenameCancel: () => void;
 }
+
+export const canRename = (e: Entry) => e.type === "dir" && !e.deleted;
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -53,7 +60,9 @@ export function parentOf(path: string): string {
   return i < 0 ? "" : path.slice(0, i);
 }
 
-export function FileBrowser({ path, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu }: Props) {
+export function FileBrowser({
+  path, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, renaming, onStartRename, onRename, onRenameCancel,
+}: Props) {
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -168,6 +177,7 @@ export function FileBrowser({ path, version, mode, showDeleted, select, onNaviga
     } else if (ev.key === "Enter" && cur) activate(cur.entry);
     else if (ev.key === " " && cur && cur.entry.type === "file" && !cur.entry.deleted) onPreview(cur.entry);
     else if (ev.key === "Backspace" && path) onNavigate(parentOf(path));
+    else if (ev.key === "F2" && cur && canRename(cur.entry)) onStartRename(cur.entry);
     else handled = false;
     if (handled) ev.preventDefault();
   };
@@ -226,7 +236,11 @@ export function FileBrowser({ path, version, mode, showDeleted, select, onNaviga
                     <span className="w-4.5 shrink-0" />
                   )}
                   <FileIcon name={e.name} dir={e.type === "dir"} />
-                  <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                  {renaming === e.path ? (
+                    <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="flex-1 text-sm" />
+                  ) : (
+                    <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                  )}
                   {e.link && (
                     <span title={`快捷方式，原文件在 ${e.link}`}>
                       <CornerUpRight className="size-3 shrink-0 text-muted" aria-label="快捷方式" />
@@ -261,7 +275,11 @@ export function FileBrowser({ path, version, mode, showDeleted, select, onNaviga
                   )}
                   {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label="快捷方式" />}
                 </div>
-                <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                {renaming === e.path ? (
+                  <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="w-full text-center text-xs" />
+                ) : (
+                  <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                )}
                 <StatusDot entry={e} />
               </div>
             ))}

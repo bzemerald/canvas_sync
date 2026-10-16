@@ -6,11 +6,15 @@ previewed and tested in isolation. Order of precedence for a file's location:
 1. a pin (the user moved the file in Finder, or a conflict resolution chose a spot)
 2. the first matching [[rules]] entry
 3. the first entry of `views` the file appears in; other views get symlinks
+
+Folders you renamed in the app ([folder_names]: Canvas-derived path -> your name) are
+applied last, to every path, so a renamed folder keeps receiving what Canvas puts in it.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import posixpath
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -47,6 +51,37 @@ class Layout:
         self.s = settings
 
     def course_dir(self, course: Course) -> PurePosixPath:
+        """The course's folder as it is on disk (after any rename)."""
+        return self.renamed(self.canonical_course_dir(course))
+
+    def renamed(self, path: PurePosixPath) -> PurePosixPath:
+        """Apply folder renames to a path built from Canvas names. Keys are such paths
+        too, so renaming both "A/B" and "A/B/C" works: each renames its own segment."""
+        names = self.s.folder_names
+        if not names:
+            return path
+        parts = list(path.parts)
+        out = list(parts)
+        for i in range(len(parts) - 1):  # folders only, never the file name itself
+            key = "/".join(parts[: i + 1])
+            if key in names:
+                out[i] = names[key]
+        if "/".join(parts) in names:  # a folder path itself (course_dir, a rename target)
+            out[-1] = names["/".join(parts)]
+        return PurePosixPath(*out)
+
+    def canonical(self, path: str) -> str:
+        """Undo `renamed`: the Canvas-derived path of a folder as it is on disk now."""
+        names = self.s.folder_names
+        by_new_name = {(posixpath.dirname(k), v): posixpath.basename(k) for k, v in names.items()}
+        canon: list[str] = []
+        for seg in [p for p in path.split("/") if p]:
+            parent = "/".join(canon)
+            canon.append(by_new_name.get((parent, seg), seg))
+        return "/".join(canon)
+
+    def canonical_course_dir(self, course: Course) -> PurePosixPath:
+        """The course's folder as Canvas names would make it, before any rename."""
         override = self.s.course_names.get(course.id)
         fields = {
             "term": course.term or "No Term",
@@ -65,7 +100,7 @@ class Layout:
         Files are processed in id order so that existing files keep their names
         when a newer upload (higher id) arrives with the same name.
         """
-        cdir = self.course_dir(course)
+        cdir = self.canonical_course_dir(course)
         taken = {p.casefold() for p in pins.values()}  # APFS is case-insensitive
         result: dict[int, Placement | None] = {}
         for f in sorted(files, key=lambda f: f.id):
@@ -74,7 +109,8 @@ class Layout:
                 continue
             p = self.place(cdir, course, f)
             if p is not None:
-                p = Placement(_claim(p.primary, taken), tuple(_claim(l, taken) for l in p.links))
+                primary, links = self.renamed(p.primary), [self.renamed(l) for l in p.links]
+                p = Placement(_claim(primary, taken), tuple(_claim(l, taken) for l in links))
             result[f.id] = p
         return result
 

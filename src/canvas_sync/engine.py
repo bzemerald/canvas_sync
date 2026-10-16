@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import posixpath
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,10 +12,10 @@ from send2trash import send2trash
 
 from .api import CanvasClient
 from .browse import RESTORABLE, Entry, list_dir
-from .config import SETTINGS_TEMPLATE, Settings
+from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename
 from .discover import discover_course
 from .execute import EventHandler, Executor
-from .layout import Layout
+from .layout import Layout, sanitize
 from .local import clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
@@ -214,6 +215,72 @@ class Engine:
             self.state.commit()
             done.append(rel)
         return done
+
+    def rename_folder(self, rel: str, name: str) -> str:
+        """Rename a folder without changing what syncing does: files Canvas adds to it
+        later still land in it, links into it keep working, nothing is re-downloaded.
+        Returns the new path."""
+        rel = rel.strip("/")
+        src = self.root / rel
+        if not rel or rel.split("/")[0] == META_DIR:
+            raise ValueError("that folder can't be renamed")
+        if not src.is_dir() or src.is_symlink():
+            raise LookupError(f"{rel} is not a folder")
+        new_name = sanitize(name.strip())
+        if not name.strip() or new_name.startswith("."):
+            raise ValueError("folder names can't be empty or start with a dot")
+        parent = posixpath.dirname(rel)
+        new = posixpath.join(parent, new_name) if parent else new_name
+        if new == rel:
+            return rel
+        dest = self.root / new
+        if os.path.lexists(dest) and not dest.samefile(src):  # (a case-only rename is the same folder)
+            raise FileExistsError(f"{new} already exists")
+
+        canonical = self.layout.canonical(rel)
+        own_name = posixpath.basename(canonical)
+        os.rename(src, dest)
+        try:
+            self._repath(rel, new)
+            record_folder_rename(self.meta / "config.toml", canonical, None if new_name == own_name else new_name, rel, new)
+            self.state.commit()
+        except BaseException:
+            self.state.db.rollback()
+            os.rename(dest, src)
+            raise
+        self.settings = Settings.load(self.meta / "config.toml")
+        self.layout = Layout(self.settings)
+        self._relink()
+        return new
+
+    def _repath(self, old: str, new: str) -> None:
+        """Every path we've recorded at or under `old` now starts with `new`."""
+        def moved(p: str | None) -> str | None:
+            if p is not None and (p == old or p.startswith(old + "/")):
+                return new + p[len(old):]
+            return None
+
+        for r in self.state.all_files():
+            changes = {k: v for k in ("path", "pinned_path") if (v := moved(getattr(r, k))) is not None}
+            if changes:
+                self.state.update(r.id, **changes)
+        for path, fid in list(self.state.db.execute("SELECT path, file_id FROM links")):
+            if (to := moved(path)) is not None:
+                self.state.remove_link(path)
+                self.state.add_link(to, fid)
+
+    def _relink(self) -> None:
+        """Point every view link at its file again (links from outside a renamed folder
+        into it are relative paths that went stale)."""
+        for path, fid in list(self.state.db.execute("SELECT path, file_id FROM links")):
+            rec = self.state.get(fid)
+            link = self.root / path
+            if rec is None or rec.path is None or not link.is_symlink():
+                continue
+            want = os.path.relpath(self.root / rec.path, link.parent)
+            if os.readlink(link) != want:
+                link.unlink()
+                os.symlink(want, link)
 
     def list_dir(self, rel: str = "") -> list[Entry]:
         """A folder's contents as the app shows them; see `browse.list_dir`."""

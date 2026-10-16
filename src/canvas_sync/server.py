@@ -30,7 +30,10 @@ from pydantic import BaseModel
 
 from . import __version__
 from .api import CanvasClient, CanvasError
-from .config import Account, ConfigError, SmartFolder, delete_smart_folder, save_smart_folder
+from .config import (
+    Account, ConfigError, PinnedFolder, SmartFolder, delete_smart_folder, move_pinned, pin_folder, save_smart_folder,
+    unpin_folder,
+)
 from .engine import Engine
 from .local import open_path
 from .plan import Kind, Scope
@@ -90,6 +93,20 @@ class RestoreRequest(ScopeRequest):
     dry_run: bool = False
 
 
+class PathRequest(BaseModel):
+    path: str
+
+
+class RenameRequest(BaseModel):
+    path: str
+    name: str
+
+
+class MoveRequest(BaseModel):
+    index: int
+    to: int
+
+
 class SmartFolderRequest(BaseModel):
     name: str
     query: str = ""
@@ -140,11 +157,15 @@ def create_app(account: Account, token: str) -> FastAPI:
     @api.get("/courses")
     def courses() -> list[dict[str, Any]]:
         with engine() as e:
-            return [
-                {**asdict(c), "dir": str(e.layout.course_dir(c)),
-                 "display_code": e.settings.course_names.get(c.id) or c.code}
-                for c in e.state.courses()
-            ]
+            out = []
+            for c in e.state.courses():
+                d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
+                out.append({
+                    **asdict(c), "dir": d.as_posix(),
+                    "display_code": e.settings.course_names.get(c.id) or c.code,
+                    "folder_name": d.name if d.name != canonical.name else None,  # renamed in the app
+                })
+            return out
 
     @api.get("/search")
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
@@ -185,10 +206,60 @@ def create_app(account: Account, token: str) -> FastAPI:
             except LookupError as err:
                 raise HTTPException(409, str(err))
 
-    @api.get("/smart-folders")
-    def smart_folders() -> list[dict[str, Any]]:
+    config = account.root / META_DIR / "config.toml"
+
+    @api.get("/pinned")
+    def pinned() -> list[dict[str, Any]]:
+        """The sidebar's pinned list: folders and smart folders, in order."""
         with engine() as e:
-            return [asdict(f) for f in e.settings.smart_folders]
+            dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
+            out: list[dict[str, Any]] = []
+            for item in e.settings.pinned:
+                if isinstance(item, PinnedFolder):
+                    course = next((cid for d, cid in dirs.items() if item.path == d or item.path.startswith(d + "/")), None)
+                    out.append({"type": "folder", "path": item.path, "course_id": course,
+                                "exists": (account.root / item.path).is_dir()})
+                else:
+                    out.append({"type": "smart", **asdict(item)})
+            return out
+
+    @api.post("/pinned")
+    def pin(req: PathRequest) -> list[dict[str, Any]]:
+        if not inside(req.path).is_dir():
+            raise HTTPException(404, f"{req.path} is not a folder")
+        pin_folder(config, req.path)
+        return pinned()
+
+    @api.post("/pinned/remove")
+    def unpin(req: PathRequest) -> list[dict[str, Any]]:
+        try:
+            unpin_folder(config, req.path)
+        except LookupError as err:
+            raise HTTPException(404, str(err))
+        return pinned()
+
+    @api.post("/pinned/move")
+    def move(req: MoveRequest) -> list[dict[str, Any]]:
+        try:
+            move_pinned(config, req.index, req.to)
+        except LookupError as err:
+            raise HTTPException(400, str(err))
+        return pinned()
+
+    @api.post("/rename")
+    def rename(req: RenameRequest) -> dict[str, str]:
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        inside(req.path)
+        with engine() as e:
+            try:
+                new = e.rename_folder(req.path, req.name)
+            except (ValueError, FileExistsError) as err:
+                raise HTTPException(400, str(err))
+            except LookupError as err:
+                raise HTTPException(404, str(err))
+            e.reindex()  # paths changed; the text is reused, so this is quick
+        return {"path": new}
 
     @api.post("/smart-folders")
     def save_folder(req: SmartFolderRequest) -> list[dict[str, Any]]:
@@ -196,18 +267,18 @@ def create_app(account: Account, token: str) -> FastAPI:
             raise HTTPException(400, "a smart folder needs a name")
         folder = SmartFolder(req.name.strip(), req.query.strip(), req.courses, req.kinds, req.content)
         try:
-            save_smart_folder(account.root / META_DIR / "config.toml", folder, req.replaces)
+            save_smart_folder(config, folder, req.replaces)
         except ConfigError as err:
             raise HTTPException(400, str(err))
-        return smart_folders()
+        return pinned()
 
     @api.delete("/smart-folders/{name}")
     def delete_folder(name: str) -> list[dict[str, Any]]:
         try:
-            delete_smart_folder(account.root / META_DIR / "config.toml", name)
+            delete_smart_folder(config, name)
         except LookupError as err:
             raise HTTPException(404, str(err))
-        return smart_folders()
+        return pinned()
 
     @api.get("/status")
     def status() -> list[dict[str, Any]]:

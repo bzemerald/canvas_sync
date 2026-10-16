@@ -73,10 +73,18 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # Added to the built-in ones (mt = midterm, hw = homework, sol = solution, ...).
 # exam = ["midterm", "final", "prelim"]
 
-# Smart folders: saved searches the app shows as folders (also editable in the app).
+[folder_names]
+# Folders you renamed in the app. Key: the path Canvas names would give the folder;
+# value: what it's called instead. New files from Canvas keep going into it.
+# "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
+
+# The app's sidebar: pinned folders, and smart folders (saved searches), in order.
 #
-# [[smart_folders]]
-# name = "Midterm 1"
+# [[pinned]]
+# path = "Fall 2026/MATH 221/Modules"   # a folder
+#
+# [[pinned]]
+# name = "Midterm 1"                    # a smart folder
 # query = "mt1"
 # courses = [12345]                   # optional: only these courses
 # kinds = ["file", "announcement"]    # optional: file | page | assignment | announcement | syllabus
@@ -117,6 +125,14 @@ class SmartFolder:
     content: bool = False  # also match the text inside, not just titles and folder names
 
 
+@dataclass(frozen=True)
+class PinnedFolder:
+    path: str  # relative to the sync folder
+
+
+Pinned = PinnedFolder | SmartFolder
+
+
 @dataclass
 class Settings:
     select: str = "active"
@@ -136,7 +152,12 @@ class Settings:
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
-    smart_folders: list[SmartFolder] = field(default_factory=list)
+    pinned: list[Pinned] = field(default_factory=list)
+    folder_names: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def smart_folders(self) -> list[SmartFolder]:
+        return [p for p in self.pinned if isinstance(p, SmartFolder)]
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -167,7 +188,9 @@ class Settings:
                 str(k).lower(): [x.lower() for x in _strings(v)]
                 for k, v in data.get("search", {}).get("abbreviations", {}).items()
             },
-            smart_folders=[_smart_folder(f) for f in data.get("smart_folders", [])],
+            pinned=[_pinned_item(f) for f in data.get("pinned", [])]
+            + [_smart_folder(f) for f in data.get("smart_folders", [])],
+            folder_names={str(k).strip("/"): str(v) for k, v in data.get("folder_names", {}).items()},
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -192,40 +215,114 @@ def _smart_folder(f: dict[str, Any]) -> SmartFolder:
                        bool(f.get("content", False)))
 
 
+def _pinned_item(d: dict[str, Any]) -> Pinned:
+    if "path" in d:
+        return PinnedFolder(str(d["path"]).strip("/"))
+    return _smart_folder(d)
+
+
+def _pinned_table(item: Pinned) -> Any:
+    t = tomlkit.table()
+    if isinstance(item, PinnedFolder):
+        t["path"] = item.path
+        return t
+    t["name"] = item.name
+    t["query"] = item.query
+    if item.courses:
+        t["courses"] = item.courses
+    if item.kinds:
+        t["kinds"] = item.kinds
+    if item.content:
+        t["content"] = True
+    return t
+
+
+def load_pinned(path: Path) -> list[Pinned]:
+    data = tomlkit.parse(path.read_text()).unwrap()
+    # [[smart_folders]] is where smart folders lived before pinning existed.
+    return [_pinned_item(x) for x in data.get("pinned", [])] + [_smart_folder(x) for x in data.get("smart_folders", [])]
+
+
+def save_pinned(path: Path, items: list[Pinned]) -> None:
+    """Write the sidebar's pinned list (folders and smart folders, in order)."""
+    doc = tomlkit.parse(path.read_text())
+    for key in ("pinned", "smart_folders"):
+        if key in doc:
+            del doc[key]
+    if items:
+        aot = tomlkit.aot()
+        for item in items:
+            aot.append(_pinned_table(item))
+        doc["pinned"] = aot
+    path.write_text(tomlkit.dumps(doc))
+
+
+def _smart_names(items: list[Pinned]) -> list[str | None]:
+    return [i.name if isinstance(i, SmartFolder) else None for i in items]
+
+
 def save_smart_folder(path: Path, folder: SmartFolder, replaces: str | None = None) -> None:
-    """Add `folder`, or replace the one called `replaces` (or `folder.name`) in place."""
+    """Add `folder` to the pinned list, or replace the one called `replaces` in place."""
     if set(folder.kinds) - KINDS:
         raise ConfigError(f"unknown kinds {sorted(set(folder.kinds) - KINDS)}")
-    doc = tomlkit.parse(path.read_text())
-    folders = doc.setdefault("smart_folders", tomlkit.aot())
-    table = tomlkit.table()
-    table["name"] = folder.name
-    table["query"] = folder.query
-    if folder.courses:
-        table["courses"] = folder.courses
-    if folder.kinds:
-        table["kinds"] = folder.kinds
-    if folder.content:
-        table["content"] = True
-    names = [str(t.get("name")) for t in folders]
+    items = load_pinned(path)
+    names = _smart_names(items)
     if folder.name != replaces and folder.name in names:
         raise ConfigError(f"a smart folder called {folder.name!r} already exists")
-    old = replaces if replaces is not None else folder.name
-    if old in names:
-        folders[names.index(old)] = table
+    if replaces is not None and replaces in names:
+        items[names.index(replaces)] = folder
     else:
-        folders.append(table)
-    path.write_text(tomlkit.dumps(doc))
+        items.append(folder)
+    save_pinned(path, items)
 
 
 def delete_smart_folder(path: Path, name: str) -> None:
-    doc = tomlkit.parse(path.read_text())
-    folders = doc.get("smart_folders", [])
-    names = [str(t.get("name")) for t in folders]
+    items = load_pinned(path)
+    names = _smart_names(items)
     if name not in names:
         raise LookupError(f"no smart folder called {name!r}")
-    del folders[names.index(name)]
+    del items[names.index(name)]
+    save_pinned(path, items)
+
+
+def pin_folder(path: Path, folder: str) -> None:
+    items = load_pinned(path)
+    if PinnedFolder(folder.strip("/")) not in items:
+        save_pinned(path, [*items, PinnedFolder(folder.strip("/"))])
+
+
+def unpin_folder(path: Path, folder: str) -> None:
+    items = load_pinned(path)
+    if PinnedFolder(folder.strip("/")) not in items:
+        raise LookupError(f"{folder} is not pinned")
+    save_pinned(path, [i for i in items if i != PinnedFolder(folder.strip("/"))])
+
+
+def move_pinned(path: Path, index: int, to: int) -> None:
+    items = load_pinned(path)
+    if not (0 <= index < len(items) and 0 <= to < len(items)):
+        raise LookupError("no such position")
+    items.insert(to, items.pop(index))
+    save_pinned(path, items)
+
+
+def record_folder_rename(path: Path, canonical: str, name: str | None, old: str, new: str) -> None:
+    """Remember that the folder Canvas names would put at `canonical` is called `name`
+    (None: its own name again), and point pinned folders at `old` or below to `new`."""
+    doc = tomlkit.parse(path.read_text())
+    names = doc.get("folder_names")
+    if names is None:
+        names = doc["folder_names"] = tomlkit.table()
+    if name is None:
+        names.pop(canonical, None)
+    else:
+        names[canonical] = name
     path.write_text(tomlkit.dumps(doc))
+    moved = [
+        PinnedFolder(new + i.path[len(old):]) if isinstance(i, PinnedFolder) and (i.path == old or i.path.startswith(old + "/")) else i
+        for i in load_pinned(path)
+    ]
+    save_pinned(path, moved)
 
 
 def _rule(r: dict[str, Any]) -> Rule:

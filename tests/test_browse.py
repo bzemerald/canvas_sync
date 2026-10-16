@@ -247,7 +247,7 @@ def test_api_scoped_sync(api, root, fake):
 
 def test_api_smart_folders_thumbs_and_preview(api, root):
     folder = {"name": "Week 2", "query": "lec2", "courses": [1], "kinds": ["file"]}
-    assert api.post("/api/smart-folders", json=folder).json() == [{**folder, "content": False}]
+    assert api.post("/api/smart-folders", json=folder).json() == [{"type": "smart", **folder, "content": False}]
     assert api.post("/api/smart-folders", json={**folder, "content": True, "replaces": "Week 2"}).json()[0]["content"] is True
     assert api.post("/api/smart-folders", json={**folder, "kinds": ["movie"]}).status_code == 400
     assert api.delete("/api/smart-folders/Week 2").json() == []

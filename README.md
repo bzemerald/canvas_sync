@@ -36,8 +36,8 @@ Office files / notebooks, and every page, assignment, announcement and syllabus.
 - `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
 - `--open N` opens result N (the file, or the Canvas page).
 - Results whose name or folder matches come first; files that only mention it inside follow.
-- `[[smart_folders]]` in `config.toml` are saved searches the app shows as folders
-  (names only unless `content = true`).
+- `[[pinned]]` in `config.toml` is the app's sidebar: pinned folders, and smart folders
+  (saved searches; names only unless `content = true`).
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 
@@ -64,6 +64,7 @@ announcements and the syllabus, so a hidden Files tab doesn't hide anything.
 | edit a file | kept. If Canvas also changed it: your copy becomes `name (mine).pdf`, the new version takes its place (`sync.on_conflict`) |
 | delete a file | not downloaded again (`sync.on_local_delete`); `canvas restore` brings it back |
 | move/rename a file in Finder | remembered; future updates go to the new spot (`sync.on_local_move`) |
+| rename a folder in the app | remembered in `[folder_names]`; what Canvas adds to it later still goes there, links into it are updated (renaming in Finder only counts as moving the files) |
 
 Files removed from Canvas are kept locally (`sync.on_remote_delete`). An instructor
 re-uploading a file (Canvas gives it a new id) is treated as an update, not a new file.

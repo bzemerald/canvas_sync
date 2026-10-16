@@ -1,16 +1,17 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Sparkles,
+  ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
-import { FileBrowser, parentOf, type ViewMode } from "./components/FileBrowser";
+import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { HitGrid, HitList, KIND, fileManager, isMac } from "./components/Result";
+import { RenameDialog } from "./components/RenameDialog";
 import { RestoreDialog } from "./components/RestoreDialog";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
-import type { Course, Entry, Hit, Kind, Scope, SmartFolder, SyncState } from "./lib/api";
+import type { Course, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 
@@ -44,7 +45,7 @@ const primaryKey = (e: KeyboardEvent | React.KeyboardEvent) => (isMac ? e.metaKe
 
 export function MainWindow() {
   const [courseList, setCourseList] = useState<Course[]>([]);
-  const [smart, setSmart] = useState<SmartFolder[]>([]);
+  const [pinned, setPinned] = useState<PinnedItem[]>([]);
   const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "home" }], i: 0 });
   const [query, setQuery] = useState("");
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
@@ -56,6 +57,9 @@ export function MainWindow() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
+  const [renameDialog, setRenameDialog] = useState<{ path: string; what: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
 
@@ -70,7 +74,7 @@ export function MainWindow() {
   // -- data ------------------------------------------------------------------------
   useEffect(() => {
     api.courses().then(setCourseList, (e) => setStartupError(String(e.message ?? e)));
-    api.smartFolders().then(setSmart, () => {});
+    api.pinned().then(setPinned, () => {});
   }, [version]);
   useEffect(() => void api.syncState().then(setSync).catch(() => {}), []);
   useEffect(() => {
@@ -115,6 +119,7 @@ export function MainWindow() {
   // -- where we are ---------------------------------------------------------------------
   const browsing = view.kind === "browse" ? view.path : null;
   const course = browsing !== null ? courseList.find((c) => under(browsing, c.dir)) ?? null : null;
+  const smart = pinned.filter((p): p is PinnedItem & { type: "smart" } => p.type === "smart");
   const folder = view.kind === "smart" ? smart.find((f) => f.name === view.name) ?? null : null;
   const scopeCourses = useMemo(() => {
     if (browsing === null) return [];
@@ -150,11 +155,54 @@ export function MainWindow() {
   const openMenu = (items: MenuItem[], x: number, y: number) => setMenu({ x, y, items });
   const reveal = (path: string) => void api.openPath(path, { reveal: true });
 
+  const say = (message: string) => setNotice(message);
+  const fail = (what: string) => (e: unknown) => say(`${what}：${friendly((e as Error).message)}`);
+
+  const isPinned = (path: string) => pinned.some((p) => p.type === "folder" && p.path === path);
+  const pinItem = (path: string): MenuItem =>
+    isPinned(path)
+      ? { label: "取消置顶", onSelect: () => api.unpinFolder(path).then(setPinned, fail("取消置顶失败")) }
+      : { label: "置顶", onSelect: () => api.pinFolder(path).then(setPinned, fail("置顶失败")) };
+  const moveItems = (item: PinnedItem): MenuItem[] => {
+    const i = pinned.indexOf(item);
+    return [
+      { label: "上移", disabled: i <= 0, onSelect: () => api.movePinned(i, i - 1).then(setPinned, fail("移动失败")) },
+      { label: "下移", disabled: i >= pinned.length - 1, onSelect: () => api.movePinned(i, i + 1).then(setPinned, fail("移动失败")) },
+    ];
+  };
+
+  /** Rename a folder, then follow it: any open view inside it moves to the new path. */
+  const renameFolder = async (path: string, name: string) => {
+    setRenaming(null);
+    setRenameDialog(null);
+    try {
+      const { path: renamed } = await api.rename(path, name);
+      const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
+      setHist((h) => ({
+        ...h,
+        stack: h.stack.map((v) => (v.kind === "browse" ? { ...v, path: move(v.path), select: v.select && move(v.select) } : v)),
+      }));
+      setHist((h) => {
+        const cur = h.stack[h.i];
+        if (cur.kind !== "browse" || cur.path !== parentOf(renamed)) return h;
+        const stack = [...h.stack];
+        stack[h.i] = { ...cur, select: renamed }; // keep the renamed folder selected
+        return { ...h, stack };
+      });
+      refresh();
+    } catch (e) {
+      fail("重命名失败")(e);
+    }
+  };
+
   const entryMenu = (e: Entry): MenuItem[] => {
     if (e.type === "dir") {
       return [
         { label: "打开", onSelect: () => go({ kind: "browse", path: e.path }) },
         { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
+        "separator",
+        pinItem(e.path),
+        { label: "重命名…", hint: "F2", disabled: syncBusy, onSelect: () => setRenaming(e.path) },
         "separator",
         { label: "从 Canvas 同步此文件夹", disabled: syncBusy, onSelect: () => startSync({ paths: [e.path] }, e.name) },
         { label: "恢复此文件夹的原版…", disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
@@ -202,23 +250,51 @@ export function MainWindow() {
     { label: "从 Canvas 同步此课程", disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.display_code) },
     { label: "恢复此课程的原版…", disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.display_code }) },
     "separator",
+    pinItem(c.dir),
+    { label: "重命名文件夹…", disabled: syncBusy, onSelect: () => setRenameDialog({ path: c.dir, what: "课程文件夹" }) },
     { label: "新建智能文件夹（限此课程）…", onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
   ];
 
-  const termMenu = (term: string, list: Course[]): MenuItem[] => [
-    { label: `从 Canvas 同步 ${term}`, disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
-    { label: `恢复 ${term} 的原版…`, disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
+  const termMenu = (term: string, list: Course[]): MenuItem[] => {
+    // The term's own folder, if its courses share one (they do with the default layout).
+    const parents = [...new Set(list.map((c) => parentOf(c.dir)))];
+    const termDir = parents.length === 1 && parents[0] ? parents[0] : null;
+    return [
+      { label: `从 Canvas 同步 ${term}`, disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
+      { label: `恢复 ${term} 的原版…`, disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
+      ...(termDir
+        ? ["separator" as const, pinItem(termDir), { label: "重命名文件夹…", disabled: syncBusy, onSelect: () => setRenameDialog({ path: termDir, what: "学期文件夹" }) }]
+        : []),
+    ];
+  };
+
+  const pinnedFolderMenu = (item: PinnedItem & { type: "folder" }): MenuItem[] => [
+    { label: "打开", disabled: !item.exists, onSelect: () => go({ kind: "browse", path: item.path }) },
+    { label: `在 ${fileManager} 中显示`, disabled: !item.exists, onSelect: () => reveal(item.path) },
+    { label: "重命名…", disabled: !item.exists || syncBusy, onSelect: () => setRenameDialog({ path: item.path, what: "文件夹" }) },
+    "separator",
+    ...moveItems(item),
+    "separator",
+    { label: "取消置顶", onSelect: () => api.unpinFolder(item.path).then(setPinned, fail("取消置顶失败")) },
   ];
 
-  const smartMenu = (f: SmartFolder): MenuItem[] => [
+  const smartMenu = (f: PinnedItem & { type: "smart" }): MenuItem[] => [
     { label: "编辑…", onSelect: () => setEditing({ folder: f }) },
+    "separator",
+    ...moveItems(f),
+    "separator",
     {
-      label: "删除", danger: true,
+      label: "删除智能文件夹", danger: true,
       onSelect: async () => {
-        setSmart(await api.deleteSmartFolder(f.name));
+        setPinned(await api.deleteSmartFolder(f.name));
         if (view.kind === "smart" && view.name === f.name) go({ kind: "home" });
       },
     },
+  ];
+
+  const addMenu = (): MenuItem[] => [
+    { label: "新建智能文件夹…", onSelect: () => setEditing({ folder: null }) },
+    ...(browsing && !isPinned(browsing) ? [{ label: `置顶当前文件夹（${browsing.split("/").pop()}）`, onSelect: () => api.pinFolder(browsing).then(setPinned, fail("置顶失败")) }] : []),
   ];
 
   if (startupError) return <StartupError message={startupError} />;
@@ -247,22 +323,35 @@ export function MainWindow() {
           <NavItem icon={<Search className="size-4" />} active={isActive({ kind: "home" })} onClick={() => go({ kind: "home" })} title="搜索" />
           <NavItem icon={<FolderTree className="size-4" />} active={isActive({ kind: "browse", path: "" })} onClick={() => go({ kind: "browse", path: "" })} title="全部文件" />
 
-          <SectionHeader title="智能文件夹" action={{ label: "新建智能文件夹", icon: <Plus className="size-3.5" />, onClick: () => setEditing({ folder: null }) }} />
-          {smart.length === 0 && (
-            <button onClick={() => setEditing({ folder: null })} className="w-full px-2 py-1 text-left text-xs text-muted hover:text-fg-soft">
-              把常用的搜索存成文件夹…
-            </button>
+          <SectionHeader title="置顶" action={{ label: "添加到置顶", icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
+          {pinned.length === 0 && (
+            <p className="px-2 py-1 text-xs leading-relaxed text-muted">
+              右键任意文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。
+            </p>
           )}
-          {smart.map((f) => (
-            <NavItem
-              key={f.name}
-              icon={<Sparkles className="size-4" />}
-              title={f.name}
-              active={isActive({ kind: "smart", name: f.name })}
-              onClick={() => go({ kind: "smart", name: f.name })}
-              onMenu={(x, y) => openMenu(smartMenu(f), x, y)}
-            />
-          ))}
+          {pinned.map((item) =>
+            item.type === "folder" ? (
+              <NavItem
+                key={`folder:${item.path}`}
+                icon={<Folder className="size-4" />}
+                title={item.path.split("/").pop() ?? item.path}
+                subtitle={item.exists ? pinnedWhere(item, courseList) : "找不到这个文件夹了"}
+                muted={!item.exists}
+                active={isActive({ kind: "browse", path: item.path })}
+                onClick={() => item.exists && go({ kind: "browse", path: item.path })}
+                onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
+              />
+            ) : (
+              <NavItem
+                key={`smart:${item.name}`}
+                icon={<Sparkles className="size-4" />}
+                title={item.name}
+                active={isActive({ kind: "smart", name: item.name })}
+                onClick={() => go({ kind: "smart", name: item.name })}
+                onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
+              />
+            ),
+          )}
 
           {groupByTerm(courseList).map(([term, list]) => (
             <section key={term}>
@@ -270,8 +359,8 @@ export function MainWindow() {
               {list.map((c) => (
                 <NavItem
                   key={c.id}
-                  title={c.display_code}
-                  subtitle={c.name !== c.display_code ? c.name : undefined}
+                  title={c.folder_name ?? c.display_code}
+                  subtitle={c.folder_name ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id}
                   badge={changes[c.id] ? `${changes[c.id]} 个文件有本地改动` : undefined}
                   onClick={() => go({ kind: "browse", path: c.dir })}
@@ -350,6 +439,10 @@ export function MainWindow() {
             onOpen={(e) => (e.deleted ? setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) : void api.openPath(e.path))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}
             onMenu={(e, x, y) => openMenu(entryMenu(e), x, y)}
+            renaming={renaming}
+            onStartRename={(e) => canRename(e) && !syncBusy && setRenaming(e.path)}
+            onRename={(e, name) => void renameFolder(e.path, name)}
+            onRenameCancel={() => setRenaming(null)}
           />
         ) : (
           <Results
@@ -364,6 +457,15 @@ export function MainWindow() {
       </main>
 
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      {renameDialog && (
+        <RenameDialog
+          current={renameDialog.path.split("/").pop() ?? ""}
+          what={renameDialog.what}
+          onClose={() => setRenameDialog(null)}
+          onSubmit={(name) => void renameFolder(renameDialog.path, name)}
+        />
+      )}
+      <Notice message={notice} onDone={() => setNotice(null)} />
       {restoring && (
         <RestoreDialog
           scope={restoring.scope}
@@ -381,8 +483,8 @@ export function MainWindow() {
           preset={editing.folder}
           courses={courseList}
           onClose={() => setEditing(null)}
-          onSaved={(folders, name) => {
-            setSmart(folders);
+          onSaved={(items, name) => {
+            setPinned(items);
             setEditing(null);
             go({ kind: "smart", name });
           }}
@@ -393,6 +495,40 @@ export function MainWindow() {
 }
 
 // -- pieces -----------------------------------------------------------------------------
+
+/** Where a pinned folder is, for its subtitle: its course (or term), else its parent folder. */
+function pinnedWhere(item: { path: string; course_id: number | null }, courses: Course[]): string {
+  const c = courses.find((x) => x.id === item.course_id);
+  if (c && item.path === c.dir) return c.term ?? "";
+  if (c) return c.folder_name ?? c.display_code;
+  return parentOf(item.path) || "全部文件";
+}
+
+/** Backend messages, said the way the rest of the app talks. */
+function friendly(message: string): string {
+  if (/already exists/.test(message)) return "这里已经有同名的文件夹了";
+  if (/empty or start with a dot/.test(message)) return "名称不能为空，也不能以“.”开头";
+  if (/wait for the sync/.test(message)) return "正在同步，等同步完成再试";
+  if (/can't be renamed/.test(message)) return "这个文件夹不能重命名";
+  return message;
+}
+
+/** A short message at the bottom of the window that goes away by itself. */
+function Notice({ message, onDone }: { message: string | null; onDone: () => void }) {
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => done.current(), 5000); // per message, not per re-render
+    return () => clearTimeout(t);
+  }, [message]);
+  if (!message) return null;
+  return (
+    <div role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-line bg-panel px-4 py-2 text-sm shadow-xl">
+      {message}
+    </div>
+  );
+}
 
 function Results({ view, mode, query, results, showCourse, onMenu }: {
   view: View;
@@ -488,11 +624,12 @@ function SmartTitle({ folder, courses }: { folder: SmartFolder; courses: Course[
   );
 }
 
-function NavItem({ icon, title, subtitle, active, badge, onClick, onMenu }: {
+function NavItem({ icon, title, subtitle, active, badge, muted, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
   subtitle?: string;
   active: boolean;
+  muted?: boolean;
   badge?: string;
   onClick: () => void;
   onMenu?: (x: number, y: number) => void;
@@ -502,7 +639,7 @@ function NavItem({ icon, title, subtitle, active, badge, onClick, onMenu }: {
       <button
         onClick={onClick}
         onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-selected text-fg" : "text-fg-soft hover:bg-chip"}`}
+        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-selected text-fg" : "text-fg-soft hover:bg-chip"} ${muted ? "opacity-50" : ""}`}
       >
         {icon && <span className="shrink-0 text-muted">{icon}</span>}
         <span className="min-w-0 flex-1">

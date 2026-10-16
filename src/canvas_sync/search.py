@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .config import Settings
+from .layout import Layout
 from .models import Course
 from .state import State
 from .text import extract, html_to_text
@@ -174,7 +175,9 @@ class CourseMatcher:
         self.prefixable: list[tuple[str, int]] = []
         for c in courses:
             names = [c.code, c.name, settings.course_names.get(c.id, "")]
-            aliases = settings.course_aliases.get(c.id, [])
+            # A course folder you renamed (to "线代", say) answers to that name too.
+            renamed = settings.folder_names.get(Layout(settings).canonical_course_dir(c).as_posix())
+            aliases = [*settings.course_aliases.get(c.id, []), *([renamed] if renamed else [])]
             keys = {_norm(n) for n in [*names, *aliases] if n} | code_keys(c.code)
             for k in keys - {""}:
                 self.exact.setdefault(k, set()).add(c.id)

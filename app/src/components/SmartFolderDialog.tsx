@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, Kind, SmartFolder } from "../lib/api";
+import type { Course, Kind, PinnedItem, SmartFolder } from "../lib/api";
 import { Button, Dialog } from "./Dialog";
 import { KIND } from "./Result";
 
@@ -10,7 +10,7 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
   preset?: SmartFolder | null; // a new one's starting values (e.g. limited to a course)
   courses: Course[];
   onClose: () => void;
-  onSaved: (folders: SmartFolder[], name: string) => void;
+  onSaved: (pinned: PinnedItem[], name: string) => void;
 }) {
   const start = initial ?? preset;
   const [name, setName] = useState(start?.name ?? "");
