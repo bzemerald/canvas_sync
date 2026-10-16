@@ -90,6 +90,18 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # value: what it's called instead. New files from Canvas keep going into it.
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
+# A course's page arranged for it in the app: its tabs, the cards on its overview. What isn't
+# here follows the default, set in the app. Cards: upcoming, announcements, modules, files,
+# grades, links, or added ones: folder (path), file (path), note (id), page (page), module
+# (module), search (query), syllabus.
+# [course_layouts.12345]
+# tabs = ["overview", "files", "assignments", "modules", "announcements", "grades", "syllabus", "pages"]
+# hidden_tabs = ["pages"]
+# cards = [{type = "upcoming"}, {type = "folder", id = "a1", path = "Fall 2026/MATH 221/Files/Labs"}]
+# extra_cards = [...]                   # without `cards`: added after the default ones
+# hidden_links = ["tool:5"]
+# links = [{title = "Course website", url = "https://..."}]
+
 [sidebar]
 # The app's sidebar order, as you drag it: terms by Canvas's name for them, courses by id.
 # Terms and courses not listed come first and in the usual order (new terms on top).
@@ -113,6 +125,56 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 """
 
 ICON_KEYS = ("icon", "color", "emoji")
+
+# A course's page in the app: its tabs, and the cards on its overview.
+COURSE_TABS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
+OVERVIEW_CARDS = ("upcoming", "announcements", "modules", "files", "grades", "links")  # one of each, built in
+# Cards you add, with what they show: a folder or file (path), a note (id), a page (page),
+# a module (module), a saved search (query, content), the syllabus.
+ADDED_CARDS = ("folder", "file", "note", "page", "module", "search", "syllabus")
+CARD_KEYS = {"type": str, "id": str, "title": str, "path": str, "page": str, "module": int, "query": str, "content": bool}
+
+
+def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
+    return [n for n in dict.fromkeys(names) if n in allowed] if isinstance(names, list) else []
+
+
+def _card(c: Any) -> dict[str, Any] | None:
+    """A card as config.toml has it, if it makes sense."""
+    if not isinstance(c, dict) or c.get("type") not in (*OVERVIEW_CARDS, *ADDED_CARDS):
+        return None
+    out = {}
+    for k, kind in CARD_KEYS.items():
+        if k in c and isinstance(c[k], kind) and not (kind is int and isinstance(c[k], bool)):
+            out[k] = c[k]
+    return out
+
+
+@dataclass
+class CourseLayout:
+    """One course's page, arranged for it. Tabs and the overview each follow the default unless
+    arranged for the course (None)."""
+    tabs: list[str] | None = None  # all tabs, in order
+    hidden_tabs: list[str] | None = None
+    cards: list[dict[str, Any]] | None = None  # the overview's cards, shown, in order
+    extra_cards: list[dict[str, Any]] = field(default_factory=list)  # without `cards`: after the default ones
+    hidden_links: list[str] = field(default_factory=list)  # in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
+    links: list[dict[str, str]] = field(default_factory=list)  # your own: {title, url}
+
+    @classmethod
+    def parse(cls, d: dict[str, Any]) -> CourseLayout:
+        def cards(key: str) -> list[dict[str, Any]]:
+            return [c for c in (_card(x) for x in d.get(key, []) or []) if c]
+        own_tabs = "tabs" in d or "hidden_tabs" in d
+        links = [{"title": str(x.get("title", "")), "url": str(x["url"])}
+                 for x in d.get("links", []) or [] if isinstance(x, dict) and isinstance(x.get("url"), str)]
+        return cls(_known(d.get("tabs"), COURSE_TABS) if own_tabs else None,
+                   _known(d.get("hidden_tabs"), COURSE_TABS) if own_tabs else None,
+                   cards("cards") if "cards" in d else None, cards("extra_cards"),
+                   [str(x) for x in d.get("hidden_links", []) or []], links)
+
+    def empty(self) -> bool:
+        return self.tabs is None and self.cards is None and not (self.extra_cards or self.hidden_links or self.links)
 
 CHOICES = {
     "select": {"active", "favorites"},
@@ -181,6 +243,7 @@ class Settings:
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
     course_icons: dict[int, dict[str, str]] = field(default_factory=dict)  # {icon, color} or {emoji}
+    course_layouts: dict[int, CourseLayout] = field(default_factory=dict)  # courses arranged for themselves
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
     pinned: list[Pinned] = field(default_factory=list)
     folder_names: dict[str, str] = field(default_factory=dict)
@@ -219,6 +282,9 @@ class Settings:
             on_remote_delete=sync.get("on_remote_delete", d.on_remote_delete),
             rules=[_rule(r) for r in data.get("rules", [])],
             course_aliases={int(k): _strings(v) for k, v in data.get("course_aliases", {}).items()},
+            course_layouts={
+                int(k): CourseLayout.parse(v) for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict)
+            },
             course_icons={
                 int(k): {str(kk): str(vv) for kk, vv in v.items() if kk in ICON_KEYS}
                 for k, v in data.get("course_icons", {}).items() if isinstance(v, dict)
@@ -470,6 +536,43 @@ def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> 
     path.write_text(tomlkit.dumps(doc))
 
 
+def save_course_layout(path: Path, course_id: int, layout: CourseLayout | None) -> None:
+    """A course's page arranged for it; None (or nothing arranged): all of it follows the default."""
+    doc = tomlkit.parse(path.read_text())
+    layouts = doc.setdefault("course_layouts", tomlkit.table(is_super_table=True))
+    key = str(course_id)
+    if layout is None or layout.empty():
+        if key in layouts:
+            del layouts[key]
+        path.write_text(tomlkit.dumps(doc))
+        return
+
+    def inline(d: dict[str, Any]) -> Any:
+        t = tomlkit.inline_table()
+        t.update(d)
+        return t
+
+    def rows(items: list[dict[str, Any]]) -> Any:
+        a = tomlkit.array()
+        a.extend(inline(x) for x in items)
+        return a.multiline(True)
+
+    t = tomlkit.table()
+    if layout.tabs is not None:
+        t["tabs"] = layout.tabs
+        t["hidden_tabs"] = layout.hidden_tabs or []
+    if layout.cards is not None:
+        t["cards"] = rows(layout.cards)
+    if layout.extra_cards:
+        t["extra_cards"] = rows(layout.extra_cards)
+    if layout.hidden_links:
+        t["hidden_links"] = layout.hidden_links
+    if layout.links:
+        t["links"] = rows(layout.links)
+    layouts[key] = t
+    path.write_text(tomlkit.dumps(doc))
+
+
 def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
     """Move a course id into `include` (sync=True) or `exclude`, keeping the file's comments."""
     doc = tomlkit.parse(path.read_text())
@@ -492,12 +595,6 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
 
 LANGUAGES = ("system", "zh", "en")
 AUTO_SYNC_MINUTES = (0, 30, 60, 180, 360, 1440)  # 0: off
-COURSE_TABS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
-OVERVIEW_CARDS = ("upcoming", "announcements", "modules", "files", "grades", "links")
-
-
-def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
-    return [n for n in dict.fromkeys(names) if n in allowed] if isinstance(names, list) else []
 
 
 @dataclass

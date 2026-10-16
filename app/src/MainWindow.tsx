@@ -8,9 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_LABEL, TAB_OF_KIND, arrangeCards, arrangeTabs,
-  useOverview, type CourseTab, type OverviewCard,
+  CourseGrades, CourseModules, CourseReader, CourseTabs, TAB_LABEL, TAB_OF_KIND, arrangeTabs, useOverview, type CourseTab,
 } from "./components/CourseView";
+import { CourseOverview } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
@@ -23,7 +23,9 @@ import { Settings } from "./components/Settings";
 import { Count } from "./components/Status";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
-import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SidebarOrder, SmartFolder, SyncState } from "./lib/api";
+import type {
+  AccountInfo, Course, CourseLayout, DocKind, Entry, Hit, Kind, LayoutChanges, LayoutPart, PinnedItem, Scope, SidebarOrder, SmartFolder, SyncState,
+} from "./lib/api";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
@@ -39,7 +41,7 @@ import { t, tx } from "./lib/i18n";
 // tab is in; `item` the announcement / assignment / page being read.
 type View =
   | { kind: "home" }
-  | { kind: "course"; id: number; tab: CourseTab; path: string; select?: string; item?: string }
+  | { kind: "course"; id: number; tab: CourseTab; path: string; select?: string; item?: string; first?: boolean } // first: opened on its first tab
   | { kind: "browse"; path: string; select?: string }
   | { kind: "smart"; name: string }
   | { kind: "settings" };
@@ -93,8 +95,7 @@ export function MainWindow() {
   const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
   const [hiding, setHiding] = useState<{ courses: Course[]; term?: string } | null>(null);
   const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
-  const [tabs, setTabs] = useState<{ order: CourseTab[]; hidden: CourseTab[] }>({ order: arrangeTabs([]), hidden: [] });
-  const [cards, setCards] = useState<{ order: OverviewCard[]; hidden: OverviewCard[] }>({ order: arrangeCards([]), hidden: [] });
+  const [layout, setLayout] = useState<{ id: number; layout: CourseLayout } | null>(null); // the open course's page
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -134,12 +135,6 @@ export function MainWindow() {
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
-  useEffect(() => {
-    void api.prefs().then((p) => {
-      setTabs({ order: arrangeTabs(p.tab_order ?? []), hidden: (p.hidden_tabs ?? []) as CourseTab[] });
-      setCards({ order: arrangeCards(p.overview_order ?? []), hidden: (p.overview_hidden ?? []) as OverviewCard[] });
-    }, () => {});
-  }, []);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
   useEffect(() => {
@@ -207,6 +202,7 @@ export function MainWindow() {
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
   const filesTab = view.kind === "browse" || (view.kind === "course" && view.tab === "files");
   const browsing = filesView ? view.path : null;
+  const folderShown = filesTab ? view.path : null; // a course's other tabs remember a folder, but don't show it
   const course = view.kind === "course" ? courseList.find((c) => c.id === view.id) ?? null : null;
   const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
   /** Go to a folder: inside a course, that's the course's page; elsewhere, a plain folder. */
@@ -214,17 +210,51 @@ export function MainWindow() {
     const c = courseAt(path);
     go(c ? { kind: "course", id: c.id, tab: "files", path, select } : { kind: "browse", path, select });
   };
-  /** The tab a course opens on: 概览, unless you hid it (then your first tab). */
-  const firstTab = tabs.order.find((x) => !tabs.hidden.includes(x)) ?? "overview";
-  const openCourse = (c: Course, tab: CourseTab = firstTab) => go({ kind: "course", id: c.id, tab, path: c.dir });
-  const arrangeCourseTabs = (order: CourseTab[], hidden: CourseTab[]) => {
-    setTabs({ order, hidden });
-    void api.setPrefs({ tab_order: order, hidden_tabs: hidden }).catch(fail(t("操作失败")));
-    // Hid the tab you're on: go to the first one left.
-    if (view.kind === "course" && hidden.includes(view.tab)) {
-      replaceView({ ...view, tab: order.find((x) => !hidden.includes(x)) ?? "overview", item: undefined });
+  /** A course opens on its first tab (概览, unless that course's 概览 is hidden). */
+  const openCourse = (c: Course, tab?: CourseTab) => go({ kind: "course", id: c.id, tab: tab ?? "overview", path: c.dir, first: !tab });
+
+  // -- the open course's page, arranged for it (tabs, overview cards) or as every course is --
+  const layoutId = view.kind === "course" ? view.id : null;
+  useEffect(() => {
+    if (layoutId === null) return;
+    let live = true;
+    api.courseLayout(layoutId).then((l) => live && setLayout({ id: layoutId, layout: l }), () => {});
+    return () => {
+      live = false;
+    };
+  }, [layoutId, version]);
+  const courseLayout = layout && layout.id === layoutId ? layout.layout : null;
+  const tabOrder = arrangeTabs(courseLayout?.tabs ?? []);
+  const hiddenTabs = (courseLayout?.hidden_tabs ?? []) as CourseTab[];
+  const firstTab = tabOrder.find((x) => !hiddenTabs.includes(x)) ?? "overview";
+  // Opened on its first tab, or on a tab just hidden: go to the first one shown.
+  useEffect(() => {
+    if (view.kind !== "course" || !courseLayout) return;
+    if ((view.first && view.tab !== firstTab) || hiddenTabs.includes(view.tab)) {
+      replaceView({ ...view, tab: firstTab, item: undefined, first: false });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseLayout, view]);
+  const arrangeLayout = (changes: LayoutChanges) => {
+    if (!courseLayout || layoutId === null) return;
+    const id = layoutId;
+    const tabs = "tabs" in changes || "hidden_tabs" in changes;
+    const cards = "cards" in changes || "hidden_links" in changes;
+    setLayout({ id, layout: { ...courseLayout, ...changes, own_tabs: courseLayout.own_tabs || tabs, own_cards: courseLayout.own_cards || cards } });
+    api.arrangeCourse(id, changes).then((l) => setLayout({ id, layout: l }), fail(t("操作失败")));
   };
+  const layoutDone = (id: number, message: string) => (l: CourseLayout) => {
+    setLayout({ id, layout: l });
+    say(message);
+  };
+  const resetLayout = (part: LayoutPart) =>
+    layoutId !== null &&
+    api.resetCourseLayout(layoutId, part).then(
+      layoutDone(layoutId, part === "tabs" ? t("这门课的标签恢复了默认") : t("这门课的概览恢复了默认，添加的卡片还在")),
+      fail(t("操作失败")),
+    );
+  const makeDefaultLayout = (part: LayoutPart) =>
+    layoutId !== null && api.makeDefaultLayout(layoutId, part).then(layoutDone(layoutId, t("其他没单独排过的课程现在也这样排")), fail(t("操作失败")));
   /** An announcement, assignment, page or the syllabus, shown in its course's page. */
   const openDoc = (courseId: number, kind: DocKind, id: string) => {
     const c = courseList.find((x) => x.id === courseId);
@@ -583,10 +613,10 @@ export function MainWindow() {
 
   const addMenu = (): MenuItem[] => {
     const here: MenuItem[] = [];
-    if (course && browsing === course.dir && !isCoursePinned(course.id)) {
-      here.push({ label: t("置顶此课程（{label}）", { label: course.label }), onSelect: () => api.pinCourse(course.id).then(setPinned, fail(t("置顶失败"))) });
-    } else if (browsing && !isPinned(browsing)) {
-      here.push({ label: t("置顶当前文件夹（{name}）", { name: browsing.split("/").pop()! }), onSelect: () => api.pinFolder(browsing).then(setPinned, fail(t("置顶失败"))) });
+    if (course && (folderShown === null || folderShown === course.dir)) {
+      if (!isCoursePinned(course.id)) here.push({ label: t("置顶此课程（{label}）", { label: course.label }), onSelect: () => api.pinCourse(course.id).then(setPinned, fail(t("置顶失败"))) });
+    } else if (folderShown && !isPinned(folderShown)) {
+      here.push({ label: t("置顶当前文件夹（{name}）", { name: folderShown.split("/").pop()! }), onSelect: () => api.pinFolder(folderShown).then(setPinned, fail(t("置顶失败"))) });
     }
     return [{ label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) }, ...here];
   };
@@ -612,7 +642,7 @@ export function MainWindow() {
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
-  const pinnedHere = pinned.some((p) => p.type === "folder" && p.path === browsing); // highlight that, not also its course
+  const pinnedHere = pinned.some((p) => p.type === "folder" && p.path === folderShown); // highlight that, not also its course
   const smartActive = (name: string) => view.kind === "smart" && view.name === name;
   const renderPinned = (item: PinnedItem) => {
     if (item.type === "course") {
@@ -637,7 +667,7 @@ export function MainWindow() {
           title={item.path.split("/").pop() ?? item.path}
           subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件夹了")}
           muted={!item.exists}
-          active={browsing === item.path}
+          active={folderShown === item.path}
           onClick={() => item.exists && goPath(item.path)}
           onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
         />
@@ -839,9 +869,12 @@ export function MainWindow() {
           <CourseTabs
             tab={view.tab}
             overview={overview}
-            order={tabs.order}
-            hidden={tabs.hidden}
-            onArrange={arrangeCourseTabs}
+            order={tabOrder}
+            hidden={hiddenTabs}
+            own={!!courseLayout?.own_tabs}
+            onArrange={(order, hidden) => arrangeLayout({ tabs: order, hidden_tabs: hidden })}
+            onReset={() => void resetLayout("tabs")}
+            onMakeDefault={() => void makeDefaultLayout("tabs")}
             onMenu={openMenu}
             onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })}
             onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
@@ -859,17 +892,18 @@ export function MainWindow() {
           <CourseOverview
             course={course}
             overview={overview}
+            layout={courseLayout}
+            onLayout={arrangeLayout}
+            onReset={() => void resetLayout("overview")}
+            onMakeDefault={() => void makeDefaultLayout("overview")}
+            onMenu={openMenu}
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
+            onOpenHit={openHere}
             onTab={(t) => go({ ...view, tab: t, item: undefined })}
+            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
             onSeen={seenChanged}
             onShowFile={(p) => goPath(parentOf(p), p)}
-            cards={cards.order}
-            hiddenCards={cards.hidden}
-            onArrange={(order, hidden) => {
-              setCards({ order, hidden });
-              void api.setPrefs({ overview_order: order, overview_hidden: hidden }).catch(fail(t("操作失败")));
-            }}
-            onMenu={openMenu}
+            onShowFolder={(p) => goPath(p)}
             onMarkSeen={(kinds) => void api.markSeen(course.id, kinds).then(refresh, fail(t("标记失败")))}
           />
         ) : view.kind === "course" && course && !searching && view.tab === "modules" ? (

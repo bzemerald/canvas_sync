@@ -36,6 +36,7 @@ export function useReorder(
       const shifts = new Map<number, number>(); // px each item is moved aside, now
       let size = 0; // the gap to open: the dragged item's length, with the space after it
       let at = index; // insertion point (0..count) for rows/columns; the card to take for cards
+      let before = ""; // the item's own transition (cards slide to new places), put back after
 
       // Where the items were when the drag began (sliding them aside doesn't move their landing
       // spots, and they're mid-animation half the time), kept in step with scrolling.
@@ -83,11 +84,19 @@ export function useReorder(
         }
       };
       const reset = () => {
-        elements.current.forEach((el) => {
-          el.style.transition = "none";
-          el.style.transform = "";
-          el.style.opacity = "";
-        });
+        if (axis === "cards") {
+          // It lands where it was dropped, not sliding over from where it was; then it's as before.
+          source.style.opacity = "";
+          source.style.transition = "none";
+          requestAnimationFrame(() => requestAnimationFrame(() => (source.style.transition = before)));
+        } else {
+          // Straight back to no shift: the list is about to be drawn in its new order.
+          elements.current.forEach((el) => {
+            el.style.transition = "none";
+            el.style.transform = "";
+            el.style.opacity = "";
+          });
+        }
         shifts.clear();
         setDrag(null);
       };
@@ -104,7 +113,8 @@ export function useReorder(
             size = (axis === "x" ? me.width : me.height) + Math.max(0, gap);
           }
           // The copy under the pointer stands in for it; its place shows as a gap.
-          source.style.transition = "opacity 120ms ease";
+          before = source.style.transition;
+          source.style.transition = axis === "cards" && before && before !== "none" ? `${before}, opacity 120ms ease` : "opacity 120ms ease";
           source.style.opacity = axis === "cards" ? "0.35" : "0";
           setDrag({ from: index, target: index });
         },

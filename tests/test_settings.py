@@ -211,3 +211,54 @@ def test_hide_a_whole_term(root, tmp_path, keychain):
         assert r == {"hidden": [], "excluded": []}
     settings = Settings.load(root / ".canvas" / "config.toml")
     assert (settings.hidden, settings.exclude) == ([3], [3])
+
+
+def test_course_layouts(root, tmp_path, keychain):
+    with client(Account(BASE, root), tmp_path) as api:
+        usual = api.get("/api/courses/1/layout").json()
+        assert not usual["own_tabs"] and not usual["own_cards"]
+        assert usual["tabs"][0] == "overview" and usual["cards"][0] == {"type": "upcoming"}
+        default_cards = usual["cards"]
+
+        # Arranging one course doesn't touch the others.
+        r = api.post("/api/courses/1/layout", json={"hidden_tabs": ["pages"], "cards": [
+            {"type": "files"}, {"type": "note", "id": "n1", "title": "Exam notes"}, {"type": "folder", "id": "f1", "path": "Fall 2026/MATH 221/Files"},
+        ], "links": [{"title": "Site", "url": "https://math.test"}]}).json()
+        assert r["own_tabs"] and r["own_cards"] and r["hidden_tabs"] == ["pages"]
+        assert [c["type"] for c in r["cards"]] == ["files", "note", "folder"]
+        other = api.get("/api/courses/2/layout").json()
+        assert not other["own_tabs"] and not other["own_cards"] and other["hidden_tabs"] == []
+        assert api.post("/api/courses/1/layout", json={"cards": [{"type": "note"}]}).status_code == 400  # (no id)
+        assert api.post("/api/courses/1/layout", json={"cards": [{"type": "movie"}]}).status_code == 400
+        assert api.post("/api/courses/1/layout", json={"links": [{"title": "x", "url": "javascript:1"}]}).status_code == 400
+
+        # Notes are kept in the sync folder.
+        assert api.get("/api/courses/1/notes/n1").json() == {"text": ""}
+        api.put("/api/courses/1/notes/n1", json={"text": "Bring a calculator"})
+        assert api.get("/api/courses/1/notes/n1").json() == {"text": "Bring a calculator"}
+        assert (root / ".canvas" / "notes" / "1" / "n1.md").read_text() == "Bring a calculator"
+        assert api.get("/api/courses/1/notes/..%2Fx").status_code in (400, 404)
+
+        # Tabs and the overview go back to the default apart: cards and links you added stay.
+        r = api.post("/api/courses/1/layout/reset/overview").json()
+        assert not r["own_cards"] and r["own_tabs"] and r["hidden_tabs"] == ["pages"]
+        assert r["cards"] == [*default_cards, {"type": "note", "id": "n1", "title": "Exam notes"},
+                              {"type": "folder", "id": "f1", "path": "Fall 2026/MATH 221/Files"}]
+        assert r["links"] == [{"title": "Site", "url": "https://math.test"}]
+        r = api.post("/api/courses/1/layout/reset/tabs").json()
+        assert not r["own_tabs"] and r["hidden_tabs"] == [] and len(r["cards"]) == len(default_cards) + 2
+
+        # A course's tabs, or its built-in cards, can become the default; cards it added stay its own.
+        api.post("/api/courses/1/layout", json={"hidden_tabs": ["pages"], "cards": [{"type": "files"}, {"type": "note", "id": "n1"}]})
+        r = api.post("/api/courses/1/layout/default/tabs").json()
+        assert not r["own_tabs"] and r["own_cards"]  # (it is the default now)
+        other = api.get("/api/courses/2/layout").json()
+        assert other["hidden_tabs"] == ["pages"] and other["cards"] == default_cards
+        r = api.post("/api/courses/1/layout/default/overview").json()
+        assert not r["own_cards"] and r["cards"] == [{"type": "files"}, {"type": "note", "id": "n1"}]
+        assert api.get("/api/courses/2/layout").json()["cards"] == [{"type": "files"}]
+        assert api.post("/api/courses/1/layout/reset/everything").status_code == 404
+
+        # Arranged just like the default, a course follows the default again.
+        api.post("/api/courses/2/layout", json={"hidden_tabs": []})
+        assert api.post("/api/courses/2/layout", json={"hidden_tabs": ["pages"]}).json()["own_tabs"] is False

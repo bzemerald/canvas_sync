@@ -187,6 +187,43 @@ export type PinnedItem =
   | { type: "folder"; path: string; course_id: number | null; exists: boolean }
   | ({ type: "smart" } & SmartFolder);
 
+/** A card on a course's overview: built in (upcoming, announcements, modules, files, grades,
+ * links), or added (folder, file, note, page, module, search, syllabus) with what it shows. */
+export interface Card {
+  type: string;
+  id?: string; // added cards
+  title?: string; // a title of your own
+  path?: string; // folder, file
+  page?: string; // page: its url
+  module?: number;
+  query?: string; // search
+  content?: boolean; // search: also text inside
+}
+
+/** A course's page as arranged. Its tabs, and its overview, are each arranged for the course or
+ * follow the default (which any course's can be made). */
+export interface CourseLayout {
+  tabs: string[]; // all tabs, in order
+  hidden_tabs: string[];
+  cards: Card[]; // the overview's, shown, in order
+  hidden_links: string[]; // in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
+  links: { title: string; url: string }[]; // added to 工具与链接
+  own_tabs: boolean; // arranged for the course (else: the default)
+  own_cards: boolean;
+}
+export type LayoutChanges = Partial<Omit<CourseLayout, "own_tabs" | "own_cards">>;
+export type LayoutPart = "tabs" | "overview";
+
+export const courseLayout = (course: number) => api<CourseLayout>(`/courses/${course}/layout`);
+export const arrangeCourse = (course: number, changes: LayoutChanges) => post<CourseLayout>(`/courses/${course}/layout`, changes);
+/** Its tabs, or its overview, back to the default (cards and links added to it stay). */
+export const resetCourseLayout = (course: number, part: LayoutPart) => post<CourseLayout>(`/courses/${course}/layout/reset/${part}`, {});
+/** Its tabs, or its overview's built-in cards, as the default. */
+export const makeDefaultLayout = (course: number, part: LayoutPart) => post<CourseLayout>(`/courses/${course}/layout/default/${part}`, {});
+export const note = (course: number, id: string) => api<{ text: string }>(`/courses/${course}/notes/${id}`);
+export const saveNote = (course: number, id: string, text: string) =>
+  api<{ text: string }>(`/courses/${course}/notes/${id}`, { method: "PUT", body: JSON.stringify({ text }) });
+
 /** What can be pinned to the sidebar (besides smart folders, which are made in their dialog). */
 export type PinTarget =
   | { course: number } // a course

@@ -38,7 +38,8 @@ from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
-    PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
+    ADDED_CARDS, COURSE_TABS, OVERVIEW_CARDS, PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, PinnedCourse,
+    PinnedFolder, SmartFolder, _card, delete_smart_folder, save_course_layout,
     move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_icon, set_course_select,
     set_courses_hidden, unpin,
 )
@@ -136,6 +137,19 @@ class SetupRequest(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class LayoutRequest(BaseModel):
+    """What to change in a course's page; what's left out stays."""
+    tabs: list[str] | None = None
+    hidden_tabs: list[str] | None = None
+    cards: list[dict[str, Any]] | None = None
+    hidden_links: list[str] | None = None
+    links: list[dict[str, str]] | None = None
+
+
+class NoteRequest(BaseModel):
+    text: str
 
 
 class IconRequest(BaseModel):
@@ -649,6 +663,134 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 except LookupError:
                     pass  # it wasn't pinned
         set_courses_hidden(config(), course_ids, req.hidden, syncing=req.syncing)
+
+    # -- a course's page, arranged ------------------------------------------------------------
+
+    def default_layout() -> dict[str, Any]:
+        """What a course doesn't arrange for itself: the default (set in the app), else the usual."""
+        p = prefs()
+        tabs = [*p.tab_order, *(x for x in COURSE_TABS if x not in p.tab_order)]
+        order = [*p.overview_order, *(x for x in OVERVIEW_CARDS if x not in p.overview_order)]
+        return {"tabs": tabs, "hidden_tabs": p.hidden_tabs, "cards": [{"type": c} for c in order if c not in p.overview_hidden]}
+
+    def own_layout(course_id: int) -> CourseLayout:
+        with engine() as e:
+            return e.settings.course_layouts.get(course_id) or CourseLayout()
+
+    def added(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [c for c in cards if c["type"] not in OVERVIEW_CARDS]
+
+    def all_tabs(tabs: list[str]) -> list[str]:
+        return [*tabs, *(x for x in COURSE_TABS if x not in tabs)]
+
+    def layout_of(course_id: int) -> dict[str, Any]:
+        own, usual = own_layout(course_id), default_layout()
+        return {
+            "tabs": usual["tabs"] if own.tabs is None else all_tabs(own.tabs),
+            "hidden_tabs": usual["hidden_tabs"] if own.hidden_tabs is None else own.hidden_tabs,
+            "cards": [*usual["cards"], *own.extra_cards] if own.cards is None else own.cards,
+            "hidden_links": own.hidden_links,
+            "links": own.links,
+            "own_tabs": own.tabs is not None,  # arranged for the course (else: the default)
+            "own_cards": own.cards is not None or bool(own.hidden_links),
+        }
+
+    def settle(own: CourseLayout) -> CourseLayout:
+        """Arranged just as the default has it: then it follows the default (as that changes too)."""
+        usual = default_layout()
+        if own.tabs is not None and (all_tabs(own.tabs), set(own.hidden_tabs or [])) == (usual["tabs"], set(usual["hidden_tabs"])):
+            own = replace(own, tabs=None, hidden_tabs=None)
+        if own.cards is not None and own.cards == [*usual["cards"], *added(own.cards)]:
+            own = replace(own, cards=None, extra_cards=added(own.cards))
+        return own
+
+    @api.get("/courses/{course_id}/layout")
+    def course_layout(course_id: int) -> dict[str, Any]:
+        """The course's page: its tabs, in order, which are hidden, and its overview's cards."""
+        return layout_of(course_id)
+
+    @api.post("/courses/{course_id}/layout")
+    def arrange_course(course_id: int, req: LayoutRequest) -> dict[str, Any]:
+        """Arrange this course's tabs or overview for itself (the default no longer applies to them)."""
+        now = layout_of(course_id)
+        changes = {k: v for k, v in req.model_dump().items() if v is not None}
+        merged = {**now, **changes}
+        cards = [_card(c) for c in merged["cards"]]
+        ids = [c.get("id") for c in cards if c and c.get("id")]
+        if None in cards or len(ids) != len(set(ids)):
+            raise HTTPException(400, "cards don't make sense")
+        if any(c["type"] in ADDED_CARDS and c["type"] != "syllabus" and not c.get("id") for c in cards if c):
+            raise HTTPException(400, "an added card needs an id")
+        for tab in [*merged["tabs"], *merged["hidden_tabs"]]:
+            if tab not in COURSE_TABS:
+                raise HTTPException(400, f"no tab {tab!r}")
+        for link in merged["links"]:
+            if urlsplit(link.get("url", "")).scheme not in ("http", "https"):
+                raise HTTPException(400, "links must be web addresses")
+        own = own_layout(course_id)
+        if "tabs" in changes or "hidden_tabs" in changes:
+            own = replace(own, tabs=merged["tabs"], hidden_tabs=merged["hidden_tabs"])
+        if "cards" in changes:
+            own = replace(own, cards=[c for c in cards if c], extra_cards=[])
+        if "hidden_links" in changes:
+            own = replace(own, hidden_links=merged["hidden_links"])
+        if "links" in changes:
+            own = replace(own, links=[{"title": str(x.get("title", "")), "url": x["url"]} for x in merged["links"]])
+        save_course_layout(config(), course_id, settle(own))
+        return layout_of(course_id)
+
+    @api.post("/courses/{course_id}/layout/reset/{part}")
+    def reset_course_layout(course_id: int, part: str) -> dict[str, Any]:
+        """The course's tabs, or its overview, back to the default. Cards added to the overview stay
+        (after the default ones), and so do links added to it."""
+        own = own_layout(course_id)
+        if part == "tabs":
+            own = replace(own, tabs=None, hidden_tabs=None)
+        elif part == "overview":
+            own = replace(own, cards=None, extra_cards=added(layout_of(course_id)["cards"]), hidden_links=[])
+        else:
+            raise HTTPException(404, "tabs or overview")
+        save_course_layout(config(), course_id, own)
+        return layout_of(course_id)
+
+    @api.post("/courses/{course_id}/layout/default/{part}")
+    def make_default_layout(course_id: int, part: str) -> dict[str, Any]:
+        """The course's tabs, or its overview's built-in cards, become the default: for courses that
+        don't arrange them for themselves. (Cards it added are its own: a folder, a note...)"""
+        now = layout_of(course_id)
+        if part == "tabs":
+            replace(prefs(), tab_order=now["tabs"], hidden_tabs=now["hidden_tabs"]).save(prefs_path)
+        elif part == "overview":
+            shown = [c["type"] for c in now["cards"] if c["type"] in OVERVIEW_CARDS]
+            replace(prefs(), overview_order=[*shown, *(x for x in OVERVIEW_CARDS if x not in shown)],
+                    overview_hidden=[x for x in OVERVIEW_CARDS if x not in shown]).save(prefs_path)
+        else:
+            raise HTTPException(404, "tabs or overview")
+        save_course_layout(config(), course_id, settle(own_layout(course_id)))
+        return layout_of(course_id)
+
+    def note_file(course_id: int, note: str) -> Path:
+        if not re.fullmatch(r"[a-z0-9-]{1,40}", note):
+            raise HTTPException(400, "not a note id")
+        assert account is not None
+        return account.root / META_DIR / "notes" / str(course_id) / f"{note}.md"
+
+    @api.get("/courses/{course_id}/notes/{note}")
+    def read_note(course_id: int, note: str) -> dict[str, str]:
+        f = note_file(course_id, note)
+        return {"text": f.read_text() if f.exists() else ""}
+
+    @api.put("/courses/{course_id}/notes/{note}")
+    def write_note(course_id: int, note: str, req: NoteRequest) -> dict[str, str]:
+        """A note card's text, as typed (kept in the sync folder, under .canvas/notes)."""
+        if len(req.text) > 1_000_000:
+            raise HTTPException(413, "too long")
+        f = note_file(course_id, note)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(req.text)
+        tmp.replace(f)
+        return {"text": req.text}
 
     @api.post("/courses/{course_id}/hide")
     def hide_course(course_id: int, req: HideRequest) -> dict[str, Any]:
