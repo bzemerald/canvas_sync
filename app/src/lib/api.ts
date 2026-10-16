@@ -43,11 +43,37 @@ export interface Item extends ItemSummary {
   attachments: { id: number; name: string; path: string | null }[];
 }
 
+/** One entry in a module, and where clicking it leads. */
+export interface ModuleItem {
+  id: number | null;
+  type: "File" | "Page" | "Assignment" | "Quiz" | "Discussion" | "ExternalUrl" | "ExternalTool" | "SubHeader" | string;
+  title: string;
+  indent: number;
+  done: boolean; // a completion requirement you've met
+  file?: string; // the local copy
+  doc?: { kind: DocKind; id: string }; // shown in the app
+  external?: string; // a web link
+  url?: string; // on Canvas
+  deleted?: boolean; // a file you deleted
+  due_at?: string | null;
+}
+
+export interface Module {
+  id: number;
+  name: string;
+  position: number;
+  unlock_at: string | null;
+  state: string | null; // Canvas's: locked / unlocked / started / completed
+  folder: string | null; // its folder in 文件, if there is one
+  current: boolean; // has the newest upload or the next deadline
+  items: ModuleItem[];
+}
+
 export interface Overview {
   upcoming: ItemSummary[];
   announcements: ItemSummary[];
   new_files: { file_id: number; path: string; name: string; date: string | null }[];
-  counts: { announcements: number; assignments: number; pages: number; files: number; syllabus: boolean };
+  counts: { modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean };
 }
 
 export interface Course {
@@ -162,6 +188,7 @@ export function search(
 
 export const courses = () => api<Course[]>("/courses");
 export const overview = (course: number) => api<Overview>(`/courses/${course}/overview`);
+export const modules = (course: number) => api<Module[]>(`/courses/${course}/modules`);
 export const items = (course: number, kind: DocKind) => api<ItemSummary[]>(`/courses/${course}/items?kind=${kind}`);
 export const item = (course: number, kind: DocKind, id: string) =>
   api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);

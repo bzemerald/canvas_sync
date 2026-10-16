@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE INDEX IF NOT EXISTS files_course ON files(course_id);
 CREATE TABLE IF NOT EXISTS links (path TEXT PRIMARY KEY, file_id INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS modules (
+    course_id INTEGER, id INTEGER, position INTEGER, name TEXT, raw TEXT,  -- raw includes the items
+    PRIMARY KEY (course_id, id)
+);
 CREATE TABLE IF NOT EXISTS documents (
     course_id INTEGER, kind TEXT, id TEXT, title TEXT, updated_at TEXT, raw TEXT,
     PRIMARY KEY (course_id, kind, id)
@@ -162,6 +166,17 @@ class State:
     def courses(self) -> list[Course]:
         rows = self.db.execute("SELECT id, name, code, term FROM courses ORDER BY term, code")
         return [Course(r["id"], r["name"], r["code"], r["term"]) for r in rows]
+
+    def save_modules(self, course_id: int, modules: list[dict]) -> None:
+        self.db.execute("DELETE FROM modules WHERE course_id = ?", (course_id,))
+        self.db.executemany(
+            "INSERT OR REPLACE INTO modules VALUES (?, ?, ?, ?, ?)",
+            [(course_id, m["id"], m.get("position") or 0, m.get("name") or "", json.dumps(m)) for m in modules],
+        )
+
+    def modules(self, course_id: int) -> list[dict]:
+        rows = self.db.execute("SELECT raw FROM modules WHERE course_id = ? ORDER BY position, id", (course_id,))
+        return [json.loads(r[0]) for r in rows]
 
     def save_documents(self, course_id: int, docs: list[Document]) -> None:
         self.db.execute("DELETE FROM documents WHERE course_id = ?", (course_id,))

@@ -7,7 +7,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
+import { CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
@@ -627,6 +627,14 @@ export function MainWindow() {
             overview={overview}
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
             onTab={(t) => go({ ...view, tab: t, item: undefined })}
+          />
+        ) : view.kind === "course" && course && !searching && view.tab === "modules" ? (
+          <CourseModules
+            key={course.id}
+            course={course}
+            version={version}
+            onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
+            onShowFolder={(p) => goPath(p)}
           />
         ) : view.kind === "course" && course && !searching && view.tab !== "files" ? (
           <CourseReader

@@ -245,6 +245,17 @@ def test_api_scoped_sync(api, root, fake):
     assert api.post("/api/sync", json={"paths": ["../elsewhere"]}).status_code == 400
 
 
+def test_api_sync_with_no_files_to_fetch_still_stores_the_rest(api, fake):
+    fake.module(3, "Week 3", [{"type": "SubHeader", "title": "Reading"}])
+    fake.announcements.append({"id": 7, "title": "No class Friday", "message": "<p>Enjoy</p>",
+                               "posted_at": "2026-09-04T00:00:00Z"})
+    assert api.post("/api/sync", json={}).status_code == 202
+    state = wait_for_sync(api)
+    assert state["phase"] == "done" and state["changes"] == {}
+    assert [m["name"] for m in api.get("/api/courses/1/modules").json()] == ["Week 1", "Week 2", "Week 3"]
+    assert [a["title"] for a in api.get("/api/courses/1/items", params={"kind": "announcement"}).json()] == ["No class Friday"]
+
+
 def test_api_smart_folders_thumbs_and_preview(api, root):
     folder = {"name": "Week 2", "query": "lec2", "courses": [1], "kinds": ["file"]}
     assert api.post("/api/smart-folders", json=folder).json() == [{"type": "smart", **folder, "content": False}]

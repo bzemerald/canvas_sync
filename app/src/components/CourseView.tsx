@@ -1,16 +1,20 @@
 // A course's page: tabs (概览 first), the overview, and readers for announcements,
 // assignments, pages and the syllabus. The 文件 tab is the file browser, rendered by
 // the main window.
-import { ClipboardList, ExternalLink, FileText, FolderOpen, Megaphone, Paperclip, ScrollText } from "lucide-react";
+import {
+  AppWindow, BookOpen, Check, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock,
+  Megaphone, MessagesSquare, Paperclip, ScrollText,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Item, ItemSummary, Overview } from "../lib/api";
+import type { Course, DocKind, Item, ItemSummary, Module, ModuleItem, Overview } from "../lib/api";
+import { usePref } from "../lib/prefs";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
 import { FileIcon } from "./FileIcon";
 import { RichText, type CourseLink } from "./RichText";
 
-export type CourseTab = "overview" | "announcements" | "assignments" | "files" | "syllabus" | "pages";
+export type CourseTab = "overview" | "modules" | "announcements" | "assignments" | "files" | "syllabus" | "pages";
 
 export const TAB_OF_KIND: Record<DocKind, CourseTab> = {
   announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus",
@@ -38,6 +42,7 @@ export function CourseTabs({ tab, overview, onTab }: { tab: CourseTab; overview:
   // Tabs with nothing in them aren't shown; 概览 and 文件 always are.
   const tabs: [CourseTab, string, boolean][] = [
     ["overview", "概览", true],
+    ["modules", "模块", !!c?.modules],
     ["announcements", "公告", !!c?.announcements],
     ["assignments", "作业", !!c?.assignments],
     ["files", "文件", true],
@@ -190,6 +195,120 @@ function AssignmentRow({ a, onClick, selected }: { a: ItemSummary; onClick: () =
         <span className="ml-auto shrink-0"><Due iso={a.due_at} /></span>
       </div>
     </Row>
+  );
+}
+
+// -- 模块 ----------------------------------------------------------------------------------
+
+const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  Page: BookOpen, Assignment: ClipboardList, Quiz: ListChecks, Discussion: MessagesSquare,
+  ExternalUrl: Link, ExternalTool: AppWindow,
+};
+
+/** The course as the instructor laid it out. Opens with the current modules expanded
+ * (newest upload, next deadline); what you expand or collapse is remembered per course. */
+export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
+  course: Course;
+  version: number;
+  onOpenDoc: (kind: DocKind, id: string) => void;
+  onShowFolder: (path: string) => void;
+}) {
+  const [list, setList] = useState<Module[] | null>(null);
+  const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
+  useEffect(() => {
+    api.modules(course.id).then(setList, () => setList([]));
+  }, [course.id, version]);
+
+  const expanded = new Set(open ?? (list ?? []).filter((m) => m.current).map((m) => m.id));
+  const toggle = (id: number) => {
+    const next = new Set(expanded);
+    if (!next.delete(id)) next.add(id);
+    setOpen([...next]);
+  };
+
+  const activate = (it: ModuleItem) => {
+    if (it.file) void api.openPath(it.file);
+    else if (it.doc) onOpenDoc(it.doc.kind, it.doc.id);
+    else if (it.external) void api.openExternal(it.external);
+    else if (it.url) void api.openUrl(it.url);
+  };
+
+  if (list === null) return <p className="px-6 py-8 text-sm text-muted">正在加载…</p>;
+  if (list.length === 0) {
+    return <p className="px-6 py-8 text-sm text-muted">还没有模块。（新加的课程同步一次后就会显示。）</p>;
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-4xl px-6 py-4">
+        <div className="mb-2 flex justify-end gap-3 text-xs text-muted">
+          <button className="hover:text-fg" onClick={() => setOpen(list.map((m) => m.id))}>全部展开</button>
+          <button className="hover:text-fg" onClick={() => setOpen([])}>全部收起</button>
+        </div>
+        {list.map((m) => {
+          const isOpen = expanded.has(m.id);
+          const locked = m.state === "locked";
+          return (
+            <section key={m.id} className="mb-2 rounded-xl border border-line bg-panel">
+              <header className="group flex items-center gap-2 px-3 py-2">
+                <button onClick={() => toggle(m.id)} aria-expanded={isOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                  {isOpen ? <ChevronDown className="size-4 shrink-0 text-muted" /> : <ChevronRight className="size-4 shrink-0 text-muted" />}
+                  <span className="truncate font-medium">{m.name}</span>
+                  {m.current && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">当前</span>}
+                  {locked && (
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-muted">
+                      <Lock className="size-3" />{m.unlock_at ? `${shortDate(m.unlock_at)} 解锁` : "未解锁"}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-xs text-muted">{m.items.filter((i) => i.type !== "SubHeader").length} 项</span>
+                </button>
+                {m.folder && (
+                  <button
+                    title="在“文件”中查看这个模块的文件夹"
+                    onClick={() => onShowFolder(m.folder!)}
+                    className="shrink-0 rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus:opacity-100"
+                  >
+                    <FolderOpen className="size-4" />
+                  </button>
+                )}
+              </header>
+              {isOpen && (
+                <ul className="border-t border-line px-2 py-1">
+                  {m.items.length === 0 && <li className="px-2 py-2 text-sm text-muted">空的</li>}
+                  {m.items.map((it, i) => <ModuleRow key={it.id ?? i} it={it} onClick={() => activate(it)} />)}
+                </ul>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
+  const pad = { paddingLeft: 8 + it.indent * 20 };
+  if (it.type === "SubHeader") {
+    return <li style={pad} className="pt-2.5 pb-1 text-xs font-medium text-muted">{it.title}</li>;
+  }
+  const Icon = ITEM_ICON[it.type];
+  const leavesApp = !it.file && !it.doc;
+  return (
+    <li>
+      <button
+        onClick={onClick}
+        style={pad}
+        title={it.deleted ? "你删除了这个文件；在 Canvas 中打开" : leavesApp ? "在浏览器中打开" : undefined}
+        className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm hover:bg-chip ${it.deleted ? "opacity-55" : ""}`}
+      >
+        {it.type === "File" ? <FileIcon name={it.title} /> : Icon ? <Icon className="size-4 shrink-0 text-muted" /> : <FileText className="size-4 shrink-0 text-muted" />}
+        <span className={`truncate ${it.deleted ? "line-through" : ""}`}>{it.title}</span>
+        {it.done && <Check className="size-3.5 shrink-0 text-type-sheet" aria-label="已完成" />}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {it.due_at && <Due iso={it.due_at} />}
+          {leavesApp && <ExternalLink className="size-3.5 text-muted" aria-label="在浏览器中打开" />}
+        </span>
+      </button>
+    </li>
   );
 }
 

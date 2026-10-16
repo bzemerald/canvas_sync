@@ -43,6 +43,8 @@ class Executor:
                 self.state.upsert_remote(f)
                 remote[f.id] = f
             self.state.save_documents(snap.course.id, snap.documents)
+            if snap.modules is not None:
+                self.state.save_modules(snap.course.id, snap.modules)
         self.state.commit()
 
         errors: list[tuple[Action, str]] = []

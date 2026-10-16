@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .discover import file_refs
+from .layout import Layout, sanitize
 from .search import DOC_BODY, relative_url
 from .state import State
 from .text import html_to_text
@@ -143,6 +144,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         "announcements": announcements[:5],
         "new_files": files[:8],
         "counts": {
+            "modules": len(state.modules(course_id)),
             "announcements": count["announcement"],
             "assignments": count["assignment"],
             "pages": count["page"],
@@ -150,3 +152,74 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
         },
     }
+
+
+def modules(state: State, root: Path, layout: Layout, course_id: int, now: datetime | None = None) -> list[dict[str, Any]]:
+    """The course's modules, each item saying where it leads in the app: a local file, a
+    page / assignment / announcement shown here, a web link, or the item on Canvas."""
+    now = now or datetime.now(timezone.utc)
+    course = next((c for c in state.courses() if c.id == course_id), None)
+    raw_modules = state.modules(course_id)
+    if course is None or not raw_modules:
+        return []
+    docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
+    files = {r.id: r for r in state.files_for_course(course_id)}
+    created: dict[int, str] = {}
+    for row in state.db.execute("SELECT id, raw FROM files WHERE course_id = ?", (course_id,)):
+        raw = json.loads(row["raw"] or "{}")
+        created[row["id"]] = raw.get("created_at") or raw.get("updated_at") or ""
+
+    def target(item: dict[str, Any]) -> dict[str, Any]:
+        kind, cid = item.get("type"), item.get("content_id")
+        canvas = relative_url(item.get("html_url"))
+        if kind == "File" and cid in files:
+            rec = files[cid]
+            if rec.ignored:
+                return {"deleted": True, "url": canvas}
+            if rec.path and (root / rec.path).exists():
+                return {"file": rec.path}
+            return {"url": canvas or f"/courses/{course_id}/files/{cid}"}
+        if kind == "Page" and ("page", item.get("page_url")) in docs:
+            return {"doc": {"kind": "page", "id": item["page_url"]}}
+        if kind == "Assignment" and ("assignment", str(cid)) in docs:
+            return {"doc": {"kind": "assignment", "id": str(cid)},
+                    "due_at": docs[("assignment", str(cid))].get("due_at")}
+        if kind == "Discussion" and ("announcement", str(cid)) in docs:
+            return {"doc": {"kind": "announcement", "id": str(cid)}}
+        if kind == "ExternalUrl" and item.get("external_url"):
+            return {"external": item["external_url"]}
+        return {"url": canvas} if canvas else {}
+
+    # "Current": the module with the newest upload, and the one with the next deadline.
+    newest = max(((created.get(i.get("content_id"), ""), m["id"]) for m in raw_modules for i in m.get("items") or []
+                  if i.get("type") == "File"), default=("", None))[1]
+    soonest: tuple[datetime, Any] | None = None
+    out = []
+    for m in raw_modules:
+        items = []
+        for it in m.get("items") or []:
+            t = target(it)
+            if (due := _when(t.get("due_at"))) and due >= now and (soonest is None or due < soonest[0]):
+                soonest = (due, m["id"])
+            title = it.get("title")
+            if not title and it.get("type") == "File" and it.get("content_id") in files:
+                title = files[it["content_id"]].name
+            items.append({
+                "id": it.get("id"), "type": it.get("type"), "title": title or "", "indent": it.get("indent") or 0,
+                "done": bool((it.get("completion_requirement") or {}).get("completed")), **t,
+            })
+        name = m.get("name") or "Module"
+        folder = layout.renamed(
+            layout.canonical_course_dir(course) / layout.s.view_dirs.get("modules", "modules")
+            / sanitize(f"{m.get('position', 0):02d} {name}")
+        )
+        out.append({
+            "id": m["id"], "name": name, "position": m.get("position") or 0,
+            "unlock_at": m.get("unlock_at"), "state": m.get("state"),  # Canvas's: locked / unlocked / started / completed
+            "folder": folder.as_posix() if (root / folder).is_dir() else None,
+            "items": items,
+        })
+    current = {newest, soonest[1] if soonest else None} - {None}
+    for m in out:
+        m["current"] = m["id"] in current
+    return out

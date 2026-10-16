@@ -55,7 +55,7 @@ def test_overview(root, course):
     assert [a["title"] for a in o["announcements"]] == ["Midterm room", "Welcome"]
     assert o["announcements"][0]["unread"] and o["announcements"][0]["author"] == "Prof"
     assert [f["name"] for f in o["new_files"]] == ["hw6.pdf", "lec1.pdf"]  # newest upload first
-    assert o["counts"] == {"announcements": 2, "assignments": 4, "pages": 2, "files": 2, "syllabus": True}
+    assert o["counts"] == {"modules": 1, "announcements": 2, "assignments": 4, "pages": 2, "files": 2, "syllabus": True}
 
 
 def test_items_and_one_item(root, course):
@@ -134,3 +134,44 @@ def test_open_external_links_only(api, monkeypatch):
     assert api.post("/api/open", json={"external": "https://example.com/x"}).status_code == 200
     assert api.post("/api/open", json={"external": "javascript:alert(1)"}).status_code == 400
     assert opened == ["https://example.com/x"]
+
+
+def test_modules(root, course):
+    course.module(2, "Week 2", [
+        {"id": 21, "type": "SubHeader", "title": "Before class"},
+        {"id": 22, "type": "Page", "title": "Intro", "page_url": "intro", "indent": 1},
+        {"id": 23, "type": "Assignment", "title": "HW 6", "content_id": 10,
+         "completion_requirement": {"type": "must_submit", "completed": True}},
+        {"id": 24, "type": "File", "title": "hw6.pdf", "content_id": 101},
+        {"id": 25, "type": "ExternalUrl", "title": "Textbook", "external_url": "https://book.test"},
+        {"id": 26, "type": "ExternalTool", "title": "Gradescope", "html_url": f"{BASE}/courses/1/modules/items/26"},
+        {"id": 27, "type": "Quiz", "title": "Quiz 1", "html_url": f"{BASE}/courses/1/quizzes/5"},
+    ])
+    pull(root, course)
+    with Engine(root) as e:
+        week1, week2 = content.modules(e.state, e.root, e.layout, 1, NOW)
+    assert week1["name"] == "Week 1" and week1["folder"] == f"{COURSE}/Modules/01 Week 1"
+    assert week1["items"][0] == {"id": None, "type": "File", "title": "lec1.pdf", "indent": 0, "done": False,
+                                      "file": f"{COURSE}/Modules/01 Week 1/lec1.pdf"}
+    by_title = {i["title"]: i for i in week2["items"]}
+    assert by_title["Before class"]["type"] == "SubHeader"
+    assert by_title["Intro"]["doc"] == {"kind": "page", "id": "intro"} and by_title["Intro"]["indent"] == 1
+    assert by_title["HW 6"]["doc"] == {"kind": "assignment", "id": "10"} and by_title["HW 6"]["done"]
+    assert by_title["hw6.pdf"]["file"] == f"{COURSE}/Modules/02 Week 2/hw6.pdf"
+    assert by_title["Textbook"]["external"] == "https://book.test"
+    assert by_title["Gradescope"]["url"] == "/courses/1/modules/items/26"
+    assert by_title["Quiz 1"]["url"] == "/courses/1/quizzes/5"
+    # Week 2 has both the newest upload and the next deadline.
+    assert (week1["current"], week2["current"]) == (False, True)
+
+
+def test_modules_survive_a_failed_fetch_but_not_being_turned_off(root, course):
+    pull(root, course)
+    course.modules_status = 400  # a failure that isn't "turned off" (and isn't retried, unlike 5xx)
+    pull(root, course)
+    with Engine(root) as e:
+        assert [m["name"] for m in e.state.modules(1)] == ["Week 1"]  # kept from before
+    course.modules_status = 404  # the course turned modules off
+    pull(root, course)
+    with Engine(root) as e:
+        assert e.state.modules(1) == []

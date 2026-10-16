@@ -206,6 +206,11 @@ def create_app(account: Account, token: str) -> FastAPI:
         with engine() as e:
             return content.overview(e.state, e.root, course_id)
 
+    @api.get("/courses/{course_id}/modules")
+    def course_modules(course_id: int) -> list[dict[str, Any]]:
+        with engine() as e:
+            return content.modules(e.state, e.root, e.layout, course_id)
+
     @api.get("/courses/{course_id}/items")
     def course_items(course_id: int, kind: str) -> list[dict[str, Any]]:
         if kind not in content.KINDS:
@@ -517,8 +522,9 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
                     if error:
                         job.errors.append(f"{a.path or a.name}: {error}")
 
-                if work:
-                    await e.apply(plan, on_event)
+                # Even with nothing to download: this is what stores new announcements,
+                # assignments, pages and modules.
+                await e.apply(plan, on_event)
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 

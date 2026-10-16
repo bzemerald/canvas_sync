@@ -39,6 +39,9 @@ class CourseSnapshot:
     documents: list[Document] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)  # features the course has turned off
+    # The course's modules as Canvas lists them (with items), for the app's 模块 tab.
+    # None if they couldn't be fetched this time: keep what was stored before.
+    modules: list[dict[str, Any]] | None = None
     # False if some listing failed for a transient reason, so a file missing from
     # this snapshot does not mean it was deleted from Canvas.
     complete: bool = True
@@ -79,12 +82,15 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
     folders, files, modules, pages, assignments, announcements, syllabus = await asyncio.gather(
         fetch("folders", client.folders(cid), empty),
         fetch("files", client.files(cid), empty),
-        fetch("modules", client.modules(cid), empty),
+        fetch("modules", client.modules(cid), None),
         fetch("pages", client.pages(cid), empty),
         fetch("assignments", client.assignments(cid), empty),
         fetch("announcements", client.announcements(cid), empty),
         fetch("syllabus", client.course(cid, ["syllabus_body"]), None),
     )
+
+    snap.modules = modules if modules is not None else ([] if "modules" in snap.unavailable else None)
+    modules = modules or []
 
     # 1. The Files tree.
     folder_paths = {f["id"]: _folder_parts(f.get("full_name", "")) for f in folders}

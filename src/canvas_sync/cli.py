@@ -207,6 +207,10 @@ def pull(
             render_plan(plan, verbose)
         work = [a for a in plan.actions if a.kind != Kind.SKIP]
         if not work:
+            if not dry_run:
+                # No files to fetch, but announcements, assignments, pages and modules may be new.
+                await engine.apply(plan)
+                reindex(engine)
             if not as_json:
                 console.print("Already up to date.")
             return

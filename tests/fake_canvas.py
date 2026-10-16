@@ -26,6 +26,7 @@ class FakeCanvas:
         self.announcements: list[dict] = []
         self.files_tab_hidden = False
         self.media: dict[str, tuple[bytes, str]] = {}  # other paths: (body, content type)
+        self.modules_status = 200  # e.g. 400 (a failure) or 404 (modules turned off)
         self.seen_auth: list[str | None] = []
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
@@ -54,6 +55,8 @@ class FakeCanvas:
             "/api/v1/announcements": lambda: self.announcements,
         }
         self.seen_auth.append(req.headers.get("authorization"))
+        if path == "/api/v1/courses/1/modules" and self.modules_status != 200:
+            return httpx.Response(self.modules_status, json={"errors": [{"message": "nope"}]})
         if path in self.media:
             body, ctype = self.media[path]
             return httpx.Response(200, content=body, headers={"content-type": ctype})

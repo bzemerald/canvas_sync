@@ -6,9 +6,9 @@ import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 
-export type CourseLink = { tab: "pages" | "assignments" | "announcements" | "syllabus"; id?: string };
+export type CourseLink = { tab: "pages" | "assignments" | "announcements" | "syllabus" | "modules"; id?: string };
 
-const COURSE_PATH = /^\/courses\/(\d+)\/(pages|assignments|discussion_topics|announcements)(?:\/([^/?#]+))?/;
+const COURSE_PATH = /^\/courses\/(\d+)\/(pages|assignments|discussion_topics|announcements|modules)(?:\/([^/?#]+))?/;
 const FILE_PATH = /^(?:\/courses\/(\d+))?\/files\/(\d+)/;
 
 function prepare(html: string): string {
@@ -93,6 +93,8 @@ export function RichText({ html, courseId, files, onNavigate, className = "" }: 
     if (m && Number(m[1]) === courseId) {
       const [, , what, id] = m;
       if (what === "assignments" && id === "syllabus") return onNavigate({ tab: "syllabus" });
+      if (what === "modules" && id !== "items") return onNavigate({ tab: "modules" }); // (module item links go to Canvas)
+      if (what === "modules") return void api.openUrl(url.pathname + url.search);
       if (what === "pages") return onNavigate({ tab: "pages", id: id && decodeURIComponent(id) });
       if (what === "assignments") return onNavigate({ tab: "assignments", id });
       return onNavigate({ tab: "announcements", id });
