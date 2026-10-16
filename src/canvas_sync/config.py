@@ -487,6 +487,7 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
 LANGUAGES = ("system", "zh", "en")
 AUTO_SYNC_MINUTES = (0, 30, 60, 180, 360, 1440)  # 0: off
 COURSE_TABS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
+OVERVIEW_CARDS = ("upcoming", "announcements", "modules", "files", "grades", "links")
 
 
 def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
@@ -500,6 +501,8 @@ class AppPrefs:
     sync_on_launch: bool = True  # sync when the app starts (unless it just did)
     tab_order: list[str] = field(default_factory=list)    # a course's tabs, as dragged; [] = the usual
     hidden_tabs: list[str] = field(default_factory=list)  # tabs you hid (in every course)
+    overview_order: list[str] = field(default_factory=list)   # the overview's cards, as dragged
+    overview_hidden: list[str] = field(default_factory=list)  # cards you turned off
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppPrefs:
@@ -518,6 +521,8 @@ class AppPrefs:
             sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
             tab_order=_known(data.get("tab_order"), COURSE_TABS),
             hidden_tabs=_known(data.get("hidden_tabs"), COURSE_TABS),
+            overview_order=_known(data.get("overview_order"), OVERVIEW_CARDS),
+            overview_hidden=_known(data.get("overview_hidden"), OVERVIEW_CARDS),
         )
 
     def save(self, path: Path | None = None) -> None:
@@ -528,6 +533,9 @@ class AppPrefs:
         for name in [*self.tab_order, *self.hidden_tabs]:
             if name not in COURSE_TABS:
                 raise ConfigError(f"no tab {name!r}; tabs are {COURSE_TABS}")
+        for name in [*self.overview_order, *self.overview_hidden]:
+            if name not in OVERVIEW_CARDS:
+                raise ConfigError(f"no overview card {name!r}; cards are {OVERVIEW_CARDS}")
         path = path or PREFS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
@@ -537,6 +545,8 @@ class AppPrefs:
         doc["sync_on_launch"] = self.sync_on_launch
         doc["tab_order"] = list(dict.fromkeys(self.tab_order))
         doc["hidden_tabs"] = list(dict.fromkeys(self.hidden_tabs))
+        doc["overview_order"] = list(dict.fromkeys(self.overview_order))
+        doc["overview_hidden"] = list(dict.fromkeys(self.overview_hidden))
         path.write_text(tomlkit.dumps(doc))
 
 

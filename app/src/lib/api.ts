@@ -124,6 +124,7 @@ export interface Overview {
   new_files: { file_id: number; path: string; name: string; date: string | null; new: boolean; updated: boolean }[];
   grades: { total: Total | null; recent: ItemSummary[] };
   tools: Tool[];
+  current_modules: Module[]; // this week's (newest upload, next deadline)
   new: NewCounts;
   counts: {
     modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean; grades: boolean;
@@ -213,6 +214,8 @@ export interface Prefs {
   sync_on_launch: boolean;
   tab_order?: string[]; // a course's tabs, as you dragged them
   hidden_tabs?: string[];
+  overview_order?: string[]; // the overview's cards, as you dragged them
+  overview_hidden?: string[];
   select?: "active" | "favorites"; // (once an account is set up)
 }
 

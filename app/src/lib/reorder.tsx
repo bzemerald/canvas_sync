@@ -4,10 +4,13 @@
 // A press only becomes a drag once the pointer has moved a few pixels, so clicks stay clicks.
 import { useEffect, useRef, useState } from "react";
 
-/** "y": a column; "x": a row; "grid": rows that wrap (before or after the nearest item). */
-export type Axis = "x" | "y" | "grid";
+/** "y": a column; "x": a row; "grid": rows that wrap (before or after the nearest item);
+ * "cards": anything (columns of cards): dropped on a card, an item takes its place. */
+export type Axis = "x" | "y" | "grid" | "cards";
 
-type Drag = { from: number; target: number }; // target: where it would go, as an index between items (0..count)
+type Drag = { from: number; target: number };
+/** Where a dragged item would land, relative to one item. */
+export type Mark = "before" | "after" | "onto" | null; // target: where it would go, as an index between items (0..count)
 
 export function useReorder(count: number, onMove: (from: number, to: number) => void, axis: Axis = "y") {
   const elements = useRef(new Map<number, HTMLElement>());
@@ -20,7 +23,12 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
   useEffect(() => {
     const targetAt = (x: number, y: number): number => {
       const rects = Array.from({ length: count }, (_, i) => elements.current.get(i)?.getBoundingClientRect() ?? null);
-      if (axis === "grid") {
+      if (axis === "cards") {
+        // The card under the pointer, else the nearest one.
+        const under = rects.findIndex((r) => r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+        if (under >= 0) return under;
+      }
+      if (axis === "grid" || axis === "cards") {
         let best = -1;
         let bestDistance = Infinity;
         rects.forEach((r, i) => {
@@ -29,6 +37,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
           if (d < bestDistance) [best, bestDistance] = [i, d];
         });
         if (best < 0) return 0;
+        if (axis === "cards") return best;
         const r = rects[best]!;
         return x > r.left + r.width / 2 ? best + 1 : best;
       }
@@ -64,7 +73,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
       end();
       if (!p?.dragging) return;
       if (d) {
-        const to = d.target > d.from ? d.target - 1 : d.target;
+        const to = axis === "cards" ? d.target : d.target > d.from ? d.target - 1 : d.target;
         if (to !== d.from) moveRef.current(d.from, to);
       }
       // The click that ends a drag isn't a click on what was dragged.
@@ -103,7 +112,8 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
     },
   });
   /** Where the dragged item would land, relative to item `index`; null when it wouldn't move. */
-  const mark = (index: number): "before" | "after" | null => {
+  const mark = (index: number): Mark => {
+    if (axis === "cards") return drag && drag.target === index && index !== drag.from ? "onto" : null;
     if (!drag || drag.target === drag.from || drag.target === drag.from + 1) return null;
     if (drag.target === index) return "before";
     return drag.target === count && index === count - 1 ? "after" : null;
@@ -117,9 +127,11 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
   };
 }
 
-/** The line that shows where a dragged item will land (in a `relative` item). */
-export function DropMark({ at, axis = "y" }: { at: "before" | "after" | null; axis?: Axis }) {
+/** The line that shows where a dragged item will land (in a `relative` item); for "onto", an
+ * outline around the item whose place it takes. */
+export function DropMark({ at, axis = "y" }: { at: Mark; axis?: Axis }) {
   if (!at) return null;
+  if (at === "onto") return <span aria-hidden className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] ring-2 ring-accent" />;
   const line = axis === "y"
     ? `inset-x-1 h-0.5 ${at === "before" ? "-top-px" : "-bottom-px"}`
     : `inset-y-1 w-0.5 ${at === "before" ? "-left-px" : "-right-px"}`;

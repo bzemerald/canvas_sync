@@ -8,7 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, arrangeTabs, useOverview, type CourseTab,
+  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, arrangeCards, arrangeTabs, useOverview,
+  type CourseTab, type OverviewCard,
 } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
@@ -27,7 +28,7 @@ import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys"
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
-import { DropMark, moved, useReorder } from "./lib/reorder";
+import { DropMark, moved, useReorder, type Mark } from "./lib/reorder";
 import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
@@ -102,6 +103,7 @@ export function MainWindow() {
   const [hiding, setHiding] = useState<Course | null>(null);
   const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
   const [tabs, setTabs] = useState<{ order: CourseTab[]; hidden: CourseTab[] }>({ order: arrangeTabs([]), hidden: [] });
+  const [cards, setCards] = useState<{ order: OverviewCard[]; hidden: OverviewCard[] }>({ order: arrangeCards([]), hidden: [] });
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -140,7 +142,10 @@ export function MainWindow() {
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
   useEffect(() => {
-    void api.prefs().then((p) => setTabs({ order: arrangeTabs(p.tab_order ?? []), hidden: (p.hidden_tabs ?? []) as CourseTab[] }), () => {});
+    void api.prefs().then((p) => {
+      setTabs({ order: arrangeTabs(p.tab_order ?? []), hidden: (p.hidden_tabs ?? []) as CourseTab[] });
+      setCards({ order: arrangeCards(p.overview_order ?? []), hidden: (p.overview_hidden ?? []) as OverviewCard[] });
+    }, () => {});
   }, []);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
@@ -796,6 +801,14 @@ export function MainWindow() {
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
             onTab={(t) => go({ ...view, tab: t, item: undefined })}
             onSeen={seenChanged}
+            cards={cards.order}
+            hiddenCards={cards.hidden}
+            onArrange={(order, hidden) => {
+              setCards({ order, hidden });
+              void api.setPrefs({ overview_order: order, overview_hidden: hidden }).catch(fail(t("操作失败")));
+            }}
+            onMenu={openMenu}
+            onMarkSeen={(kinds) => void api.markSeen(course.id, kinds).then(refresh, fail(t("标记失败")))}
           />
         ) : view.kind === "course" && course && !searching && view.tab === "modules" ? (
           <CourseModules
@@ -936,7 +949,7 @@ function TermSection({ group, sectionRef, grab, mark, dragging, collapsed, onTog
   group: TermGroup;
   sectionRef: (el: HTMLElement | null) => void;
   grab: { onPointerDown: (e: React.PointerEvent) => void };
-  mark: "before" | "after" | null;
+  mark: Mark;
   dragging: boolean;
   collapsed: boolean;
   onToggle: () => void;

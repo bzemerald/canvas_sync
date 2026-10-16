@@ -440,6 +440,17 @@ export const en: Record<string, string | [string, string]> = {
   "隐藏“{name}”标签": "Hide the “{name}” tab",
   "恢复默认的标签": "Reset tabs",
 
+  // -- the overview's cards
+  "当前模块": "This week's module",
+  "这门课没有": "Not in this course",
+  "恢复默认的概览": "Reset the overview",
+  "隐藏“{name}”": "Hide “{name}”",
+  "标为已读": "Mark read",
+  "还有 {n} 项 ›": ["1 more ›", "{n} more ›"],
+  "自定义概览": "Customize",
+  "所有卡片都隐藏了。点右上角的“自定义概览”选几张。": "Every card is hidden. Choose some under “Customize” at the top right.",
+  "拖动标题可以移动卡片，右键可以隐藏": "Drag the title to move this card; right-click to hide it",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

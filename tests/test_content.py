@@ -95,7 +95,9 @@ def api(root, course, monkeypatch):
 
 
 def test_api_course_page(api):
-    assert api.get("/api/courses/1/overview").json()["counts"]["pages"] == 2
+    o = api.get("/api/courses/1/overview").json()
+    assert o["counts"]["pages"] == 2
+    assert [m["name"] for m in o["current_modules"]] == ["Week 1"]  # (the one with the newest upload)
     assert [a["id"] for a in api.get("/api/courses/1/items", params={"kind": "announcement"}).json()] == ["7", "8"]
     assert api.get("/api/courses/1/items", params={"kind": "file"}).status_code == 400
     assert api.get("/api/courses/1/items/page/intro").json()["title"] == "Intro"

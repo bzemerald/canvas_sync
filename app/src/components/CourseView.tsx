@@ -3,7 +3,7 @@
 // by the main window. A blue dot marks what's new to you; opening it clears the dot.
 import {
   AppWindow, Award, BookOpen, Check, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock,
-  Megaphone, MessagesSquare, Paperclip, ScrollText,
+  Megaphone, MessagesSquare, Paperclip, ScrollText, SlidersHorizontal,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
@@ -11,7 +11,7 @@ import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, 
 import { usePref } from "../lib/prefs";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
-import { DropMark, moved, useReorder } from "../lib/reorder";
+import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 import { Count, NewDot } from "./Status";
@@ -203,16 +203,53 @@ function TotalLine({ total, big = false }: { total: Total; big?: boolean }) {
 
 // -- 概览 --------------------------------------------------------------------------------
 
-export function CourseOverview({ course, overview, onOpen, onTab, onSeen }: {
+export type OverviewCard = "upcoming" | "announcements" | "modules" | "files" | "grades" | "links";
+export const DEFAULT_CARDS: OverviewCard[] = ["upcoming", "announcements", "modules", "files", "grades", "links"];
+const CARD_LABEL: Record<OverviewCard, string> = {
+  upcoming: t("近期截止"), announcements: t("最新公告"), modules: t("当前模块"), files: t("最近新增的文件"),
+  grades: t("成绩"), links: t("工具与链接"),
+};
+
+/** Every card, in the order you dragged them into (any you never placed go at the end). */
+export function arrangeCards(saved: string[]): OverviewCard[] {
+  const placed = saved.filter((x): x is OverviewCard => (DEFAULT_CARDS as string[]).includes(x));
+  return [...placed, ...DEFAULT_CARDS.filter((x) => !placed.includes(x))];
+}
+
+/** What a course page opens with: cards for what's due, what was said, this week's module,
+ * what's new in its files, grades, and its tools. Drag a card by its title to move it; choose
+ * which to show under 自定义 (or right-click a title). The same in every course. */
+export function CourseOverview({ course, overview, cards, hiddenCards, onArrange, onMenu, onOpen, onTab, onSeen, onMarkSeen }: {
   course: Course;
   overview: Overview | null;
+  cards: OverviewCard[];
+  hiddenCards: OverviewCard[];
+  onArrange: (order: OverviewCard[], hidden: OverviewCard[]) => void;
+  onMenu: (items: MenuItem[], x: number, y: number) => void;
   onOpen: (kind: DocKind, id: string) => void;
   onTab: (t: CourseTab) => void;
   onSeen: () => void;
+  onMarkSeen: (kinds: ("announcement" | "assignment" | "file")[]) => void;
 }) {
   const { launch, pending } = useLaunch(course.id);
+  const available: Record<OverviewCard, boolean> = {
+    upcoming: true, announcements: true, modules: !!overview?.current_modules.length, files: true,
+    grades: !!overview?.counts.grades, links: true,
+  };
+  const shown = cards.filter((c) => !hiddenCards.includes(c) && available[c]);
+  const drag = useReorder(shown.length, (from, to) => onArrange(refill(cards, shown, moved(shown, from, to)), hiddenCards), "cards");
+  // Two columns when there's room, each card as tall as what's in it: 1st, 3rd, 5th... on the left.
+  const [grid, setGrid] = useState<HTMLElement | null>(null);
+  const [columns, setColumns] = useState(2);
+  useEffect(() => {
+    if (!grid) return;
+    const observer = new ResizeObserver(([e]) => setColumns(e.contentRect.width >= 760 ? 2 : 1));
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [grid]);
+
   if (!overview) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
-  const { upcoming, announcements, new_files, counts, grades, tools } = overview;
+  const { upcoming, announcements, new_files, counts, grades, tools, current_modules } = overview;
   const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus;
   if (empty) {
     return (
@@ -223,118 +260,205 @@ export function CourseOverview({ course, overview, onOpen, onTab, onSeen }: {
       </div>
     );
   }
+
+  const customize = (): MenuItem[] => [
+    ...cards.map((c): MenuItem => ({
+      label: CARD_LABEL[c],
+      checked: !hiddenCards.includes(c),
+      hint: available[c] ? undefined : t("这门课没有"),
+      onSelect: () => onArrange(cards, hiddenCards.includes(c) ? hiddenCards.filter((x) => x !== c) : [...hiddenCards, c]),
+    })),
+    "separator",
+    {
+      label: t("恢复默认的概览"),
+      disabled: !hiddenCards.length && cards.every((c, i) => c === DEFAULT_CARDS[i]),
+      onSelect: () => onArrange(DEFAULT_CARDS, []),
+    },
+  ];
+  const cardMenu = (c: OverviewCard): MenuItem[] => [
+    { label: t("隐藏“{name}”", { name: CARD_LABEL[c] }), onSelect: () => onArrange(cards, [...hiddenCards, c]) },
+    "separator",
+    ...customize(),
+  ];
+  const markRead = (n: number, kinds: ("announcement" | "assignment" | "file")[]) =>
+    n > 0 ? { label: t("标为已读"), onClick: () => onMarkSeen(kinds) } : undefined;
+  const activate = (it: ModuleItem) => {
+    if (it.file) void api.openPath(it.file).then(onSeen);
+    else if (it.doc) onOpen(it.doc.kind, it.doc.id);
+    else if (it.external) void api.openExternal(it.external);
+    else if (it.tool) launch(`item:${it.tool.module_item_id}`, { module_item_id: it.tool.module_item_id });
+    else if (it.url) void api.openUrl(it.url);
+  };
+
+  const body: Record<OverviewCard, () => React.ReactNode> = {
+    upcoming: () =>
+      upcoming.length === 0 ? <Empty>{t("接下来三周没有要交的作业")}</Empty>
+        : upcoming.map((a) => <AssignmentRow key={a.id} a={a} onClick={() => onOpen("assignment", a.id)} />),
+    announcements: () =>
+      announcements.length === 0 ? <Empty>{t("还没有公告")}</Empty> : announcements.map((a) => (
+        <Row key={a.id} onClick={() => onOpen("announcement", a.id)}>
+          <div className="flex items-center gap-2">
+            {a.new && <NewDot label={t("新公告")} />}
+            <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
+            <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
+          </div>
+          {a.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{a.preview}</p>}
+        </Row>
+      )),
+    modules: () => current_modules.map((m) => (
+      <div key={m.id}>
+        <h3 className="truncate px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted">{m.name}</h3>
+        <ul>
+          {m.items.slice(0, 10).map((it, i) => (
+            <ModuleRow key={it.id ?? i} it={{ ...it, indent: 0 }} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
+          ))}
+        </ul>
+        {m.items.length > 10 && (
+          <button onClick={() => onTab("modules")} className="px-2 py-1 text-xs text-muted hover:text-fg">{t("还有 {n} 项 ›", { n: m.items.length - 10 })}</button>
+        )}
+      </div>
+    )),
+    files: () =>
+      new_files.length === 0 ? <Empty>{t("还没有文件")}</Empty> : new_files.map((f) => (
+        <Row key={f.file_id} onClick={() => void api.openPath(f.path).then(onSeen)}>
+          <div className="flex items-center gap-2">
+            <FileIcon name={f.name} />
+            <span className={`truncate ${f.new ? "font-medium" : ""}`}>{f.name}</span>
+            {f.new && <NewDot label={f.updated ? t("有新版本") : t("新文件")} />}
+            {f.updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("已更新")}</span>}
+            <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(f.date, false)}</span>
+            <button
+              title={t("在 {app} 中显示", { app: fileManager })}
+              aria-label={t("在 {app} 中显示", { app: fileManager })}
+              onClick={(e) => {
+                e.stopPropagation();
+                void api.openPath(f.path, { reveal: true });
+              }}
+              className="shrink-0 rounded p-0.5 text-muted hover:text-fg"
+            >
+              <FolderOpen className="size-3.5" />
+            </button>
+          </div>
+        </Row>
+      )),
+    grades: () => (
+      <>
+        {grades.total && (
+          <div className="px-2 pt-1 pb-2">
+            <TotalLine total={grades.total} />
+            <p className="mt-0.5 text-xs text-muted">{t("当前总评（只算已评分的作业）")}</p>
+          </div>
+        )}
+        {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">{t("最近评分")}</h3>}
+        {grades.recent.map((a) => (
+          <Row key={a.id} onClick={() => onOpen("assignment", a.id)}>
+            <div className="flex items-center gap-2">
+              <span className="truncate">{a.title}</span>
+              <span className="ml-auto flex shrink-0 gap-1"><SubmissionBadges a={a} /></span>
+            </div>
+          </Row>
+        ))}
+      </>
+    ),
+    links: () => (
+      <div className="flex flex-wrap">
+        {tools.map((tool) => (
+          <Row key={tool.id} onClick={() => launch(`tool:${tool.id}`, { tool_id: tool.id })}>
+            <span className="flex items-center gap-2" title={tool.label ? t("在浏览器中打开 {name}（通过 Canvas 登录）", { name: tool.label }) : t("在浏览器中打开这个工具（通过 Canvas 登录）")}>
+              <AppWindow className="size-4 text-muted" />
+              {tool.label ?? t("外部工具")}
+              {pending === `tool:${tool.id}` && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+            </span>
+          </Row>
+        ))}
+        {counts.syllabus && (
+          <Row onClick={() => onTab("syllabus")}>
+            <span className="flex items-center gap-2"><ScrollText className="size-4 text-muted" />{t("课程大纲")}</span>
+          </Row>
+        )}
+        <Row onClick={() => void api.openUrl(`/courses/${course.id}`)}>
+          <span className="flex items-center gap-2"><ExternalLink className="size-4 text-muted" />{t("在 Canvas 中打开")}</span>
+        </Row>
+      </div>
+    ),
+  };
+  const head: Record<OverviewCard, { icon: React.ReactNode; more?: () => void; action?: { label: string; onClick: () => void } }> = {
+    upcoming: { icon: <ClipboardList className="size-4" />, more: counts.assignments ? () => onTab("assignments") : undefined, action: markRead(overview.new.assignments, ["assignment"]) },
+    announcements: { icon: <Megaphone className="size-4" />, more: counts.announcements ? () => onTab("announcements") : undefined, action: markRead(overview.new.announcements, ["announcement"]) },
+    modules: { icon: <ListChecks className="size-4" />, more: () => onTab("modules") },
+    files: { icon: <FileText className="size-4" />, more: () => onTab("files"), action: markRead(overview.new.files, ["file"]) },
+    grades: { icon: <Award className="size-4" />, more: () => onTab("grades") },
+    links: { icon: <ExternalLink className="size-4" /> },
+  };
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto grid max-w-5xl gap-4 p-6 lg:grid-cols-2">
-        <Card title={t("近期截止")} icon={<ClipboardList className="size-4" />} more={counts.assignments ? () => onTab("assignments") : undefined}>
-          {upcoming.length === 0 ? (
-            <Empty>{t("接下来三周没有要交的作业")}</Empty>
-          ) : (
-            upcoming.map((a) => <AssignmentRow key={a.id} a={a} onClick={() => onOpen("assignment", a.id)} />)
-          )}
-        </Card>
-        <Card title={t("最新公告")} icon={<Megaphone className="size-4" />} more={counts.announcements ? () => onTab("announcements") : undefined}>
-          {announcements.length === 0 ? (
-            <Empty>{t("还没有公告")}</Empty>
-          ) : (
-            announcements.map((a) => (
-              <Row key={a.id} onClick={() => onOpen("announcement", a.id)}>
-                <div className="flex items-center gap-2">
-                  {a.new && <NewDot label={t("新公告")} />}
-                  <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
-                </div>
-                {a.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{a.preview}</p>}
-              </Row>
-            ))
-          )}
-        </Card>
-        <Card title={t("最近新增的文件")} icon={<FileText className="size-4" />} more={() => onTab("files")}>
-          {new_files.length === 0 ? (
-            <Empty>{t("还没有文件")}</Empty>
-          ) : (
-            new_files.map((f) => (
-              <Row key={f.file_id} onClick={() => void api.openPath(f.path).then(onSeen)}>
-                <div className="flex items-center gap-2">
-                  <FileIcon name={f.name} />
-                  <span className={`truncate ${f.new ? "font-medium" : ""}`}>{f.name}</span>
-                  {f.new && <NewDot label={f.updated ? t("有新版本") : t("新文件")} />}
-                  {f.updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("已更新")}</span>}
-                  <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(f.date, false)}</span>
-                  <button
-                    title={t("在 {app} 中显示", { app: fileManager })}
-                    aria-label={t("在 {app} 中显示", { app: fileManager })}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void api.openPath(f.path, { reveal: true });
-                    }}
-                    className="shrink-0 rounded p-0.5 text-muted hover:text-fg"
-                  >
-                    <FolderOpen className="size-3.5" />
-                  </button>
-                </div>
-              </Row>
-            ))
-          )}
-        </Card>
-        {counts.grades && (
-          <Card title={t("成绩")} icon={<Award className="size-4" />} more={() => onTab("grades")}>
-            {grades.total && (
-              <div className="px-2 pt-1 pb-2">
-                <TotalLine total={grades.total} />
-                <p className="mt-0.5 text-xs text-muted">{t("当前总评（只算已评分的作业）")}</p>
-              </div>
-            )}
-            {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">{t("最近评分")}</h3>}
-            {grades.recent.map((a) => (
-              <Row key={a.id} onClick={() => onOpen("assignment", a.id)}>
-                <div className="flex items-center gap-2">
-                  <span className="truncate">{a.title}</span>
-                  <span className="ml-auto flex shrink-0 gap-1"><SubmissionBadges a={a} /></span>
-                </div>
-              </Row>
-            ))}
-          </Card>
-        )}
-        <Card title={tools.length ? t("工具与链接") : t("链接")} icon={<ExternalLink className="size-4" />} className={counts.grades ? "lg:col-span-2" : ""}>
-          <div className={counts.grades ? "flex flex-wrap" : ""}>
-            {tools.map((tool) => (
-              <Row key={tool.id} onClick={() => launch(`tool:${tool.id}`, { tool_id: tool.id })}>
-                <span className="flex items-center gap-2" title={tool.label ? t("在浏览器中打开 {name}（通过 Canvas 登录）", { name: tool.label }) : t("在浏览器中打开这个工具（通过 Canvas 登录）")}>
-                  <AppWindow className="size-4 text-muted" />
-                  {tool.label ?? t("外部工具")}
-                  {pending === `tool:${tool.id}` && <span className="text-xs text-muted">{t("正在打开…")}</span>}
-                </span>
-              </Row>
-            ))}
-            {counts.syllabus && (
-              <Row onClick={() => onTab("syllabus")}>
-                <span className="flex items-center gap-2"><ScrollText className="size-4 text-muted" />{t("课程大纲")}</span>
-              </Row>
-            )}
-            <Row onClick={() => void api.openUrl(`/courses/${course.id}`)}>
-              <span className="flex items-center gap-2"><ExternalLink className="size-4 text-muted" />{t("在 Canvas 中打开")}</span>
-            </Row>
-          </div>
-        </Card>
+      <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
+        <div className="mb-2 flex justify-end">
+          <button
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onMenu(customize(), r.right - 220, r.bottom + 4);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg"
+          >
+            <SlidersHorizontal className="size-3.5" />
+            {t("自定义概览")}
+          </button>
+        </div>
+        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点右上角的“自定义概览”选几张。")}</p>}
+        <div ref={setGrid} className="flex items-start gap-4">
+          {Array.from({ length: columns }, (_, col) => (
+            <div key={col} className="flex min-w-0 flex-1 flex-col gap-4">
+              {shown.map((c, i) => i % columns === col && (
+                <Card
+                  key={c}
+                  cardRef={drag.ref(i)}
+                  grab={drag.handle(i)}
+                  mark={drag.mark(i)}
+                  dragging={drag.dragging === i}
+                  title={c === "links" && !tools.length ? t("链接") : CARD_LABEL[c]}
+                  onMenu={(x, y) => onMenu(cardMenu(c), x, y)}
+                  {...head[c]}
+                >
+                  {body[c]()}
+                </Card>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function Card({ title, icon, more, className = "", children }: {
+function Card({ title, icon, more, action, cardRef, grab, mark, dragging, onMenu, children }: {
   title: string;
   icon: React.ReactNode;
   more?: () => void;
-  className?: string;
+  action?: { label: string; onClick: () => void };
+  cardRef: (el: HTMLElement | null) => void;
+  grab: { onPointerDown: (e: React.PointerEvent) => void };
+  mark: Mark;
+  dragging: boolean;
+  onMenu: (x: number, y: number) => void;
   children: React.ReactNode;
 }) {
   return (
-    <section className={`rounded-xl border border-line bg-panel ${className}`}>
-      <header className="flex items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium">
+    <section ref={cardRef} className={`relative rounded-xl border border-line bg-panel ${dragging ? "opacity-40" : ""}`}>
+      <DropMark at={mark} axis="cards" />
+      <header
+        {...grab}
+        onContextMenu={(e) => (e.preventDefault(), onMenu(e.clientX, e.clientY))}
+        title={t("拖动标题可以移动卡片，右键可以隐藏")}
+        className="flex cursor-grab items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium active:cursor-grabbing"
+      >
         <span className="text-muted">{icon}</span>
         {title}
-        {more && <button onClick={more} className="ml-auto text-xs font-normal text-muted hover:text-fg">{t("全部 ›")}</button>}
+        <span className="ml-auto flex items-center gap-3 text-xs font-normal">
+          {action && <button onClick={action.onClick} className="text-muted hover:text-fg">{action.label}</button>}
+          {more && <button onClick={more} className="text-muted hover:text-fg">{t("全部 ›")}</button>}
+        </span>
       </header>
       <div className="px-2 pb-2">{children}</div>
     </section>

@@ -123,6 +123,8 @@ class PrefsRequest(BaseModel):
     sync_on_launch: bool | None = None
     tab_order: list[str] | None = None
     hidden_tabs: list[str] | None = None
+    overview_order: list[str] | None = None
+    overview_hidden: list[str] | None = None
     select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
 
 
@@ -400,7 +402,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/courses/{course_id}/overview")
     def course_overview(course_id: int) -> dict[str, Any]:
         with engine() as e:
-            return content.overview(e.state, e.root, course_id)
+            out = content.overview(e.state, e.root, course_id)
+            # This week's modules, for the overview's 当前模块 card.
+            out["current_modules"] = [m for m in content.modules(e.state, e.root, e.layout, course_id) if m["current"]][:2]
+            return out
 
     @api.get("/courses/{course_id}/modules")
     def course_modules(course_id: int) -> list[dict[str, Any]]:

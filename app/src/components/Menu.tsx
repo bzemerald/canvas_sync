@@ -1,7 +1,8 @@
+import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export type MenuItem =
-  | { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean; hint?: string }
+  | { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean; hint?: string; checked?: boolean }
   | "separator";
 
 export interface MenuState {
@@ -41,6 +42,7 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
   }, [menu, onClose]);
 
   if (!menu) return null;
+  const checks = menu.items.some((i) => i !== "separator" && i.checked !== undefined); // a column for ✓
   return (
     <div
       ref={ref}
@@ -54,7 +56,8 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
         ) : (
           <button
             key={i}
-            role="menuitem"
+            role={item.checked !== undefined ? "menuitemcheckbox" : "menuitem"}
+            aria-checked={item.checked}
             disabled={item.disabled}
             onClick={() => {
               onClose();
@@ -62,7 +65,10 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
             }}
             className={`flex w-full items-center justify-between gap-6 rounded-md px-2.5 py-1.5 text-left hover:bg-selected disabled:opacity-40 disabled:hover:bg-transparent ${item.danger ? "text-danger" : "text-fg"}`}
           >
-            {item.label}
+            <span className="flex items-center gap-2">
+              {checks && <Check className={`size-3.5 shrink-0 ${item.checked ? "" : "invisible"}`} aria-hidden />}
+              {item.label}
+            </span>
             {item.hint && <span className="text-xs text-muted">{item.hint}</span>}
           </button>
         ),
