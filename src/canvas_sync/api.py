@@ -219,6 +219,16 @@ class CanvasClient:
         # With your submission: whether you handed it in, and its grade once posted.
         return await self.get_all(f"/api/v1/courses/{course_id}/assignments", {"include[]": ["submission"]})
 
+    async def tabs(self, course_id: int) -> list[dict[str, Any]]:
+        """The course's navigation menu as you see it, external tools (Gradescope, Ed...) included."""
+        return await self.get(f"/api/v1/courses/{course_id}/tabs")
+
+    async def sessionless_launch(self, course_id: int, params: dict[str, Any]) -> dict[str, Any]:
+        """A one-time link that opens an external tool already signed in, without a Canvas
+        login in the browser. params: id (+ launch_type), url, or launch_type=assessment with
+        assignment_id / launch_type=module_item with module_item_id."""
+        return await self.get(f"/api/v1/courses/{course_id}/external_tools/sessionless_launch", params)
+
     async def announcements(self, course_id: int) -> list[dict[str, Any]]:
         # Without explicit dates Canvas only returns the last two weeks.
         return await self.get_all(

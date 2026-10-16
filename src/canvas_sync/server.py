@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
@@ -82,6 +82,15 @@ class OpenRequest(BaseModel):
     external: str | None = None  # any http(s) link, in the browser
     reveal: bool = False       # show in the file manager instead of opening
     preview: bool = False      # Quick Look (macOS)
+
+
+class LaunchRequest(BaseModel):
+    """An external tool to open: from the course menu, a module item, an assignment, or a link."""
+    course_id: int
+    tool_id: int | None = None
+    module_item_id: int | None = None
+    assignment_id: int | None = None
+    url: str | None = None  # the tool's launch URL (links like /external_tools/retrieve?url=...)
 
 
 class SeenRequest(BaseModel):
@@ -496,6 +505,42 @@ def create_app(account: Account, token: str) -> FastAPI:
             webbrowser.open(account.base_url + req.url)
             return {"opened": account.base_url + req.url}
         raise HTTPException(400, "give a path or a url")
+
+    @api.post("/launch")
+    async def launch(req: LaunchRequest) -> dict[str, Any]:
+        """Open an external tool in the browser, signed in: Canvas makes a one-time launch
+        link. Where Canvas won't (some schools and tools turn it off), the tool's page on Canvas."""
+        cid = req.course_id
+        if req.module_item_id is not None:
+            params = {"launch_type": "module_item", "module_item_id": req.module_item_id}
+            fallback = f"/courses/{cid}/modules/items/{req.module_item_id}"
+        elif req.assignment_id is not None:
+            params = {"launch_type": "assessment", "assignment_id": req.assignment_id}
+            fallback = f"/courses/{cid}/assignments/{req.assignment_id}"
+        elif req.tool_id is not None:
+            params = {"id": req.tool_id, "launch_type": "course_navigation"}  # as its tab in the menu does
+            fallback = f"/courses/{cid}/external_tools/{req.tool_id}"
+        elif req.url:
+            if urlsplit(req.url).scheme not in ("http", "https"):
+                raise HTTPException(400, "only web links")
+            params = {"url": req.url}
+            fallback = f"/courses/{cid}/external_tools/retrieve?{urlencode({'url': req.url})}"
+        else:
+            raise HTTPException(400, "say which tool")
+        target, signed_in = account.base_url + fallback, False
+        if token := account.token():
+            try:
+                async with CanvasClient(account.base_url, token) as client:
+                    got = await client.sessionless_launch(cid, params)
+                url = got.get("url") if isinstance(got, dict) else None
+                # Only ever a link on Canvas itself: it carries the sign-in.
+                if isinstance(url, str) and urlsplit(url).netloc == urlsplit(account.base_url).netloc \
+                        and urlsplit(url).scheme in ("http", "https"):
+                    target, signed_in = url, True
+            except (CanvasError, httpx.HTTPError):
+                pass
+        webbrowser.open(target)
+        return {"opened": target, "signed_in": signed_in}
 
     @api.post("/reindex")
     def reindex() -> dict[str, Any]:

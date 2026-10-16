@@ -44,6 +44,8 @@ class CourseSnapshot:
     modules: list[dict[str, Any]] | None = None
     # Your grade in the course as Canvas computes it; None if it couldn't be fetched.
     grades: dict[str, Any] | None = None
+    # The course's navigation tabs (for its external tools); None if they couldn't be fetched.
+    tabs: list[dict[str, Any]] | None = None
     # False if some listing failed for a transient reason, so a file missing from
     # this snapshot does not mean it was deleted from Canvas.
     complete: bool = True
@@ -66,7 +68,8 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
     cid = course.id
     snap = CourseSnapshot(course)
 
-    async def fetch(what: str, call: Awaitable[T], default: T) -> T:
+    async def fetch(what: str, call: Awaitable[T], default: T, about_files: bool = True) -> T:
+        # about_files: whether it says where files are, so failing leaves the snapshot incomplete.
         try:
             return await call
         except CanvasError as e:
@@ -74,14 +77,14 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
                 snap.unavailable.append(what)
             else:
                 snap.warnings.append(f"{what}: {e}")
-                snap.complete = False
+                snap.complete = snap.complete and not about_files
         except httpx.HTTPError as e:
             snap.warnings.append(f"{what}: {e!r}")
-            snap.complete = False
+            snap.complete = snap.complete and not about_files
         return default
 
     empty: list[dict[str, Any]] = []
-    folders, files, modules, pages, assignments, announcements, syllabus = await asyncio.gather(
+    folders, files, modules, pages, assignments, announcements, syllabus, tabs = await asyncio.gather(
         fetch("folders", client.folders(cid), empty),
         fetch("files", client.files(cid), empty),
         fetch("modules", client.modules(cid), None),
@@ -89,11 +92,13 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
         fetch("assignments", client.assignments(cid), empty),
         fetch("announcements", client.announcements(cid), empty),
         fetch("syllabus", client.course(cid, ["syllabus_body", "total_scores"]), None),
+        fetch("tabs", client.tabs(cid), None, about_files=False),
     )
 
     snap.modules = modules if modules is not None else ([] if "modules" in snap.unavailable else None)
     if syllabus is not None:
         snap.grades = _grades(syllabus)
+    snap.tabs = tabs if tabs is not None else ([] if "tabs" in snap.unavailable else None)
     modules = modules or []
 
     # 1. The Files tree.

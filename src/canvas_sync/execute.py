@@ -47,6 +47,8 @@ class Executor:
                 self.state.save_modules(snap.course.id, snap.modules)
             if snap.grades is not None:
                 self.state.save_grades(snap.course.id, snap.grades)
+            if snap.tabs is not None:
+                self.state.save_tabs(snap.course.id, snap.tabs)
             self.state.record_arrivals(snap.course.id, [
                 *((d.kind, d.id, d.raw.get("posted_at") or d.raw.get("created_at"))
                   for d in snap.documents if d.kind in NEWS_KINDS),

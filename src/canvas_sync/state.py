@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 -- Your grade in each course as Canvas computes it (NULL scores: not shown to students).
 CREATE TABLE IF NOT EXISTS grades (course_id INTEGER PRIMARY KEY, raw TEXT);
+-- Each course's navigation tabs, as you see them (its external tools are among them).
+CREATE TABLE IF NOT EXISTS tabs (course_id INTEGER PRIMARY KEY, raw TEXT);
 -- What's new to you: when each announcement / assignment / page / file first showed up
 -- here, and when you opened it (NULL: not yet). `updated`: a file came back in a new version.
 CREATE TABLE IF NOT EXISTS arrivals (
@@ -210,6 +212,13 @@ class State:
     def grades(self, course_id: int) -> dict | None:
         row = self.db.execute("SELECT raw FROM grades WHERE course_id = ?", (course_id,)).fetchone()
         return json.loads(row[0]) if row else None
+
+    def save_tabs(self, course_id: int, tabs: list[dict]) -> None:
+        self.db.execute("INSERT OR REPLACE INTO tabs VALUES (?, ?)", (course_id, json.dumps(tabs)))
+
+    def tabs(self, course_id: int) -> list[dict]:
+        row = self.db.execute("SELECT raw FROM tabs WHERE course_id = ?", (course_id,)).fetchone()
+        return json.loads(row[0]) if row else []
 
     # -- what's new -------------------------------------------------------------------
 

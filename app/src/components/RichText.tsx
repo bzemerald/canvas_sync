@@ -1,7 +1,8 @@
 // Canvas HTML, made safe and at home in the app. Sanitized (no scripts, forms, embeds or
 // inline styles, which fight the app's theme); links to course files open the local copy,
-// links to the course's pages / assignments / announcements open them here, anything else
-// opens in the browser; images that need the Canvas login are fetched by the backend.
+// links to the course's pages / assignments / announcements open them here, links to
+// external tools open the tool signed in, anything else opens in the browser; images that
+// need the Canvas login are fetched by the backend.
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
@@ -10,6 +11,7 @@ export type CourseLink = { tab: "pages" | "assignments" | "announcements" | "syl
 
 const COURSE_PATH = /^\/courses\/(\d+)\/(pages|assignments|discussion_topics|announcements|modules)(?:\/([^/?#]+))?/;
 const FILE_PATH = /^(?:\/courses\/(\d+))?\/files\/(\d+)/;
+const TOOL_PATH = /^\/courses\/(\d+)\/(?:external_tools\/(\d+|retrieve)|modules\/items\/(\d+))\/?$/;
 
 function prepare(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -89,11 +91,20 @@ export function RichText({ html, courseId, files, onNavigate, className = "" }: 
       const local = files[file[2]];
       return void (local ? api.openPath(local.path) : api.openUrl(url.pathname + url.search));
     }
+    // An external tool (or a module item, which may be one; if not, Canvas shows it).
+    const tool = url.pathname.match(TOOL_PATH);
+    if (tool) {
+      const [, course, id, item] = tool;
+      const target = item ? { module_item_id: Number(item) }
+        : id !== "retrieve" ? { tool_id: Number(id) }
+          : url.searchParams.get("url") ? { url: url.searchParams.get("url")! } : null;
+      if (target) return void api.launch(Number(course), target);
+    }
     const m = url.pathname.match(COURSE_PATH);
     if (m && Number(m[1]) === courseId) {
       const [, , what, id] = m;
       if (what === "assignments" && id === "syllabus") return onNavigate({ tab: "syllabus" });
-      if (what === "modules" && id !== "items") return onNavigate({ tab: "modules" }); // (module item links go to Canvas)
+      if (what === "modules" && id !== "items") return onNavigate({ tab: "modules" }); // (module items: above)
       if (what === "modules") return void api.openUrl(url.pathname + url.search);
       if (what === "pages") return onNavigate({ tab: "pages", id: id && decodeURIComponent(id) });
       if (what === "assignments") return onNavigate({ tab: "assignments", id });

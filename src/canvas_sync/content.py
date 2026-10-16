@@ -11,9 +11,11 @@ what you've already read or handed in on Canvas.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
@@ -30,6 +32,34 @@ NATIVE_SUBMISSIONS = {
     "student_annotation",
 }
 HANDED_IN = {"submitted", "graded", "excused"}
+
+# What to call a tool, by its site, where the domain alone says it badly.
+TOOL_NAMES = {"gradescope": "Gradescope", "edstem": "Ed", "quiz-lti": "New Quizzes", "piazza": "Piazza", "zoom": "Zoom",
+              "panopto": "Panopto", "kaltura": "Kaltura", "turnitin": "Turnitin", "perusall": "Perusall",
+              "theexpertta": "Expert TA", "rollcall": "Roll Call", "iclicker": "iClicker", "mcgraw": "McGraw Hill",
+              "pearson": "Pearson", "macmillan": "Macmillan", "wiley": "Wiley", "hypothes": "Hypothesis"}
+HOSTING = {"instructure", "amazonaws", "herokuapp", "azurewebsites", "cloudfront", "edu"}
+
+
+def tool_name(url: str | None) -> str | None:
+    """"Gradescope" for https://www.gradescope.com/auth/lti/callback; None if unclear."""
+    host = urlsplit(url or "").hostname or ""
+    for key, name in TOOL_NAMES.items():
+        if key in host:
+            return name
+    labels = host.split(".")
+    label = labels[-2] if len(labels) >= 2 else ""
+    return label.capitalize() if label and label not in HOSTING else None
+
+
+def tools(state: State, course_id: int) -> list[dict[str, Any]]:
+    """The external tools in the course's menu (Gradescope, Ed, Zoom...), in its order."""
+    out = []
+    for t in sorted(state.tabs(course_id), key=lambda t: t.get("position") or 0):
+        m = re.fullmatch(r"context_external_tool_(\d+)", str(t.get("id") or ""))
+        if t.get("type") == "external" and m and not t.get("hidden"):
+            out.append({"id": int(m[1]), "label": t.get("label") or "外部工具", "url": relative_url(t.get("html_url"))})
+    return out
 
 
 def _when(iso: str | None) -> datetime | None:
@@ -97,6 +127,9 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
             "submission_types": raw.get("submission_types") or [],
             **submission(raw),
         }
+        if "external_tool" in out["submission_types"]:  # handed in on Gradescope etc.: open it there
+            tag = raw.get("external_tool_tag_attributes") or {}
+            out["tool"] = {"assignment_id": int(doc_id), "name": tool_name(tag.get("url"))}
     elif kind == "page":
         out |= {"date": raw.get("updated_at"), "front_page": bool(raw.get("front_page"))}
         out["url"] = out["url"] or f"/courses/{course_id}/pages/{doc_id}"
@@ -224,6 +257,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         "announcements": announcements[:5],
         "new_files": shown,
         "grades": {"total": total, "recent": graded[:3]},
+        "tools": tools(state, course_id),
         "new": news_counts(new),
         "counts": {
             "modules": len(state.modules(course_id)),
@@ -286,6 +320,9 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
             return {"doc": {"kind": "announcement", "id": str(cid)}}
         if kind == "ExternalUrl" and item.get("external_url"):
             return {"external": item["external_url"]}
+        if kind == "ExternalTool" and item.get("id"):
+            return {"tool": {"module_item_id": item["id"], "name": tool_name(item.get("external_url"))},
+                    **({"url": canvas} if canvas else {})}
         return {"url": canvas} if canvas else {}
 
     # "Current": the module with the newest upload, and the one with the next deadline.

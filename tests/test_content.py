@@ -253,6 +253,72 @@ def test_new_files_in_the_file_browser(root, fake):
     assert term["MATH 221"].new_inside == 1  # the file and its view link are one file
 
 
+def test_external_tools(root, course):
+    course.tabs = [
+        {"id": "home", "label": "Home", "type": "internal", "position": 1},
+        {"id": "context_external_tool_6", "label": "Ed", "type": "external", "position": 4,
+         "html_url": "/courses/1/external_tools/6"},
+        {"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3,
+         "html_url": "/courses/1/external_tools/5"},
+        {"id": "context_external_tool_7", "label": "Hidden", "type": "external", "hidden": True},
+    ]
+    course.assignments[0]["submission_types"] = ["external_tool"]
+    course.assignments[0]["external_tool_tag_attributes"] = {"url": "https://www.gradescope.com/auth/lti/callback"}
+    course.module(2, "Week 2", [{"id": 26, "type": "ExternalTool", "title": "Ed",
+                                 "external_url": "https://edstem.org/lti", "html_url": f"{BASE}/courses/1/modules/items/26"}])
+    pull(root, course)
+    with Engine(root) as e:
+        o = content.overview(e.state, e.root, 1, NOW)
+        [ed] = content.modules(e.state, e.root, e.layout, 1, NOW)[1]["items"]
+    assert o["tools"] == [{"id": 5, "label": "Gradescope", "url": "/courses/1/external_tools/5"},
+                          {"id": 6, "label": "Ed", "url": "/courses/1/external_tools/6"}]
+    assert o["upcoming"][0]["tool"] == {"assignment_id": 10, "name": "Gradescope"}
+    assert ed["tool"] == {"module_item_id": 26, "name": "Ed"} and ed["url"] == "/courses/1/modules/items/26"
+
+    # Failing to list them keeps what's known, and doesn't hold up deletions of files.
+    course.tabs_status = 400
+    plan = pull(root, course)
+    assert all(s.complete for s in plan.snapshots)
+    with Engine(root) as e:
+        assert len(content.tools(e.state, 1)) == 2
+
+
+def test_tool_names():
+    assert content.tool_name("https://www.gradescope.com/auth/lti/callback") == "Gradescope"
+    assert content.tool_name("https://foo.quiz-lti-iad-prod.instructure.com/lti/launch") == "New Quizzes"
+    assert content.tool_name("https://lti.perusall.com/x") == "Perusall"
+    assert content.tool_name("https://app.mytool.io/lti") == "Mytool"
+    assert content.tool_name("https://abc.instructure.com/x") is None
+    assert content.tool_name("https://rollcall.instructure.com/launch") == "Roll Call"
+    assert content.tool_name(None) is None
+
+
+def test_launch(api, course, monkeypatch):
+    opened = []
+    monkeypatch.setattr("canvas_sync.server.webbrowser.open", opened.append)
+    r = api.post("/api/launch", json={"course_id": 1, "tool_id": 5}).json()
+    assert r == {"opened": course.launch_url, "signed_in": True} and opened == [course.launch_url]
+    assert course.launches[-1] == {"id": "5", "launch_type": "course_navigation"}
+    api.post("/api/launch", json={"course_id": 1, "module_item_id": 26})
+    assert course.launches[-1] == {"launch_type": "module_item", "module_item_id": "26"}
+    api.post("/api/launch", json={"course_id": 1, "assignment_id": 10})
+    assert course.launches[-1] == {"launch_type": "assessment", "assignment_id": "10"}
+    api.post("/api/launch", json={"course_id": 1, "url": "https://tool.test/lti"})
+    assert course.launches[-1] == {"url": "https://tool.test/lti"}
+
+    # Canvas won't: the tool's page on Canvas instead.
+    course.launch_status = 401
+    r = api.post("/api/launch", json={"course_id": 1, "module_item_id": 26}).json()
+    assert r == {"opened": f"{BASE}/courses/1/modules/items/26", "signed_in": False}
+    r = api.post("/api/launch", json={"course_id": 1, "url": "https://tool.test/lti"}).json()
+    assert r["opened"] == f"{BASE}/courses/1/external_tools/retrieve?url=https%3A%2F%2Ftool.test%2Flti"
+    # A launch link anywhere but Canvas isn't followed.
+    course.launch_status, course.launch_url = 200, "https://evil.test/x"
+    assert api.post("/api/launch", json={"course_id": 1, "tool_id": 5}).json()["signed_in"] is False
+    assert api.post("/api/launch", json={"course_id": 1, "url": "javascript:x"}).status_code == 400
+    assert api.post("/api/launch", json={"course_id": 1}).status_code == 400
+
+
 def test_submission_status():
     online = {"submission_types": ["online_upload"]}
     def status(sub, a=online):

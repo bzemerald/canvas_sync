@@ -28,6 +28,11 @@ class FakeCanvas:
         self.files_tab_hidden = False
         self.media: dict[str, tuple[bytes, str]] = {}  # other paths: (body, content type)
         self.modules_status = 200  # e.g. 400 (a failure) or 404 (modules turned off)
+        self.tabs: list[dict] | None = None  # None: the tabs endpoint 404s
+        self.tabs_status = 200
+        self.launches: list[dict] = []  # sessionless launches asked for
+        self.launch_status = 200
+        self.launch_url = f"{BASE}/courses/1/external_tools/sessionless_launch?verifier=v"
         self.seen_auth: list[str | None] = []
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
@@ -58,6 +63,15 @@ class FakeCanvas:
         self.seen_auth.append(req.headers.get("authorization"))
         if path == "/api/v1/courses/1/modules" and self.modules_status != 200:
             return httpx.Response(self.modules_status, json={"errors": [{"message": "nope"}]})
+        if path == "/api/v1/courses/1/tabs" and self.tabs is not None:
+            if self.tabs_status != 200:
+                return httpx.Response(self.tabs_status, json={"errors": [{"message": "nope"}]})
+            return httpx.Response(200, json=self.tabs)
+        if path == "/api/v1/courses/1/external_tools/sessionless_launch":
+            self.launches.append(dict(req.url.params))
+            if self.launch_status != 200:
+                return httpx.Response(self.launch_status, json={"errors": [{"message": "nope"}]})
+            return httpx.Response(200, json={"id": 5, "name": "Tool", "url": self.launch_url})
         if path in self.media:
             body, ctype = self.media[path]
             return httpx.Response(200, content=body, headers={"content-type": ctype})

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Grades, Item, ItemSummary, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
+import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
 import { usePref } from "../lib/prefs";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
@@ -37,6 +37,16 @@ export function useOverview(courseId: number | null, version: number, seen: numb
     };
   }, [courseId, version, seen]);
   return data && data.id === courseId ? data.overview : null;
+}
+
+/** Open external tools; `pending` is the one on its way (asking Canvas for a link takes a moment). */
+function useLaunch(courseId: number) {
+  const [pending, setPending] = useState<string | null>(null);
+  const launch = (key: string, target: LaunchTarget) => {
+    setPending(key);
+    void api.launch(courseId, target).catch(() => {}).finally(() => setPending((p) => (p === key ? null : p)));
+  };
+  return { launch, pending };
 }
 
 export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files : 0);
@@ -140,8 +150,9 @@ export function CourseOverview({ course, overview, onOpen, onTab, onSeen }: {
   onTab: (t: CourseTab) => void;
   onSeen: () => void;
 }) {
+  const { launch, pending } = useLaunch(course.id);
   if (!overview) return <p className="px-6 py-8 text-sm text-muted">正在加载…</p>;
-  const { upcoming, announcements, new_files, counts, grades } = overview;
+  const { upcoming, announcements, new_files, counts, grades, tools } = overview;
   const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus;
   if (empty) {
     return (
@@ -225,8 +236,17 @@ export function CourseOverview({ course, overview, onOpen, onTab, onSeen }: {
             ))}
           </Card>
         )}
-        <Card title="链接" icon={<ExternalLink className="size-4" />} className={counts.grades ? "lg:col-span-2" : ""}>
+        <Card title={tools.length ? "工具与链接" : "链接"} icon={<ExternalLink className="size-4" />} className={counts.grades ? "lg:col-span-2" : ""}>
           <div className={counts.grades ? "flex flex-wrap" : ""}>
+            {tools.map((t) => (
+              <Row key={t.id} onClick={() => launch(`tool:${t.id}`, { tool_id: t.id })}>
+                <span className="flex items-center gap-2" title={`在浏览器中打开 ${t.label}（通过 Canvas 登录）`}>
+                  <AppWindow className="size-4 text-muted" />
+                  {t.label}
+                  {pending === `tool:${t.id}` && <span className="text-xs text-muted">正在打开…</span>}
+                </span>
+              </Row>
+            ))}
             {counts.syllabus && (
               <Row onClick={() => onTab("syllabus")}>
                 <span className="flex items-center gap-2"><ScrollText className="size-4 text-muted" />课程大纲</span>
@@ -312,6 +332,7 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
 }) {
   const [list, setList] = useState<Module[] | null>(null);
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
+  const { launch, pending } = useLaunch(course.id);
   useEffect(() => {
     api.modules(course.id).then(setList, () => setList([]));
   }, [course.id, version]);
@@ -327,6 +348,7 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
     if (it.file) void api.openPath(it.file);
     else if (it.doc) onOpenDoc(it.doc.kind, it.doc.id);
     else if (it.external) void api.openExternal(it.external);
+    else if (it.tool) launch(`item:${it.tool.module_item_id}`, { module_item_id: it.tool.module_item_id });
     else if (it.url) void api.openUrl(it.url);
   };
 
@@ -371,7 +393,9 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
               {isOpen && (
                 <ul className="border-t border-line px-2 py-1">
                   {m.items.length === 0 && <li className="px-2 py-2 text-sm text-muted">空的</li>}
-                  {m.items.map((it, i) => <ModuleRow key={it.id ?? i} it={it} onClick={() => activate(it)} />)}
+                  {m.items.map((it, i) => (
+                    <ModuleRow key={it.id ?? i} it={it} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
+                  ))}
                 </ul>
               )}
             </section>
@@ -382,7 +406,7 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
   );
 }
 
-function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
+function ModuleRow({ it, opening, onClick }: { it: ModuleItem; opening: boolean; onClick: () => void }) {
   const pad = { paddingLeft: 8 + it.indent * 20 };
   if (it.type === "SubHeader") {
     return <li style={pad} className="pt-2.5 pb-1 text-xs font-medium text-muted">{it.title}</li>;
@@ -394,7 +418,11 @@ function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
       <button
         onClick={onClick}
         style={pad}
-        title={it.deleted ? "你删除了这个文件；在 Canvas 中打开" : leavesApp ? "在浏览器中打开" : undefined}
+        title={
+          it.deleted ? "你删除了这个文件；在 Canvas 中打开"
+            : it.tool ? `在浏览器中打开${it.tool.name ? ` ${it.tool.name}` : "这个工具"}（通过 Canvas 登录）`
+              : leavesApp ? "在浏览器中打开" : undefined
+        }
         className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm hover:bg-chip ${it.deleted ? "opacity-55" : ""}`}
       >
         {it.type === "File" ? <FileIcon name={it.title} /> : Icon ? <Icon className="size-4 shrink-0 text-muted" /> : <FileText className="size-4 shrink-0 text-muted" />}
@@ -402,6 +430,7 @@ function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
         {it.new && <NewDot />}
         {it.done && <Check className="size-3.5 shrink-0 text-type-sheet" aria-label="已完成" />}
         <span className="ml-auto flex shrink-0 items-center gap-2">
+          {opening && <span className="text-xs text-muted">正在打开…</span>}
           {it.due_at && <Due iso={it.due_at} />}
           {leavesApp && <ExternalLink className="size-3.5 text-muted" aria-label="在浏览器中打开" />}
         </span>
@@ -542,6 +571,7 @@ function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
 }) {
   const [it, setIt] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { launch, pending } = useLaunch(course.id);
   useEffect(() => {
     setIt(null);
     setError(null);
@@ -578,7 +608,21 @@ function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
             </>
           )}
           {kind === "page" && it.date && <span>更新于 {shortDate(it.date)}</span>}
-          {it.url && (
+          {it.tool ? (
+            <span className="ml-auto flex items-center gap-3">
+              {it.url && (
+                <button onClick={() => void api.openUrl(it.url!)} className="text-muted hover:text-fg hover:underline">在 Canvas 中打开</button>
+              )}
+              <button
+                onClick={() => launch("assignment", { assignment_id: it.tool!.assignment_id })}
+                title="在浏览器中打开（通过 Canvas 登录）"
+                className="flex items-center gap-1 text-accent hover:underline"
+              >
+                {pending === "assignment" ? "正在打开…" : `在 ${it.tool.name ?? "外部工具"} 中打开`}
+                <ExternalLink className="size-3.5" />
+              </button>
+            </span>
+          ) : it.url && (
             <button onClick={() => void api.openUrl(it.url!)} className="ml-auto flex items-center gap-1 text-accent hover:underline">
               {submit ? "在 Canvas 中提交" : "在 Canvas 中打开"}
               <ExternalLink className="size-3.5" />

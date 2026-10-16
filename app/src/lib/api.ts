@@ -45,7 +45,22 @@ export interface ItemSummary {
   graded_at?: string | null;
   score?: number | null;
   grade?: string | null;
+  tool?: { assignment_id: number; name: string | null }; // handed in on an external tool (Gradescope…)
 }
+
+/** An external tool in the course's menu (Gradescope, Ed, Zoom…). */
+export interface Tool {
+  id: number;
+  label: string;
+  url: string | null; // its page on Canvas
+}
+
+/** Which tool to open, and from where. */
+export type LaunchTarget =
+  | { tool_id: number }
+  | { module_item_id: number }
+  | { assignment_id: number }
+  | { url: string }; // a tool's launch URL
 
 /** Your grade in a course as Canvas computes it. current: graded work only; final: the rest counts as 0. */
 export interface Total {
@@ -85,6 +100,7 @@ export interface ModuleItem {
   file?: string; // the local copy
   doc?: { kind: DocKind; id: string }; // shown in the app
   external?: string; // a web link
+  tool?: { module_item_id: number; name: string | null }; // an external tool
   url?: string; // on Canvas
   deleted?: boolean; // a file you deleted
   due_at?: string | null;
@@ -106,6 +122,7 @@ export interface Overview {
   announcements: ItemSummary[];
   new_files: { file_id: number; path: string; name: string; date: string | null; new: boolean; updated: boolean }[];
   grades: { total: Total | null; recent: ItemSummary[] };
+  tools: Tool[];
   new: NewCounts;
   counts: {
     modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean; grades: boolean;
@@ -303,6 +320,10 @@ export function openPath(path: string, how: { reveal?: boolean; preview?: boolea
 export function openUrl(url: string) {
   return api("/open", { method: "POST", body: JSON.stringify({ url }) });
 }
+
+/** Open an external tool in the browser, signed in where Canvas allows (else its page on Canvas). */
+export const launch = (course: number, target: LaunchTarget) =>
+  post<{ opened: string; signed_in: boolean }>("/launch", { course_id: course, ...target });
 
 /** A link to anywhere on the web, in the browser. */
 export function openExternal(url: string) {
