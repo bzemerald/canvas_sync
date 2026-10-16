@@ -33,6 +33,7 @@ SETTINGS_TEMPLATE = """\
 select = "active"
 include = []   # course ids to sync in addition
 exclude = []   # course ids to never sync
+hidden = []    # course ids the app doesn't show (in its sidebar, search, what's new)
 
 [course_names]
 # Rename a course folder:  12345 = "Linear Algebra"
@@ -159,6 +160,7 @@ class Settings:
     select: str = "active"
     include: list[int] = field(default_factory=list)
     exclude: list[int] = field(default_factory=list)
+    hidden: list[int] = field(default_factory=list)   # not shown in the app
     course_names: dict[int, str] = field(default_factory=dict)
     course_dir: str = "{term}/{code}"
     views: list[str] = field(default_factory=lambda: ["modules", "files"])
@@ -196,6 +198,7 @@ class Settings:
             select=courses.get("select", d.select),
             include=[int(x) for x in courses.get("include", [])],
             exclude=[int(x) for x in courses.get("exclude", [])],
+            hidden=[int(x) for x in courses.get("hidden", [])],
             course_names={int(k): str(v) for k, v in data.get("course_names", {}).items()},
             course_dir=layout.get("course_dir", d.course_dir),
             views=list(layout.get("views", d.views)),
@@ -409,6 +412,29 @@ def set_course_select(path: Path, select: str) -> None:
         raise ConfigError(f"select must be one of {sorted(CHOICES['select'])}")
     doc = tomlkit.parse(path.read_text())
     doc.setdefault("courses", tomlkit.table())["select"] = select
+    path.write_text(tomlkit.dumps(doc))
+
+
+def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool | None = None) -> None:
+    """Hide a course in the app, or show it again; `syncing` False also stops syncing it (into
+    `exclude`), True takes it out of `exclude` again (it syncs if `select` picks it)."""
+    doc = tomlkit.parse(path.read_text())
+    courses = doc.setdefault("courses", tomlkit.table())
+    for key in ("hidden", "exclude", "include"):
+        if key not in courses:
+            courses[key] = tomlkit.array()
+
+    def put(key: str, present: bool) -> None:
+        if present and course_id not in courses[key]:
+            courses[key].append(course_id)
+        elif not present and course_id in courses[key]:
+            courses[key].remove(course_id)
+
+    put("hidden", hidden)
+    if syncing is not None:
+        put("exclude", not syncing)
+        if not syncing:
+            put("include", False)
     path.write_text(tomlkit.dumps(doc))
 
 

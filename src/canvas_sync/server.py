@@ -38,7 +38,7 @@ from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
-    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_select, unpin,
+    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_hidden, set_course_select, unpin,
 )
 from .search import course_label
 from .engine import Engine
@@ -130,6 +130,11 @@ class SetupRequest(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class HideRequest(BaseModel):
+    hidden: bool
+    syncing: bool | None = None  # False: also stop syncing it; True: sync it again; None: leave as is
 
 
 class SidebarRequest(BaseModel):
@@ -363,6 +368,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     "default_name": canonical.name,              # renaming to this undoes that
                     "term_label": d.parent.name if term_renamed else c.term,
                     "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
+                    "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
+                    "excluded": c.id in e.settings.exclude,   # not synced
                 })
             return out
 
@@ -370,6 +377,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
                kind: list[str] = Query(default=[]), names_only: bool = False) -> list[dict[str, Any]]:
         with engine() as e:
+            if not course and e.settings.hidden:  # hidden courses only turn up when asked for by name
+                course = [c.id for c in e.state.courses() if c.id not in e.settings.hidden]
+                if not course:
+                    return []
             return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only)]
 
     # -- a course's page ------------------------------------------------------------------
@@ -595,6 +606,18 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
+
+    @api.post("/courses/{course_id}/hide")
+    def hide_course(course_id: int, req: HideRequest) -> dict[str, Any]:
+        """Hide a course from the app (and maybe stop syncing it), or bring it back."""
+        if req.hidden:
+            try:
+                unpin(config(), PinnedCourse(course_id))  # a hidden course isn't on show anywhere
+            except LookupError:
+                pass  # it wasn't pinned
+        set_course_hidden(config(), course_id, req.hidden, syncing=req.syncing)
+        with engine() as e:
+            return {"hidden": course_id in e.settings.hidden, "excluded": course_id in e.settings.exclude}
 
     @api.get("/sidebar")
     def sidebar() -> dict[str, Any]:

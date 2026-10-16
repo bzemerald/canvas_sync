@@ -142,6 +142,8 @@ export interface Course {
   default_name: string; // renaming to this gives it its original name back
   term_label: string | null; // the term, as you named it
   new: number; // things in it you haven't opened yet
+  hidden: boolean; // you hid it: not in the sidebar's terms, search or what's new
+  excluded: boolean; // not synced
 }
 
 export interface Entry {
@@ -307,6 +309,9 @@ export interface SidebarOrder {
   courses: number[];
 }
 export const sidebarOrder = () => api<SidebarOrder>("/sidebar");
+/** Hide a course (syncing: false also stops syncing it), or show it again (syncing: true resumes). */
+export const hideCourse = (course: number, hidden: boolean, syncing?: boolean) =>
+  post<{ hidden: boolean; excluded: boolean }>(`/courses/${course}/hide`, { hidden, syncing: syncing ?? null });
 export const arrangeSidebar = (order: Partial<SidebarOrder>) => post<SidebarOrder>("/sidebar", order);
 export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
   post<PinnedItem[]>("/smart-folders", { ...folder, replaces });

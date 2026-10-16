@@ -409,6 +409,22 @@ export const en: Record<string, string | [string, string]> = {
   "还没有登录 Canvas。请到设置里登录。": "You're not signed in to Canvas. Sign in from Settings.",
   "先在主窗口里登录 Canvas。": "Sign in to Canvas in the main window first.",
 
+  // -- hiding courses
+  "隐藏“{name}”？": "Hide “{name}”?",
+  "隐藏": "Hide",
+  "它会从侧栏、搜索和新内容提醒里消失。随时可以在侧栏最下面的“已隐藏的课程”里找回。":
+    "It leaves the sidebar, search and what's new. You can bring it back anytime from “Hidden courses” at the bottom of the sidebar.",
+  "同时停止同步这门课": "Also stop syncing this course",
+  "Canvas 上的新内容不再下载；已经下载的文件留在原处。": "Nothing new downloads from Canvas; the files you have stay where they are.",
+  "“{name}”回来了，下次同步时会更新": "“{name}” is back, and updates on the next sync",
+  "“{name}”回来了": "“{name}” is back",
+  "操作失败": "That didn't work",
+  "取消隐藏并恢复同步": "Unhide and sync again",
+  "取消隐藏": "Unhide",
+  "隐藏此课程…": "Hide this course…",
+  "已隐藏的课程": "Hidden courses",
+  "已隐藏“{name}”": "Hid “{name}”",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

@@ -9,6 +9,7 @@ import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import { CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
+import { HideCourseDialog } from "./components/HideCourseDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { KIND } from "./components/Result";
@@ -93,6 +94,8 @@ export function MainWindow() {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
   const [collapsed, setCollapsed] = usePref<string[]>("sidebar-collapsed", []); // "pinned", "term:<term>"
+  const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
+  const [hiding, setHiding] = useState<Course | null>(null);
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -420,6 +423,17 @@ export function MainWindow() {
     ];
   };
 
+  const unhide = (c: Course) =>
+    api.hideCourse(c.id, false, c.excluded ? true : undefined).then(() => {
+      say(c.excluded ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
+      refresh();
+    }, fail(t("操作失败")));
+  const hiddenCourseMenu = (c: Course): MenuItem[] => [
+    { label: t("打开"), onSelect: () => openCourse(c) },
+    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
+    "separator",
+    { label: c.excluded ? t("取消隐藏并恢复同步") : t("取消隐藏"), onSelect: () => void unhide(c) },
+  ];
   const courseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
     { label: t("查看文件"), onSelect: () => openCourse(c, "files") },
@@ -437,6 +451,8 @@ export function MainWindow() {
     ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.default_name }), disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
     "separator",
     { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
+    "separator",
+    { label: t("隐藏此课程…"), onSelect: () => setHiding(c) },
   ];
 
   const termMenu = (term: string, list: Course[]): MenuItem[] => {
@@ -505,7 +521,8 @@ export function MainWindow() {
   };
 
   // -- arranging the sidebar: drag pinned items, courses within a term, terms; fold sections -----
-  const groups = useMemo(() => arrange(courseList, order), [courseList, order]);
+  const groups = useMemo(() => arrange(courseList.filter((c) => !c.hidden), order), [courseList, order]);
+  const hiddenCourses = courseList.filter((c) => c.hidden);
   const pinDrag = useReorder(pinned.length, (from, to) => {
     setPinned(moved(pinned, from, to));
     api.movePinned(from, to).then(setPinned, fail(t("移动失败")));
@@ -638,6 +655,27 @@ export function MainWindow() {
               )}
             />
           ))}
+
+          {hiddenCourses.length > 0 && (
+            <>
+              <SectionHeader
+                title={t("已隐藏的课程")}
+                collapsed={!hiddenOpen}
+                onToggle={() => setHiddenOpen(!hiddenOpen)}
+              />
+              {hiddenOpen && hiddenCourses.map((c) => (
+                <NavItem
+                  key={c.id}
+                  title={c.label}
+                  subtitle={c.excluded ? t("不再同步") : (c.term_label ?? undefined)}
+                  muted
+                  active={course?.id === c.id}
+                  onClick={() => openCourse(c)}
+                  onMenu={(x, y) => openMenu(hiddenCourseMenu(c), x, y)}
+                />
+              ))}
+            </>
+          )}
         </nav>
         <div className="border-t border-line px-2 py-2">
           <NavItem icon={<SettingsIcon className="size-4" />} active={view.kind === "settings"} onClick={() => go({ kind: "settings" })} title={t("设置")} />
@@ -799,6 +837,18 @@ export function MainWindow() {
         />
       )}
       <Notice message={notice} onDone={() => setNotice(null)} />
+      {hiding && (
+        <HideCourseDialog
+          course={hiding}
+          onClose={() => setHiding(null)}
+          onDone={() => {
+            say(t("已隐藏“{name}”", { name: hiding.label }));
+            if (view.kind === "course" && view.id === hiding.id) go({ kind: "home" });
+            setHiding(null);
+            refresh();
+          }}
+        />
+      )}
       {deleting && (
         <DeleteDialog
           paths={deleting.paths}

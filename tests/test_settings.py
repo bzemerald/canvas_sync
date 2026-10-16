@@ -153,3 +153,33 @@ def test_sidebar_order(root, tmp_path, keychain):
         assert api.post("/api/sidebar", json={"courses": [3, 1, 2]}).json() == {"terms": ["Spring 2026", "Fall 2026"], "courses": [3, 1, 2]}
     settings = Settings.load(root / ".canvas" / "config.toml")
     assert (settings.term_order, settings.course_order) == (["Spring 2026", "Fall 2026"], [3, 1, 2])
+
+
+def test_hide_a_course(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    canvas.put(101, "midterm.pdf", b"x")
+    with client(Account(BASE, root), tmp_path) as api:
+        api.post("/api/sync", json={})
+        wait_for_sync(api)
+        api.post("/api/reindex")
+        api.post("/api/pinned", json={"course": 1})
+        assert [h["title"] for h in api.get("/api/search", params={"q": "midterm"}).json()] == ["midterm.pdf"]
+
+        assert api.post("/api/courses/1/hide", json={"hidden": True, "syncing": False}).json() == {"hidden": True, "excluded": True}
+        [c] = api.get("/api/courses").json()
+        assert (c["hidden"], c["excluded"]) == (True, True)
+        assert api.get("/api/pinned").json() == []  # unpinned
+        assert api.get("/api/search", params={"q": "midterm"}).json() == []  # out of search...
+        assert api.get("/api/search", params={"q": "midterm", "course": 1}).json()  # ...unless you ask for it
+        canvas.put(102, "final.pdf", b"y")
+        api.post("/api/sync", json={})
+        assert wait_for_sync(api)["changes"] == {}  # not synced any more
+
+        assert api.post("/api/courses/1/hide", json={"hidden": False, "syncing": True}).json() == {"hidden": False, "excluded": False}
+        api.post("/api/sync", json={})
+        assert wait_for_sync(api)["changes"] == {"download": 1}
+        # A course that isn't pinned hides just the same, and can keep syncing.
+        assert api.post("/api/courses/1/hide", json={"hidden": True}).json() == {"hidden": True, "excluded": False}
+        api.post("/api/courses/1/hide", json={"hidden": False})
+    settings = Settings.load(root / ".canvas" / "config.toml")
+    assert (settings.hidden, settings.exclude) == ([], [])
