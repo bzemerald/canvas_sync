@@ -38,7 +38,7 @@ from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
-    move_pinned, pin, save_pinned, save_smart_folder, set_course_select, unpin,
+    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_select, unpin,
 )
 from .search import course_label
 from .engine import Engine
@@ -130,6 +130,11 @@ class SetupRequest(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class SidebarRequest(BaseModel):
+    terms: list[str] | None = None    # the terms in order (Canvas's names for them)
+    courses: list[int] | None = None  # course ids in order
 
 
 class SyncRequest(ScopeRequest):
@@ -590,6 +595,17 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
+
+    @api.get("/sidebar")
+    def sidebar() -> dict[str, Any]:
+        """How you arranged the sidebar: the order of terms, and of courses in them."""
+        with engine() as e:
+            return {"terms": e.settings.term_order, "courses": e.settings.course_order}
+
+    @api.post("/sidebar")
+    def arrange_sidebar(req: SidebarRequest) -> dict[str, Any]:
+        save_sidebar_order(config(), req.terms, req.courses)
+        return sidebar()
 
     @api.post("/pinned/move")
     def move(req: MoveRequest) -> list[dict[str, Any]]:

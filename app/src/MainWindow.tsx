@@ -18,10 +18,11 @@ import { Settings } from "./components/Settings";
 import { Count } from "./components/Status";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
-import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SidebarOrder, SmartFolder, SyncState } from "./lib/api";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
+import { DropMark, moved, useReorder } from "./lib/reorder";
 import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
@@ -55,6 +56,27 @@ function groupByTerm(list: Course[]): [string, Course[]][] {
   return [...groups.entries()].sort(([a], [b]) => termRank(b) - termRank(a));
 }
 
+/** A term in the sidebar: `label` as you named it, `key` as Canvas does (what its place is saved by). */
+type TermGroup = { label: string; key: string; courses: Course[] };
+
+/** The sidebar's terms and courses as you dragged them. Terms you haven't placed (a new one)
+ * come first, newest first; courses you haven't placed come last in their term. */
+function arrange(list: Course[], order: SidebarOrder): TermGroup[] {
+  const place = <T,>(saved: T[], k: T, unplaced: number) => (saved.includes(k) ? saved.indexOf(k) : unplaced);
+  return groupByTerm(list)
+    .map(([label, courses], i) => ({
+      label,
+      key: courses[0].term ?? "",
+      i,
+      courses: courses
+        .map((c, j) => ({ c, j }))
+        .sort((a, b) => place(order.courses, a.c.id, Infinity) - place(order.courses, b.c.id, Infinity) || a.j - b.j)
+        .map(({ c }) => c),
+    }))
+    .sort((a, b) => place(order.terms, a.key, -1) - place(order.terms, b.key, -1) || a.i - b.i)
+    .map(({ label, key, courses }) => ({ label, key, courses }));
+}
+
 const under = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(dir + "/");
 const RESTORABLE = new Set(["modified", "missing", "ignored"]);
 const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
@@ -69,6 +91,8 @@ export function MainWindow() {
   const [showDeleted, setShowDeleted] = usePref("showDeleted", false);
   const [sync, setSync] = useState<SyncState | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
+  const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
+  const [collapsed, setCollapsed] = usePref<string[]>("sidebar-collapsed", []); // "pinned", "term:<term>"
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -105,6 +129,7 @@ export function MainWindow() {
     api.courses().then(setCourseList, (e) => setStartupError(String(e.message ?? e)));
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
+  useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
   useEffect(() => {
@@ -479,11 +504,67 @@ export function MainWindow() {
     return [{ label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) }, ...here];
   };
 
+  // -- arranging the sidebar: drag pinned items, courses within a term, terms; fold sections -----
+  const groups = useMemo(() => arrange(courseList, order), [courseList, order]);
+  const pinDrag = useReorder(pinned.length, (from, to) => {
+    setPinned(moved(pinned, from, to));
+    api.movePinned(from, to).then(setPinned, fail(t("移动失败")));
+  });
+  const saveOrder = (next: Partial<SidebarOrder>) => {
+    setOrder((o) => ({ ...o, ...next }));
+    api.arrangeSidebar(next).then(setOrder, fail(t("移动失败")));
+  };
+  const termDrag = useReorder(groups.length, (from, to) => saveOrder({ terms: moved(groups.map((g) => g.key), from, to) }));
+  /** One term's courses in a new order; every course gets its place, so the rest stay put. */
+  const reorderTerm = (key: string, ids: number[]) =>
+    saveOrder({ courses: groups.flatMap((g) => (g.key === key ? ids : g.courses.map((c) => c.id))) });
+  const isCollapsed = (section: string) => collapsed.includes(section);
+  const toggle = (section: string) => setCollapsed(isCollapsed(section) ? collapsed.filter((s) => s !== section) : [...collapsed, section]);
+
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
   const pinnedHere = pinned.some((p) => p.type === "folder" && p.path === browsing); // highlight that, not also its course
   const smartActive = (name: string) => view.kind === "smart" && view.name === name;
+  const renderPinned = (item: PinnedItem) => {
+    if (item.type === "course") {
+      const c = courseList.find((x) => x.id === item.id);
+      return (
+        <NavItem
+          icon={<GraduationCap className="size-4" />}
+          title={c?.label ?? t("课程 #{id}", { id: item.id })}
+          subtitle={c ? (c.term_label ?? undefined) : t("找不到这门课了")}
+          count={c?.new}
+          muted={!c}
+          active={course?.id === item.id && !pinnedHere}
+          onClick={() => c && openCourse(c)}
+          onMenu={(x, y) => openMenu(pinnedCourseMenu(item), x, y)}
+        />
+      );
+    }
+    if (item.type === "folder") {
+      return (
+        <NavItem
+          icon={<Folder className="size-4" />}
+          title={item.path.split("/").pop() ?? item.path}
+          subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件夹了")}
+          muted={!item.exists}
+          active={browsing === item.path}
+          onClick={() => item.exists && goPath(item.path)}
+          onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
+        />
+      );
+    }
+    return (
+      <NavItem
+        icon={<Sparkles className="size-4" />}
+        title={item.name}
+        active={smartActive(item.name)}
+        onClick={() => go({ kind: "smart", name: item.name })}
+        onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
+      />
+    );
+  };
 
   return (
     <div className="flex h-screen bg-bg text-fg">
@@ -511,64 +592,41 @@ export function MainWindow() {
           <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("搜索")} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
-          <SectionHeader title={t("置顶@@heading")} action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }} />
-          {pinned.length === 0 && (
+          <SectionHeader
+            title={t("置顶@@heading")}
+            collapsed={isCollapsed("pinned")}
+            onToggle={() => toggle("pinned")}
+            action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }}
+          />
+          {pinned.length === 0 && !isCollapsed("pinned") && (
             <p className="px-2 py-1 text-xs leading-relaxed text-muted">
               {t("右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。")}
             </p>
           )}
-          {pinned.map((item) => {
-            if (item.type === "course") {
-              const c = courseList.find((x) => x.id === item.id);
-              return (
-                <NavItem
-                  key={`course:${item.id}`}
-                  icon={<GraduationCap className="size-4" />}
-                  title={c?.label ?? t("课程 #{id}", { id: item.id })}
-                  subtitle={c ? (c.term_label ?? undefined) : t("找不到这门课了")}
-                  count={c?.new}
-                  muted={!c}
-                  active={course?.id === item.id && !pinnedHere}
-                  onClick={() => c && openCourse(c)}
-                  onMenu={(x, y) => openMenu(pinnedCourseMenu(item), x, y)}
-                />
-              );
-            }
-            if (item.type === "folder") {
-              return (
-                <NavItem
-                  key={`folder:${item.path}`}
-                  icon={<Folder className="size-4" />}
-                  title={item.path.split("/").pop() ?? item.path}
-                  subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件夹了")}
-                  muted={!item.exists}
-                  active={browsing === item.path}
-                  onClick={() => item.exists && goPath(item.path)}
-                  onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
-                />
-              );
-            }
-            return (
-              <NavItem
-                key={`smart:${item.name}`}
-                icon={<Sparkles className="size-4" />}
-                title={item.name}
-                active={smartActive(item.name)}
-                onClick={() => go({ kind: "smart", name: item.name })}
-                onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
-              />
-            );
-          })}
+          {!isCollapsed("pinned") && pinned.map((item, i) => (
+            <div key={pinnedKey(item)} {...pinDrag.item(i)} className={`relative ${pinDrag.dragging === i ? "opacity-40" : ""}`}>
+              <DropMark at={pinDrag.mark(i)} />
+              {renderPinned(item)}
+            </div>
+          ))}
 
           {courseList.length === 0 && !signedOut && (
             <p className="px-2 py-3 text-xs leading-relaxed text-muted">{sync?.running ? t("正在第一次同步，课程马上就会出现在这里。") : t("还没有课程。点上面的“同步”从 Canvas 拉取。")}</p>
           )}
-          {groupByTerm(courseList).map(([term, list]) => (
-            <section key={term}>
-              <SectionHeader title={term} action={{ label: t("{term} 的操作", { term }), icon: <MoreHorizontal className="size-3.5" />, onClick: (x, y) => openMenu(termMenu(term, list), x, y) }} onMenu={(x, y) => openMenu(termMenu(term, list), x, y)} />
-              {list.map((c) => (
+          {groups.map((g, i) => (
+            <TermSection
+              key={g.key}
+              group={g}
+              sectionRef={termDrag.ref(i)}
+              grab={termDrag.handle(i)}
+              mark={termDrag.mark(i)}
+              dragging={termDrag.dragging === i}
+              collapsed={isCollapsed(`term:${g.key}`)}
+              onToggle={() => toggle(`term:${g.key}`)}
+              onMenu={(x, y) => openMenu(termMenu(g.label, g.courses), x, y)}
+              onReorder={(ids) => reorderTerm(g.key, ids)}
+              renderCourse={(c) => (
                 <NavItem
-                  key={c.id}
                   title={c.label}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
@@ -577,8 +635,8 @@ export function MainWindow() {
                   onClick={() => openCourse(c)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
                 />
-              ))}
-            </section>
+              )}
+            />
           ))}
         </nav>
         <div className="border-t border-line px-2 py-2">
@@ -783,6 +841,47 @@ export function MainWindow() {
 
 // -- pieces -----------------------------------------------------------------------------
 
+const pinnedKey = (item: PinnedItem) =>
+  item.type === "course" ? `course:${item.id}` : item.type === "folder" ? `folder:${item.path}` : `smart:${item.name}`;
+
+/** A term in the sidebar: its header folds it and drags it among the terms; its courses drag
+ * among themselves. */
+function TermSection({ group, sectionRef, grab, mark, dragging, collapsed, onToggle, onMenu, onReorder, renderCourse }: {
+  group: TermGroup;
+  sectionRef: (el: HTMLElement | null) => void;
+  grab: { onPointerDown: (e: React.PointerEvent) => void };
+  mark: "before" | "after" | null;
+  dragging: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+  onMenu: (x: number, y: number) => void;
+  onReorder: (ids: number[]) => void;
+  renderCourse: (c: Course) => React.ReactNode;
+}) {
+  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)));
+  const fresh = group.courses.reduce((n, c) => n + c.new, 0);
+  return (
+    <section ref={sectionRef} className={`relative ${dragging ? "opacity-40" : ""}`}>
+      <DropMark at={mark} />
+      <SectionHeader
+        title={group.label}
+        collapsed={collapsed}
+        onToggle={onToggle}
+        grab={grab}
+        count={collapsed ? fresh : 0}
+        action={{ label: t("{term} 的操作", { term: group.label }), icon: <MoreHorizontal className="size-3.5" />, onClick: onMenu }}
+        onMenu={onMenu}
+      />
+      {!collapsed && group.courses.map((c, i) => (
+        <div key={c.id} {...drag.item(i)} className={`relative ${drag.dragging === i ? "opacity-40" : ""}`}>
+          <DropMark at={drag.mark(i)} />
+          {renderCourse(c)}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** Where a pinned folder is, for its subtitle: its course (or term), else its parent folder. */
 function pinnedWhere(item: { path: string; course_id: number | null }, courses: Course[]): string {
   const c = courses.find((x) => x.id === item.course_id);
@@ -953,17 +1052,37 @@ function NavItem({ icon, title, subtitle, active, badge, count, muted, onClick, 
   );
 }
 
-function SectionHeader({ title, action, onMenu }: {
+function SectionHeader({ title, action, onMenu, collapsed, onToggle, grab, count = 0 }: {
   title: string;
   action?: { label: string; icon: React.ReactNode; onClick: (x: number, y: number) => void };
   onMenu?: (x: number, y: number) => void;
+  collapsed?: boolean;
+  onToggle?: () => void; // folds the section
+  grab?: { onPointerDown: (e: React.PointerEvent) => void }; // drags the section
+  count?: number; // new things inside, shown while it's folded
 }) {
   return (
     <div
-      className="group mt-4 flex items-center justify-between px-2 pb-1"
+      {...grab}
+      className="group mt-4 flex items-center gap-1 px-2 pb-1"
       onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
     >
-      <h2 className="text-[11px] font-medium tracking-wide text-muted uppercase">{title}</h2>
+      <h2 className="min-w-0 flex-1">
+        <button
+          onClick={onToggle}
+          disabled={!onToggle}
+          aria-expanded={onToggle ? !collapsed : undefined}
+          title={onToggle ? (collapsed ? t("展开") : t("收起")) : undefined}
+          className="flex max-w-full items-center gap-1 text-[11px] font-medium tracking-wide text-muted uppercase hover:text-fg-soft disabled:hover:text-muted"
+        >
+          <span className="truncate">{title}</span>
+          {onToggle && (
+            <ChevronRight className={`size-3 shrink-0 transition-transform ${collapsed ? "" : "rotate-90 opacity-0 group-hover:opacity-100"}`} />
+          )}
+        </button>
+      </h2>
+      {/* What's new in a folded section; on hover, its actions take the place. */}
+      {count > 0 && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
       {action && (
         <button
           title={action.label}
@@ -972,7 +1091,7 @@ function SectionHeader({ title, action, onMenu }: {
             const r = e.currentTarget.getBoundingClientRect();
             action.onClick(r.left, r.bottom + 2);
           }}
-          className="rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus:opacity-100"
+          className={`rounded p-0.5 text-muted hover:bg-chip hover:text-fg ${count > 0 ? "hidden group-hover:block" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
         >
           {action.icon}
         </button>

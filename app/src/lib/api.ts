@@ -300,6 +300,14 @@ export const unpinFolder = (path: string) => post<PinnedItem[]>("/pinned/remove"
 export const pinCourse = (course: number) => post<PinnedItem[]>("/pinned", { course });
 export const unpinCourse = (course: number) => post<PinnedItem[]>("/pinned/remove", { course });
 export const movePinned = (index: number, to: number) => post<PinnedItem[]>("/pinned/move", { index, to });
+
+/** How the sidebar is arranged: terms (by Canvas's name for them) and courses, in order. */
+export interface SidebarOrder {
+  terms: string[];
+  courses: number[];
+}
+export const sidebarOrder = () => api<SidebarOrder>("/sidebar");
+export const arrangeSidebar = (order: Partial<SidebarOrder>) => post<SidebarOrder>("/sidebar", order);
 export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
   post<PinnedItem[]>("/smart-folders", { ...folder, replaces });
 export const deleteSmartFolder = (name: string) =>

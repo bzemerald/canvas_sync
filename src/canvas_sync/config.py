@@ -85,6 +85,12 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # value: what it's called instead. New files from Canvas keep going into it.
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
+[sidebar]
+# The app's sidebar order, as you drag it: terms by Canvas's name for them, courses by id.
+# Terms and courses not listed come first and in the usual order (new terms on top).
+# term_order = ["Fall 2026", "Spring 2026"]
+# course_order = [12345, 67890]
+
 # The app's sidebar: pinned folders, and smart folders (saved searches), in order.
 #
 # [[pinned]]
@@ -170,6 +176,8 @@ class Settings:
     pinned: list[Pinned] = field(default_factory=list)
     folder_names: dict[str, str] = field(default_factory=dict)
     skip_folders: list[str] = field(default_factory=list)
+    term_order: list[str] = field(default_factory=list)   # the sidebar, as you arranged it
+    course_order: list[int] = field(default_factory=list)
 
     @property
     def smart_folders(self) -> list[SmartFolder]:
@@ -183,6 +191,7 @@ class Settings:
             raise ConfigError(f"{path}: {e}") from e
         d = cls()
         courses, layout, sync = data.get("courses", {}), data.get("layout", {}), data.get("sync", {})
+        sidebar = data.get("sidebar", {})
         s = cls(
             select=courses.get("select", d.select),
             include=[int(x) for x in courses.get("include", [])],
@@ -208,6 +217,8 @@ class Settings:
             + [_smart_folder(f) for f in data.get("smart_folders", [])],
             folder_names={str(k).strip("/"): str(v) for k, v in data.get("folder_names", {}).items()},
             skip_folders=[str(x).strip("/") for x in layout.get("skip_folders", [])],
+            term_order=[str(x) for x in sidebar.get("term_order", [])],
+            course_order=[int(x) for x in sidebar.get("course_order", [])],
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -334,6 +345,17 @@ def move_pinned(path: Path, index: int, to: int) -> None:
         raise LookupError("no such position")
     items.insert(to, items.pop(index))
     save_pinned(path, items)
+
+
+def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list[int] | None = None) -> None:
+    """The sidebar's order of terms and of courses (within their terms), as dragged in the app."""
+    doc = tomlkit.parse(path.read_text())
+    table = doc.setdefault("sidebar", tomlkit.table())
+    if terms is not None:
+        table["term_order"] = list(dict.fromkeys(terms))
+    if courses is not None:
+        table["course_order"] = list(dict.fromkeys(courses))
+    path.write_text(tomlkit.dumps(doc))
 
 
 def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = ()) -> None:  # type: ignore[assignment]

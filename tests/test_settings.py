@@ -144,3 +144,12 @@ def test_canvas_site():
     for bad in ("http://bcourses.berkeley.edu", "mailto:x@y", "https://"):
         with pytest.raises(HTTPException):
             server._canvas_site(bad)
+
+
+def test_sidebar_order(root, tmp_path, keychain):
+    with client(Account(BASE, root), tmp_path) as api:
+        assert api.get("/api/sidebar").json() == {"terms": [], "courses": []}
+        api.post("/api/sidebar", json={"terms": ["Spring 2026", "Fall 2026", "Spring 2026"]})
+        assert api.post("/api/sidebar", json={"courses": [3, 1, 2]}).json() == {"terms": ["Spring 2026", "Fall 2026"], "courses": [3, 1, 2]}
+    settings = Settings.load(root / ".canvas" / "config.toml")
+    assert (settings.term_order, settings.course_order) == (["Spring 2026", "Fall 2026"], [3, 1, 2])
