@@ -463,6 +463,11 @@ export const en: Record<string, string | [string, string]> = {
 
   "在应用中查看全部文件": "See all files in the app",
 
+  // -- picking courses
+  "去掉": "Remove",
+  "输入课程名搜索…": "Type a course name…",
+  "没有匹配的课程": "No matching course",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

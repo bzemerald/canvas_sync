@@ -29,6 +29,7 @@ import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
+import { termRank } from "./lib/terms";
 import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
@@ -42,16 +43,6 @@ type View =
   | { kind: "browse"; path: string; select?: string }
   | { kind: "smart"; name: string }
   | { kind: "settings" };
-
-const SEASON: Record<string, number> = { winter: 0, spring: 1, summer: 2, fall: 3, autumn: 3 };
-
-/** "Fall 2026" > "Summer 2026" > "Spring 2026" > ... ; terms without a year last. */
-function termRank(term: string | null): number {
-  const t = (term ?? "").toLowerCase();
-  const year = Number(t.match(/\b(20\d\d)\b/)?.[1] ?? 0);
-  const season = Object.entries(SEASON).find(([s]) => t.includes(s))?.[1] ?? -1;
-  return year * 10 + season;
-}
 
 function groupByTerm(list: Course[]): [string, Course[]][] {
   const groups = new Map<string, Course[]>();

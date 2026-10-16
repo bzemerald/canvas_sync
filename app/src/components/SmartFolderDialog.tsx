@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, Kind, PinnedItem, SmartFolder } from "../lib/api";
+import { CoursePicker } from "./CoursePicker";
 import { Button, Dialog } from "./Dialog";
 import { KIND } from "./Result";
 import { t } from "../lib/i18n";
@@ -50,15 +51,6 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
     return next;
   };
 
-  const byTerm = useMemo(() => {
-    const m = new Map<string, Course[]>();
-    for (const c of courses) {
-      const term = c.term_label ?? t("无学期");
-      m.set(term, [...(m.get(term) ?? []), c]);
-    }
-    return [...m.entries()];
-  }, [courses]);
-
   const nothing = !folder.query && !folder.courses.length && !folder.kinds.length;
   return (
     <Dialog
@@ -102,22 +94,10 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
             ))}
           </div>
         </fieldset>
-        <fieldset>
-          <legend className="mb-1 text-xs text-muted">{t("课程（不选 = 全部）")}</legend>
-          <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-line p-2">
-            {byTerm.map(([term, list]) => (
-              <div key={term}>
-                <div className="text-[11px] text-muted">{term}</div>
-                {list.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 py-0.5">
-                    <input type="checkbox" checked={picked.has(c.id)} onChange={() => setPicked(toggle(picked, c.id))} />
-                    <span className="truncate">{c.label}</span>
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
-        </fieldset>
+        <div>
+          <span className="mb-1 block text-xs text-muted">{t("课程（不选 = 全部）")}</span>
+          <CoursePicker courses={courses} picked={[...picked]} onChange={(ids) => setPicked(new Set(ids))} />
+        </div>
         {error && <p className="text-danger">{error}</p>}
       </div>
     </Dialog>
