@@ -38,8 +38,9 @@ from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
-    ADDED_CARDS, COURSE_TABS, OVERVIEW_CARDS, PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, PinnedCourse,
-    PinnedFolder, SmartFolder, _card, delete_smart_folder, save_course_layout,
+    ADDED_CARDS, COURSE_TABS, DOC_KINDS, OVERVIEW_CARDS, PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout,
+    PinnedCourse, PinnedDoc, PinnedFile, PinnedFolder, PinnedLink, PinnedModule, PinnedThing, PinnedTool, SmartFolder,
+    _card, delete_smart_folder, save_course_layout,
     move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_icon, set_course_select,
     set_courses_hidden, unpin,
 )
@@ -183,8 +184,18 @@ class PathRequest(BaseModel):
 
 
 class PinRequest(BaseModel):
-    path: str | None = None    # a folder
-    course: int | None = None  # or a course
+    """What to pin: a folder (path), a file, a course, or in a course (course and kind + id,
+    module or tool), a web link (url). `at`: where in the list (else: at the end)."""
+    path: str | None = None
+    file: str | None = None
+    course: int | None = None
+    kind: str | None = None
+    id: str | None = None
+    module: int | None = None
+    tool: int | None = None
+    url: str | None = None
+    title: str | None = None
+    at: int | None = None
 
 
 class PathsRequest(BaseModel):
@@ -603,24 +614,65 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 converted = [PinnedCourse(dirs[i.path]) if isinstance(i, PinnedFolder) and i.path in dirs else i for i in items]
                 items = [i for n, i in enumerate(converted) if i not in converted[:n]]  # (pinned twice: once)
                 save_pinned(config(), items)
+            def course_of(path: str) -> int | None:
+                return next((cid for d, cid in dirs.items() if path == d or path.startswith(d + "/")), None)
+
+            def title_of(sql: str, args: tuple[Any, ...]) -> str | None:  # as it's called now (None: it's gone)
+                row = e.state.db.execute(sql, args).fetchone()
+                return row[0] if row else None
+
             out: list[dict[str, Any]] = []
             for item in items:
                 if isinstance(item, PinnedCourse):
                     out.append({"type": "course", "id": item.course, "exists": item.course in dirs.values()})
                 elif isinstance(item, PinnedFolder):
-                    course = next((cid for d, cid in dirs.items() if item.path == d or item.path.startswith(d + "/")), None)
-                    out.append({"type": "folder", "path": item.path, "course_id": course,
+                    out.append({"type": "folder", "path": item.path, "course_id": course_of(item.path),
                                 "exists": (account.root / item.path).is_dir()})
+                elif isinstance(item, PinnedFile):
+                    out.append({"type": "file", "path": item.file, "course_id": course_of(item.file),
+                                "exists": (account.root / item.file).is_file()})
+                elif isinstance(item, PinnedDoc):
+                    now = title_of("SELECT title FROM documents WHERE course_id = ? AND kind = ? AND id = ?", (item.course, item.kind, item.id))
+                    out.append({"type": "doc", "course_id": item.course, "kind": item.kind, "id": item.id,
+                                "title": now or item.title, "exists": now is not None})
+                elif isinstance(item, PinnedModule):
+                    now = title_of("SELECT name FROM modules WHERE course_id = ? AND id = ?", (item.course, item.module))
+                    out.append({"type": "module", "course_id": item.course, "module": item.module,
+                                "title": now or item.title, "exists": now is not None})
+                elif isinstance(item, PinnedTool):
+                    tool = next((t for t in content.tools(e.state, item.course) if t["id"] == item.tool), None)
+                    out.append({"type": "tool", "course_id": item.course, "tool": item.tool,
+                                "title": (tool and tool["label"]) or item.title, "exists": tool is not None})
+                elif isinstance(item, PinnedLink):
+                    out.append({"type": "link", "url": item.url, "title": item.title})
                 else:
                     out.append({"type": "smart", **asdict(item)})
             return out
 
-    def pin_item(req: PinRequest) -> PinnedFolder | PinnedCourse:
+    def pin_item(req: PinRequest, check: bool = True) -> PinnedThing:
+        """What the request names; `check`: that it's there to pin."""
+        title = (req.title or "").strip()[:200]
+        if req.url is not None:
+            if urlsplit(req.url).scheme not in ("http", "https"):
+                raise HTTPException(400, "links must be web addresses")
+            return PinnedLink(req.url, title)
+        if req.file is not None:
+            if check and not inside(req.file).is_file():
+                raise HTTPException(404, f"{req.file} is not a file")
+            return PinnedFile(req.file.strip("/"))
         if req.course is not None:
+            if req.kind is not None:
+                if req.kind not in DOC_KINDS or not req.id:
+                    raise HTTPException(400, f"kind: one of {list(DOC_KINDS)}, with an id")
+                return PinnedDoc(req.course, req.kind, req.id, title)
+            if req.module is not None:
+                return PinnedModule(req.course, req.module, title)
+            if req.tool is not None:
+                return PinnedTool(req.course, req.tool, title)
             return PinnedCourse(req.course)
         if req.path is None:
             raise HTTPException(400, "say what to pin")
-        if not inside(req.path).is_dir():
+        if check and not inside(req.path).is_dir():
             raise HTTPException(404, f"{req.path} is not a folder")
         return PinnedFolder(req.path.strip("/"))
 
@@ -631,13 +683,13 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
         if isinstance(item, PinnedFolder) and item.path in dirs:
             item = PinnedCourse(dirs[item.path])  # a course's own folder: pin the course
-        pin(config(), item)
+        pin(config(), item, req.at)
         return pinned()
 
     @api.post("/pinned/remove")
     def remove_pin(req: PinRequest) -> list[dict[str, Any]]:
         try:
-            unpin(config(), PinnedCourse(req.course) if req.course is not None else PinnedFolder((req.path or "").strip("/")))
+            unpin(config(), pin_item(req, check=False))
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
@@ -657,11 +709,15 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     def hide(course_ids: list[int], req: HideRequest) -> None:
         if req.hidden:
-            for course_id in course_ids:
-                try:
-                    unpin(config(), PinnedCourse(course_id))  # a hidden course isn't on show anywhere
-                except LookupError:
-                    pass  # it wasn't pinned
+            # A hidden course isn't on show anywhere: it's unpinned, and so is what's pinned from it.
+            with engine() as e:
+                dirs = [e.layout.course_dir(c).as_posix() for c in e.state.courses() if c.id in course_ids]
+                items = list(e.settings.pinned)
+            inside_dirs = lambda p: any(p == d or p.startswith(d + "/") for d in dirs)  # noqa: E731
+            gone = [i for i in items if (isinstance(i, (PinnedCourse, PinnedDoc, PinnedModule, PinnedTool)) and i.course in course_ids)
+                    or (isinstance(i, PinnedFolder) and inside_dirs(i.path)) or (isinstance(i, PinnedFile) and inside_dirs(i.file))]
+            if gone:
+                save_pinned(config(), [i for i in items if i not in gone])
         set_courses_hidden(config(), course_ids, req.hidden, syncing=req.syncing)
 
     # -- a course's page, arranged ------------------------------------------------------------

@@ -165,3 +165,47 @@ def test_pinned_courses(api, root):
     assert api.post("/api/pinned/remove", json={"course": 1}).json() == []
     api.post("/api/rename", json={"path": "Fall 2026", "name": "2026 秋"})
     assert api.get("/api/courses").json()[0]["term_label"] == "2026 秋"
+
+
+def test_pin_anything(root, fake: FakeCanvas):
+    """Files, a course's pages, modules and tools, web links: pinned (dragged to 置顶 or by
+    right-click in the app), listed by what they're called now."""
+    fake.pages["schedule"] = {"url": "schedule", "title": "Schedule", "body": "<p>x</p>"}
+    fake.tabs = [{"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3,
+                  "html_url": "/courses/1/external_tools/5"}]
+    pull(root, fake)
+    with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:
+        def pin(**what):
+            return api.post("/api/pinned", json=what)
+
+        assert pin(file=f"{WEEK1}/lec1.pdf").status_code == 200
+        assert pin(file=WEEK1).status_code == 404  # (a folder)
+        pin(course=1, kind="page", id="schedule", title="Old name")
+        pin(course=1, module=1, title="Week 1")
+        pin(course=1, tool=5, title="Gradescope")
+        pin(course=1, kind="page", id="gone", title="Deleted page")
+        assert [i["type"] for i in pin(url="https://math.test", title="Site", at=0).json()] == [
+            "link", "file", "doc", "module", "tool", "doc"]
+        assert pin(url="javascript:alert(1)").status_code == 400
+        assert pin(course=1, kind="movie", id="x").status_code == 400
+        link, file, page, module, tool, gone = api.get("/api/pinned").json()
+        assert file == {"type": "file", "path": f"{WEEK1}/lec1.pdf", "course_id": 1, "exists": True}
+        assert (page["title"], page["exists"]) == ("Schedule", True)  # what it's called now
+        assert (module["title"], module["exists"], tool["title"], tool["exists"]) == ("Week 1", True, "Gradescope", True)
+        assert (gone["title"], gone["exists"]) == ("Deleted page", False)
+        assert link == {"type": "link", "url": "https://math.test", "title": "Site"}
+
+        # Pinned again: still once; pinned at a place: moved there.
+        assert len(pin(course=1, module=1).json()) == 6
+        assert pin(course=1, module=1, at=0).json()[0]["type"] == "module"
+        assert pin(course=1, module=1, at=1).json()[0]["type"] == "module"  # (just before where it is: stays)
+        assert pin(course=1, module=1, at=2).json()[1]["type"] == "module"
+        # A pinned file follows its folder when that's renamed.
+        api.post("/api/rename", json={"path": WEEK1, "name": "Week One"})
+        assert {"type": "file", "path": f"{MOD}/Week One/lec1.pdf", "course_id": 1, "exists": True} in api.get("/api/pinned").json()
+        # Unpinned by what it is, whatever its title.
+        assert len(api.post("/api/pinned/remove", json={"course": 1, "kind": "page", "id": "schedule"}).json()) == 5
+        assert api.post("/api/pinned/remove", json={"url": "https://nope.test"}).status_code == 404
+        # Hiding the course unpins all that's in it; the link stays.
+        api.post("/api/courses/1/hide", json={"hidden": True})
+        assert [i["type"] for i in api.get("/api/pinned").json()] == ["link"]

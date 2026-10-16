@@ -1,10 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, GraduationCap, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search,
-  Settings as SettingsIcon, Sparkles,
+  AppWindow, BookOpen, ChevronLeft, ChevronRight, ClipboardList, Eye, EyeOff, Folder, FolderTree, GraduationCap, LayoutGrid,
+  Link as LinkIcon, List, ListChecks, Megaphone, MoreHorizontal, Plus, RefreshCw, ScrollText, Search, Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
@@ -12,6 +12,7 @@ import {
 } from "./components/CourseView";
 import { CourseOverview } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
+import { FileIcon } from "./components/FileIcon";
 import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
 import { HitBrowser } from "./components/HitBrowser";
@@ -24,8 +25,11 @@ import { Count } from "./components/Status";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
 import type {
-  AccountInfo, Course, CourseLayout, DocKind, Entry, Hit, Kind, LayoutChanges, LayoutPart, PinnedItem, Scope, SidebarOrder, SmartFolder, SyncState,
+  AccountInfo, Course, CourseLayout, DocKind, Entry, Hit, Kind, LayoutChanges, LayoutPart, PinTarget, PinnedItem, Scope, SidebarOrder,
+  SmartFolder, SyncState,
 } from "./lib/api";
+import { PinsContext, pinMenuItem, type Pins } from "./lib/pinnable";
+import { usePinZone } from "./lib/pinZone";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
@@ -260,6 +264,18 @@ export function MainWindow() {
     const c = courseList.find((x) => x.id === courseId);
     go({ kind: "course", id: courseId, tab: TAB_OF_KIND[kind], path: c?.dir ?? "", item: kind === "syllabus" ? undefined : id });
   };
+  /** A module, open and scrolled to, in its course's 模块. */
+  const openModule = (courseId: number, module: number) => {
+    const c = courseList.find((x) => x.id === courseId);
+    go({ kind: "course", id: courseId, tab: "modules", path: c?.dir ?? "", item: String(module) });
+  };
+  const [launching, setLaunching] = useState<string | null>(null); // a pinned tool on its way
+  const launchTool = (key: string, courseId: number, tool: number) => {
+    setLaunching(key);
+    api.launch(courseId, { tool_id: tool })
+      .catch(fail(t("打开失败")))
+      .finally(() => setLaunching((k) => (k === key ? null : k)));
+  };
   const openHere = (h: Hit) =>
     h.kind !== "file" && h.doc_id ? openDoc(h.course_id, h.kind as DocKind, h.doc_id) : void api.openHit(h);
   const overview = useOverview(view.kind === "course" ? view.id : null, version, seenTick);
@@ -361,14 +377,29 @@ export function MainWindow() {
 
   const isPinned = (path: string) => pinned.some((p) => p.type === "folder" && p.path === path);
   const isCoursePinned = (id: number) => pinned.some((p) => p.type === "course" && p.id === id);
-  const coursePinItem = (c: Course): MenuItem =>
-    isCoursePinned(c.id)
-      ? { label: t("取消置顶"), onSelect: () => api.unpinCourse(c.id).then(setPinned, fail(t("取消置顶失败"))) }
-      : { label: t("置顶"), onSelect: () => api.pinCourse(c.id).then(setPinned, fail(t("置顶失败"))) };
-  const pinItem = (path: string): MenuItem =>
-    isPinned(path)
-      ? { label: t("取消置顶"), onSelect: () => api.unpinFolder(path).then(setPinned, fail(t("取消置顶失败"))) }
-      : { label: t("置顶"), onSelect: () => api.pinFolder(path).then(setPinned, fail(t("置顶失败"))) };
+  // Pinning anything: from a menu (置顶), or dropped on 置顶 at a place in the list.
+  const pinLabel = (x: PinTarget) =>
+    "title" in x && x.title ? x.title
+      : "file" in x ? x.file.split("/").pop()!
+        : "path" in x ? x.path.split("/").pop()!
+          : "url" in x ? x.url
+            : courseList.find((c) => c.id === x.course)?.label ?? "";
+  const pinThing = (target: PinTarget, at?: number) => {
+    if (isCollapsed("pinned")) toggle("pinned");
+    return api.pin(target, at).then((list) => {
+      setPinned(list);
+      if (at === undefined) say(t("已置顶“{name}”", { name: pinLabel(target) })); // (dropped there: you saw it land)
+    }, fail(t("置顶失败")));
+  };
+  const unpinThing = (target: PinTarget) => api.unpin(target).then(setPinned, fail(t("取消置顶失败")));
+  const pins: Pins = {
+    isPinned: (x) => pinned.some((p) => p.type !== "smart" && api.pinKey(api.targetOf(p)!) === api.pinKey(x)),
+    pin: (x) => void pinThing(x),
+    unpin: (x) => void unpinThing(x),
+    menu: (items, x, y) => openMenu(items, x, y),
+  };
+  const coursePinItem = (c: Course): MenuItem => pinMenuItem(pins, { course: c.id });
+  const pinItem = (path: string): MenuItem => pinMenuItem(pins, { path });
   const moveItems = (item: PinnedItem): MenuItem[] => {
     const i = pinned.indexOf(item);
     return [
@@ -452,6 +483,7 @@ export function MainWindow() {
     ];
     if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
     if (e.link) items.push({ label: t("显示原始文件"), onSelect: () => goPath(parentOf(e.link!), e.link!) });
+    items.push("separator", pinMenuItem(pins, { file: e.path }));
     if (e.states.includes("untracked")) {
       items.push("separator", { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
     } else if (e.file_id !== null) {
@@ -511,6 +543,7 @@ export function MainWindow() {
           ]
         : []),
       ...(h.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(h.url!) }] : []),
+      ...(api.hitTarget(h) ? ["separator" as const, pinMenuItem(pins, api.hitTarget(h)!)] : []),
       ...(h.path ? ["separator" as const, del] : []),
     ];
   };
@@ -578,6 +611,14 @@ export function MainWindow() {
     ];
   };
 
+  /** A pinned file, page, module, tool or link: how to open it, then moving and unpinning it. */
+  const pinnedMenu = (item: PinnedItem, open: MenuItem[]): MenuItem[] => [
+    ...open,
+    ...(open.length ? ["separator" as const] : []),
+    ...moveItems(item),
+    "separator",
+    { label: t("取消置顶"), onSelect: () => void unpinThing(api.targetOf(item)!) },
+  ];
   const pinnedFolderMenu = (item: PinnedItem & { type: "folder" }): MenuItem[] => [
     { label: t("打开"), disabled: !item.exists, onSelect: () => goPath(item.path) },
     { label: t("在 {app} 中显示", { app: fileManager }), disabled: !item.exists, onSelect: () => reveal(item.path) },
@@ -588,12 +629,12 @@ export function MainWindow() {
     "separator",
     ...moveItems(item),
     "separator",
-    { label: t("取消置顶"), onSelect: () => api.unpinFolder(item.path).then(setPinned, fail(t("取消置顶失败"))) },
+    { label: t("取消置顶"), onSelect: () => void unpinThing({ path: item.path }) },
   ];
 
   const pinnedCourseMenu = (item: PinnedItem & { type: "course" }): MenuItem[] => {
     const c = courseList.find((x) => x.id === item.id);
-    const unpinIt: MenuItem = { label: t("取消置顶"), onSelect: () => api.unpinCourse(item.id).then(setPinned, fail(t("取消置顶失败"))) };
+    const unpinIt: MenuItem = { label: t("取消置顶"), onSelect: () => void unpinThing({ course: item.id }) };
     return c ? [...courseMenu(c), "separator", ...moveItems(item)] : [...moveItems(item), "separator", unpinIt];
   };
 
@@ -614,9 +655,9 @@ export function MainWindow() {
   const addMenu = (): MenuItem[] => {
     const here: MenuItem[] = [];
     if (course && (folderShown === null || folderShown === course.dir)) {
-      if (!isCoursePinned(course.id)) here.push({ label: t("置顶此课程（{label}）", { label: course.label }), onSelect: () => api.pinCourse(course.id).then(setPinned, fail(t("置顶失败"))) });
+      if (!isCoursePinned(course.id)) here.push({ label: t("置顶此课程（{label}）", { label: course.label }), onSelect: () => void pinThing({ course: course.id }) });
     } else if (folderShown && !isPinned(folderShown)) {
-      here.push({ label: t("置顶当前文件夹（{name}）", { name: folderShown.split("/").pop()! }), onSelect: () => api.pinFolder(folderShown).then(setPinned, fail(t("置顶失败"))) });
+      here.push({ label: t("置顶当前文件夹（{name}）", { name: folderShown.split("/").pop()! }), onSelect: () => void pinThing({ path: folderShown }) });
     }
     return [{ label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) }, ...here];
   };
@@ -624,10 +665,10 @@ export function MainWindow() {
   // -- arranging the sidebar: drag pinned items, courses within a term, terms; fold sections -----
   const groups = useMemo(() => arrange(courseList.filter((c) => !c.hidden), order), [courseList, order]);
   const hiddenCourses = courseList.filter((c) => c.hidden);
-  const pinDrag = useReorder(pinned.length, (from, to) => {
+  const movePin = (from: number, to: number) => {
     setPinned(moved(pinned, from, to));
     api.movePinned(from, to).then(setPinned, fail(t("移动失败")));
-  });
+  };
   const saveOrder = (next: Partial<SidebarOrder>) => {
     setOrder((o) => ({ ...o, ...next }));
     api.arrangeSidebar(next).then(setOrder, fail(t("移动失败")));
@@ -642,8 +683,13 @@ export function MainWindow() {
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
-  const pinnedHere = pinned.some((p) => p.type === "folder" && p.path === folderShown); // highlight that, not also its course
-  const smartActive = (name: string) => view.kind === "smart" && view.name === name;
+  /** A pinned thing that's on screen: a folder in 文件, an announcement or page open, a module. */
+  const pinnedOn = (item: PinnedItem) =>
+    item.type === "folder" ? folderShown === item.path
+      : item.type === "doc" ? view.kind === "course" && view.id === item.course_id && view.tab === TAB_OF_KIND[item.kind] && (item.kind === "syllabus" || view.item === item.id)
+        : item.type === "module" ? view.kind === "course" && view.id === item.course_id && view.tab === "modules" && view.item === String(item.module)
+          : item.type === "smart" && view.kind === "smart" && view.name === item.name;
+  const pinnedHere = pinned.some(pinnedOn); // highlight that, not also its course
   const renderPinned = (item: PinnedItem) => {
     if (item.type === "course") {
       const c = courseList.find((x) => x.id === item.id);
@@ -667,24 +713,69 @@ export function MainWindow() {
           title={item.path.split("/").pop() ?? item.path}
           subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件夹了")}
           muted={!item.exists}
-          active={folderShown === item.path}
+          active={pinnedOn(item)}
           onClick={() => item.exists && goPath(item.path)}
           onMenu={(x, y) => openMenu(pinnedFolderMenu(item), x, y)}
         />
       );
     }
+    if (item.type === "smart") {
+      return (
+        <NavItem
+          icon={<Sparkles className="size-4" />}
+          title={item.name}
+          active={pinnedOn(item)}
+          onClick={() => go({ kind: "smart", name: item.name })}
+          onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
+        />
+      );
+    }
+    if (item.type === "file") {
+      const name = item.path.split("/").pop() ?? item.path;
+      const ways: MenuItem[] = [
+        { label: t("打开"), onSelect: () => void api.openPath(item.path) },
+        ...(isMac ? [{ label: t("快速预览"), onSelect: () => void api.openPath(item.path, { preview: true }) }] : []),
+        { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(item.path), item.path) },
+        { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(item.path) },
+      ];
+      return (
+        <NavItem
+          icon={<FileIcon name={name} />}
+          title={name}
+          subtitle={item.exists ? pinnedWhere(item, courseList) : t("找不到这个文件了")}
+          muted={!item.exists}
+          active={false}
+          onClick={() => item.exists && void api.openPath(item.path)}
+          onMenu={(x, y) => openMenu(pinnedMenu(item, item.exists ? ways : []), x, y)}
+        />
+      );
+    }
+    // In a course: an announcement, assignment or page, a module, a tool. Or a web link.
+    const key = api.pinnedKey(item);
+    const gone = item.type !== "link" && !item.exists;
+    const open = () => {
+      if (item.type === "doc") openDoc(item.course_id, item.kind, item.id);
+      else if (item.type === "module") openModule(item.course_id, item.module);
+      else if (item.type === "tool") launchTool(key, item.course_id, item.tool);
+      else void api.openExternal(item.url);
+    };
+    const icon = item.type === "doc" ? DOC_ICON[item.kind] : item.type === "module" ? ListChecks : item.type === "tool" ? AppWindow : LinkIcon;
+    const where = item.type === "link" ? hostOf(item.url) : courseList.find((c) => c.id === item.course_id)?.label ?? t("找不到这门课了");
     return (
       <NavItem
-        icon={<Sparkles className="size-4" />}
-        title={item.name}
-        active={smartActive(item.name)}
-        onClick={() => go({ kind: "smart", name: item.name })}
-        onMenu={(x, y) => openMenu(smartMenu(item), x, y)}
+        icon={createElement(icon, { className: "size-4" })}
+        title={item.title || (item.type === "link" ? item.url : "")}
+        subtitle={launching === key ? t("正在打开…") : gone ? t("Canvas 上已经没有了") : where}
+        muted={gone}
+        active={pinnedOn(item)}
+        onClick={() => !gone && open()}
+        onMenu={(x, y) => openMenu(pinnedMenu(item, gone ? [] : [{ label: t("打开"), onSelect: open }]), x, y)}
       />
     );
   };
 
   return (
+    <PinsContext.Provider value={pins}>
     <div className="flex h-screen bg-bg text-fg">
       <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-sidebar">
         {/* The title bar: the window controls (macOS), then the sync button. Empty space drags the window. */}
@@ -710,22 +801,26 @@ export function MainWindow() {
           <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("搜索")} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
-          <SectionHeader
-            title={t("置顶@@heading")}
+          <PinnedSection
+            items={pinned}
             collapsed={isCollapsed("pinned")}
-            onToggle={() => toggle("pinned")}
-            action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }}
+            header={
+              <SectionHeader
+                title={t("置顶@@heading")}
+                collapsed={isCollapsed("pinned")}
+                onToggle={() => toggle("pinned")}
+                action={{ label: t("添加到置顶"), icon: <Plus className="size-3.5" />, onClick: (x, y) => openMenu(addMenu(), x, y) }}
+              />
+            }
+            empty={
+              <p className="px-2 py-1 text-xs leading-relaxed text-muted">
+                {t("把课程、文件夹、文件、公告、页面、工具拖到这里，或者右键选“置顶”。点 + 新建智能文件夹（保存的搜索）。")}
+              </p>
+            }
+            render={renderPinned}
+            onMove={movePin}
+            onPin={(target, at) => void pinThing(target, at)}
           />
-          {pinned.length === 0 && !isCollapsed("pinned") && (
-            <p className="px-2 py-1 text-xs leading-relaxed text-muted">
-              {t("右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。")}
-            </p>
-          )}
-          {!isCollapsed("pinned") && pinned.map((item, i) => (
-            <div key={pinnedKey(item)} {...pinDrag.item(i)}>
-              {renderPinned(item)}
-            </div>
-          ))}
 
           {courseList.length === 0 && !signedOut && (
             <p className="px-2 py-3 text-xs leading-relaxed text-muted">{sync?.running ? t("正在第一次同步，课程马上就会出现在这里。") : t("还没有课程。点上面的“同步”从 Canvas 拉取。")}</p>
@@ -911,6 +1006,7 @@ export function MainWindow() {
             key={course.id}
             course={course}
             version={version}
+            focus={view.item ? Number(view.item) : undefined}
             onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
             onShowFolder={(p) => goPath(p)}
             query={filtering ? query : ""}
@@ -1045,13 +1141,71 @@ export function MainWindow() {
         />
       )}
     </div>
+    </PinsContext.Provider>
   );
 }
 
 // -- pieces -----------------------------------------------------------------------------
 
-const pinnedKey = (item: PinnedItem) =>
-  item.type === "course" ? `course:${item.id}` : item.type === "folder" ? `folder:${item.path}` : `smart:${item.name}`;
+const DOC_ICON: Record<DocKind, typeof Megaphone> = { announcement: Megaphone, assignment: ClipboardList, page: BookOpen, syllabus: ScrollText };
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/** 置顶: what's pinned, in the order you put it in. Anything pinnable dropped on it is pinned
+ * where you let go (a line shows where). */
+function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin }: {
+  items: PinnedItem[];
+  collapsed: boolean;
+  header: React.ReactNode;
+  empty: React.ReactNode;
+  render: (item: PinnedItem) => React.ReactNode;
+  onMove: (from: number, to: number) => void;
+  onPin: (target: PinTarget, at?: number) => void;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  const drag = useReorder(items.length, onMove);
+  const slotAt = (_x: number, y: number) => {
+    const rows = Array.from(list.current?.querySelectorAll<HTMLElement>(":scope > [data-pin]") ?? []);
+    const i = rows.findIndex((el) => {
+      const r = el.getBoundingClientRect();
+      return y < r.top + r.height / 2;
+    });
+    return i < 0 ? rows.length : i;
+  };
+  const zone = usePinZone((target, at) => onPin(target, collapsed ? undefined : at), slotAt);
+  const over = zone.state === "over" && !collapsed && items.length > 0;
+  const line = (
+    <div aria-hidden className="relative h-0">
+      <div className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-accent" />
+    </div>
+  );
+  return (
+    <div
+      ref={zone.ref}
+      className={`-mx-1 rounded-lg px-1 pb-1 ${zone.state === "over" ? "bg-accent/10 ring-1 ring-accent" : zone.state === "ready" ? "outline-1 outline-dashed outline-accent/60" : ""}`}
+    >
+      {header}
+      {!collapsed && items.length === 0 && (zone.state === "idle" ? empty : <p className="px-2 py-2 text-xs text-muted">{t("放在这里置顶")}</p>)}
+      {!collapsed && (
+        <div ref={list}>
+          {items.map((item, i) => (
+            <Fragment key={api.pinnedKey(item)}>
+              {over && zone.slot === i && line}
+              <div data-pin {...drag.item(i)}>{render(item)}</div>
+            </Fragment>
+          ))}
+          {over && zone.slot === items.length && line}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** A term in the sidebar: its header folds it and drags it among the terms; its courses drag
  * among themselves. */
@@ -1065,7 +1219,7 @@ function TermSection({ group, sectionRef, grab, collapsed, onToggle, onMenu, onR
   onReorder: (ids: number[]) => void;
   renderCourse: (c: Course) => React.ReactNode;
 }) {
-  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)));
+  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)), "y", (i) => ({ course: group.courses[i].id }));
   const fresh = group.courses.reduce((n, c) => n + c.new, 0);
   return (
     <section ref={sectionRef}>

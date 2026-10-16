@@ -7,9 +7,10 @@ import {
   AppWindow, Award, BookOpen, ClipboardList, ExternalLink, FileText, Folder, FolderOpen, Link as LinkIcon, ListChecks,
   Megaphone, NotebookPen, Plus, ScrollText, Search as SearchIcon, SlidersHorizontal,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Card as CardSpec, Course, CourseLayout, DocKind, Entry, Hit, Item, Module, ModuleItem, Overview } from "../lib/api";
+import type { Card as CardSpec, Course, CourseLayout, DocKind, Entry, Hit, Item, Module, ModuleItem, Overview, PinTarget } from "../lib/api";
+import { PinsContext, pinMenuItem, useDragToPin, usePinnable } from "../lib/pinnable";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
@@ -57,6 +58,9 @@ export function CourseOverview({
   onMarkSeen: (kinds: Kinds) => void;
 }) {
   const { launch, pending } = useLaunch(course.id);
+  const pins = useContext(PinsContext);
+  const pinnable = usePinnable();
+  const dragPin = useDragToPin();
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<CardSpec | null>(null);
   const [addingLink, setAddingLink] = useState(false);
@@ -157,24 +161,39 @@ export function CourseOverview({
   ];
 
   // 工具与链接: the course's tools, its syllabus, Canvas, and links you added; each can be hidden.
-  const linkRows: { key: string; label: string; icon: React.ReactNode; open: () => void; mine?: number }[] = [
+  const linkRows: { key: string; label: string; icon: React.ReactNode; open: () => void; mine?: number; pin?: PinTarget }[] = [
     ...tools.map((tool) => ({
       key: `tool:${tool.id}`, label: tool.label ?? t("外部工具"), icon: <AppWindow className="size-4 text-muted" />,
       open: () => launch(`tool:${tool.id}`, { tool_id: tool.id }),
+      pin: { course: course.id, tool: tool.id, title: tool.label ?? t("外部工具") },
     })),
-    ...(counts.syllabus ? [{ key: "syllabus", label: t("课程大纲"), icon: <ScrollText className="size-4 text-muted" />, open: () => onTab("syllabus") }] : []),
+    ...(counts.syllabus ? [{
+      key: "syllabus", label: t("课程大纲"), icon: <ScrollText className="size-4 text-muted" />, open: () => onTab("syllabus"),
+      pin: { course: course.id, kind: "syllabus" as const, id: String(course.id), title: t("课程大纲") },
+    }] : []),
     { key: "canvas", label: t("在 Canvas 中打开"), icon: <ExternalLink className="size-4 text-muted" />, open: () => void api.openUrl(`/courses/${course.id}`) },
     ...layout.links.map((l, i) => ({
       key: `link:${i}`, label: l.title || l.url, icon: <LinkIcon className="size-4 text-muted" />, open: () => void api.openExternal(l.url), mine: i,
+      pin: { url: l.url, title: l.title || l.url },
     })),
   ];
   const hiddenLinks = linkRows.filter((r) => layout.hidden_links.includes(r.key));
-  const linkMenu = (r: (typeof linkRows)[number]): MenuItem[] =>
+  const linkMenu = (r: (typeof linkRows)[number]): MenuItem[] => [
+    ...(pins && r.pin ? [pinMenuItem(pins, r.pin), "separator" as const] : []),
     r.mine !== undefined
-      ? [{ label: t("删除链接"), danger: true, onSelect: () => onLayout({ links: layout.links.filter((_, i) => i !== r.mine) }) }]
-      : [{ label: t("隐藏“{name}”", { name: r.label }), onSelect: () => onLayout({ hidden_links: [...layout.hidden_links, r.key] }) }];
+      ? { label: t("删除链接"), danger: true, onSelect: () => onLayout({ links: layout.links.filter((_, i) => i !== r.mine) }) }
+      : { label: t("隐藏“{name}”", { name: r.label }), onSelect: () => onLayout({ hidden_links: [...layout.hidden_links, r.key] }) },
+  ];
 
+  const cardTarget = (c: CardSpec): PinTarget | null =>
+    c.type === "folder" && c.path ? { path: c.path }
+      : c.type === "file" && c.path ? { file: c.path }
+        : c.type === "page" && c.page ? { course: course.id, kind: "page", id: c.page, title: titleOf(c) }
+          : c.type === "module" && c.module ? { course: course.id, module: c.module, title: titleOf(c) }
+            : c.type === "syllabus" ? { course: course.id, kind: "syllabus", id: String(course.id), title: titleOf(c) }
+              : null;
   const cardMenu = (c: CardSpec): MenuItem[] => [
+    ...(pins && cardTarget(c) ? [pinMenuItem(pins, cardTarget(c)!), "separator" as const] : []),
     ...(isBuiltIn(c)
       ? [{ label: t("隐藏“{name}”", { name: titleOf(c) }), onSelect: () => onLayout({ cards: without(c) }) }]
       : [
@@ -217,7 +236,7 @@ export function CourseOverview({
     <>
       <ul>
         {m.items.slice(0, limit).map((it, i) => (
-          <ModuleRow key={it.id ?? i} it={{ ...it, indent: 0 }} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
+          <ModuleRow key={it.id ?? i} it={{ ...it, indent: 0 }} course={course.id} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
         ))}
       </ul>
       {m.items.length > limit && (
@@ -250,14 +269,14 @@ export function CourseOverview({
           icon: <ClipboardList className="size-4" />, more: counts.assignments ? () => onTab("assignments") : undefined,
           action: markRead(overview.new.assignments, ["assignment"]),
           body: upcoming.length === 0 ? <Empty>{t("接下来三周没有要交的作业")}</Empty>
-            : upcoming.map((a) => <AssignmentRow key={a.id} a={a} onClick={() => onOpen("assignment", a.id)} />),
+            : upcoming.map((a) => <AssignmentRow key={a.id} a={a} course={course.id} onClick={() => onOpen("assignment", a.id)} />),
         };
       case "announcements":
         return {
           icon: <Megaphone className="size-4" />, more: counts.announcements ? () => onTab("announcements") : undefined,
           action: markRead(overview.new.announcements, ["announcement"]),
           body: announcements.length === 0 ? <Empty>{t("还没有公告")}</Empty> : announcements.map((a) => (
-            <Row key={a.id} onClick={() => onOpen("announcement", a.id)}>
+            <Row key={a.id} onClick={() => onOpen("announcement", a.id)} pin={{ course: course.id, kind: "announcement", id: a.id, title: a.title }}>
               <div className="flex items-center gap-2">
                 {a.new && <NewDot label={t("新公告")} />}
                 <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
@@ -272,7 +291,7 @@ export function CourseOverview({
           icon: <ListChecks className="size-4" />, more: () => onTab("modules"),
           body: current_modules.map((m) => (
             <div key={m.id}>
-              <h3 className="truncate px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted">{m.name}</h3>
+              <h3 className="truncate px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted" {...pinnable({ course: course.id, module: m.id, title: m.name })}>{m.name}</h3>
               {moduleItems(m)}
             </div>
           )),
@@ -281,7 +300,7 @@ export function CourseOverview({
         return {
           icon: <FileText className="size-4" />, more: () => onTab("files"), action: markRead(overview.new.files, ["file"]),
           body: new_files.length === 0 ? <Empty>{t("还没有文件")}</Empty> : new_files.map((f) => (
-            <FileRow key={f.file_id} name={f.name} date={f.date} isNew={f.new} updated={f.updated}
+            <FileRow key={f.file_id} path={f.path} name={f.name} date={f.date} isNew={f.new} updated={f.updated}
               onOpen={() => void api.openPath(f.path).then(onSeen)} onShow={() => onShowFile(f.path)} />
           )),
         };
@@ -298,7 +317,7 @@ export function CourseOverview({
               )}
               {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">{t("最近评分")}</h3>}
               {grades.recent.map((a) => (
-                <Row key={a.id} onClick={() => onOpen("assignment", a.id)}>
+                <Row key={a.id} onClick={() => onOpen("assignment", a.id)} pin={{ course: course.id, kind: "assignment", id: a.id, title: a.title }}>
                   <div className="flex items-center gap-2">
                     <span className="truncate">{a.title}</span>
                     <span className="ml-auto flex shrink-0 gap-1"><SubmissionBadges a={a} /></span>
@@ -314,7 +333,7 @@ export function CourseOverview({
           body: (
             <div className="flex flex-wrap">
               {linkRows.filter((r) => !layout.hidden_links.includes(r.key)).map((r) => (
-                <div key={r.key} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation(), onMenu(linkMenu(r), e.clientX, e.clientY))}>
+                <div key={r.key} {...dragPin(r.pin)} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation(), onMenu(linkMenu(r), e.clientX, e.clientY))}>
                   <Row onClick={r.open}>
                     <span className="flex items-center gap-2">
                       {r.icon}
@@ -458,7 +477,8 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
   );
 }
 
-function FileRow({ name, date, isNew, updated, onOpen, onShow }: {
+function FileRow({ path, name, date, isNew, updated, onOpen, onShow }: {
+  path: string;
   name: string;
   date: string | null;
   isNew?: boolean;
@@ -467,7 +487,7 @@ function FileRow({ name, date, isNew, updated, onOpen, onShow }: {
   onShow: () => void;
 }) {
   return (
-    <Row onClick={onOpen}>
+    <Row onClick={onOpen} pin={{ file: path }}>
       <div className="flex items-center gap-2">
         <FileIcon name={name} />
         <span className={`truncate ${isNew ? "font-medium" : ""}`}>{name}</span>
@@ -502,7 +522,8 @@ function FolderCard({ path, onSeen, onShowFolder }: { path: string; onSeen: () =
   return (
     <>
       {sorted.slice(0, 12).map((e) => (
-        <Row key={e.path} onClick={() => (e.type === "dir" ? onShowFolder(e.path) : void api.openPath(e.path).then(onSeen))}>
+        <Row key={e.path} onClick={() => (e.type === "dir" ? onShowFolder(e.path) : void api.openPath(e.path).then(onSeen))}
+          pin={e.type === "dir" ? { path: e.path } : { file: e.path }}>
           <div className="flex items-center gap-2">
             <FileIcon name={e.name} dir={e.type === "dir"} />
             <span className={`truncate ${e.new ? "font-medium" : ""}`}>{e.name}</span>
@@ -521,8 +542,9 @@ function FolderCard({ path, onSeen, onShowFolder }: { path: string; onSeen: () =
 /** One file, with a preview: the schedule, the syllabus PDF, a formula sheet. */
 function FileCard({ path, onSeen }: { path: string; onSeen: () => void }) {
   const name = path.split("/").pop() ?? path;
+  const pinnable = usePinnable();
   return (
-    <button onClick={() => void api.openPath(path).then(onSeen, () => {})} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-chip">
+    <button onClick={() => void api.openPath(path).then(onSeen, () => {})} {...pinnable({ file: path })} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-chip">
       <Thumb path={path} name={name} mtime={null} size={56} iconClass="size-10" />
       <span className="min-w-0">
         <span className="block truncate text-sm">{name}</span>
@@ -605,7 +627,7 @@ function SearchCard({ course, query, content, onOpen }: { course: Course; query:
   return (
     <>
       {hits.map((h) => (
-        <Row key={`${h.kind}:${h.path ?? h.doc_id ?? h.title}`} onClick={() => onOpen(h)}>
+        <Row key={`${h.kind}:${h.path ?? h.doc_id ?? h.title}`} onClick={() => onOpen(h)} pin={api.hitTarget(h)}>
           <div className="flex items-center gap-2">
             {h.kind === "file" ? <FileIcon name={h.title} /> : <BookOpen className="size-4 shrink-0 text-muted" />}
             <span className="truncate">{h.title}</span>

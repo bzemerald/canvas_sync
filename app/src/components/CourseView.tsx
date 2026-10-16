@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
+import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, PinTarget, Total } from "../lib/api";
+import { usePinnable } from "../lib/pinnable";
 import { usePref } from "../lib/prefs";
 import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
@@ -205,9 +206,12 @@ export function TotalLine({ total, big = false }: { total: Total; big?: boolean 
 
 // -- 概览 --------------------------------------------------------------------------------
 
-export function Row({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+/** A row in a card or list; `pin`: what it is, to drag onto 置顶 or right-click to pin. */
+export function Row({ onClick, pin, children }: { onClick: () => void; pin?: PinTarget | null; children: React.ReactNode }) {
+  const pinnable = usePinnable();
   return (
-    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()} className="cursor-default rounded-md px-2 py-1.5 text-sm hover:bg-chip">
+    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()} {...pinnable(pin)}
+      className="cursor-default rounded-md px-2 py-1.5 text-sm hover:bg-chip">
       {children}
     </div>
   );
@@ -227,9 +231,9 @@ function Due({ iso }: { iso: string | null | undefined }) {
   );
 }
 
-export function AssignmentRow({ a, onClick }: { a: ItemSummary; onClick: () => void }) {
+export function AssignmentRow({ a, course, onClick }: { a: ItemSummary; course: number; onClick: () => void }) {
   return (
-    <Row onClick={onClick}>
+    <Row onClick={onClick} pin={{ course, kind: "assignment", id: a.id, title: a.title }}>
       <div className="flex items-center gap-2">
         {a.new && <NewDot label={t("新作业")} />}
         <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
@@ -264,9 +268,10 @@ const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 
 /** The course as the instructor laid it out. Opens with the current modules expanded
  * (newest upload, next deadline); what you expand or collapse is remembered per course. */
-export function CourseModules({ course, version, onOpenDoc, onShowFolder, query, onWiden }: {
+export function CourseModules({ course, version, focus, onOpenDoc, onShowFolder, query, onWiden }: {
   course: Course;
   version: number;
+  focus?: number; // a module to show: opened, and scrolled to (as from 置顶)
   onOpenDoc: (kind: DocKind, id: string) => void;
   onShowFolder: (path: string) => void;
   query: string; // the search box: only items (or modules) with these words in their titles
@@ -275,11 +280,18 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder, query,
   const [list, setList] = useState<Module[] | null>(null);
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
   const { launch, pending } = useLaunch(course.id);
+  const pinnable = usePinnable();
   useEffect(() => {
     api.modules(course.id).then(setList, () => setList([]));
   }, [course.id, version]);
 
   const expanded = new Set(open ?? (list ?? []).filter((m) => m.current).map((m) => m.id));
+  const loaded = list !== null;
+  useEffect(() => {
+    if (focus === undefined || !loaded) return;
+    if (!expanded.has(focus)) setOpen([...expanded, focus]);
+    document.getElementById(`module-${focus}`)?.scrollIntoView({ block: "start" });
+  }, [focus, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = (id: number) => {
     const next = new Set(expanded);
     if (!next.delete(id)) next.add(id);
@@ -323,8 +335,8 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder, query,
           const isOpen = !!match || expanded.has(m.id);
           const locked = m.state === "locked";
           return (
-            <section key={m.id} className="mb-2 rounded-xl border border-line bg-panel">
-              <header className="group flex items-center gap-2 px-3 py-2">
+            <section key={m.id} id={`module-${m.id}`} className={`mb-2 scroll-mt-4 rounded-xl border bg-panel ${m.id === focus ? "border-accent/70" : "border-line"}`}>
+              <header className="group flex items-center gap-2 px-3 py-2" {...pinnable({ course: course.id, module: m.id, title: m.name })}>
                 <button onClick={() => toggle(m.id)} aria-expanded={isOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   {isOpen ? <ChevronDown className="size-4 shrink-0 text-muted" /> : <ChevronRight className="size-4 shrink-0 text-muted" />}
                   <span className="truncate font-medium">{m.name}</span>
@@ -350,7 +362,7 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder, query,
                 <ul className="border-t border-line px-2 py-1">
                   {m.items.length === 0 && <li className="px-2 py-2 text-sm text-muted">{t("空的")}</li>}
                   {m.items.map((it, i) => (
-                    <ModuleRow key={it.id ?? i} it={it} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
+                    <ModuleRow key={it.id ?? i} it={it} course={course.id} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
                   ))}
                 </ul>
               )}
@@ -362,7 +374,15 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder, query,
   );
 }
 
-export function ModuleRow({ it, opening, onClick }: { it: ModuleItem; opening: boolean; onClick: () => void }) {
+/** What a module item is, to pin: its file, its page (or assignment...), or the web page it links to. */
+const itemTarget = (it: ModuleItem, course: number): PinTarget | null =>
+  it.file ? { file: it.file }
+    : it.doc ? { course, kind: it.doc.kind, id: it.doc.id, title: it.title }
+      : it.external ? { url: it.external, title: it.title }
+        : null;
+
+export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; course: number; opening: boolean; onClick: () => void }) {
+  const pinnable = usePinnable();
   const pad = { paddingLeft: 8 + it.indent * 20 };
   if (it.type === "SubHeader") {
     return <li style={pad} className="pt-2.5 pb-1 text-xs font-medium text-muted">{it.title}</li>;
@@ -373,6 +393,7 @@ export function ModuleRow({ it, opening, onClick }: { it: ModuleItem; opening: b
     <li>
       <button
         onClick={onClick}
+        {...pinnable(it.deleted ? null : itemTarget(it, course))}
         style={pad}
         title={
           it.deleted ? t("你删除了这个文件；在 Canvas 中打开")
@@ -450,8 +471,8 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
         {searching && !found.loading && <li><FilterNote n={list?.length ?? 0} onWiden={onWiden} /></li>}
         {list === null && <li className="px-2 py-3 text-sm text-muted">{t("正在加载…")}</li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
-        {kind === "assignment" ? <AssignmentList list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
-          <ListRow key={it.id} it={it} active={it.id === current} onClick={() => onSelect(it.id)} />
+        {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
+          <ListRow key={it.id} it={it} pin={{ course: course.id, kind, id: it.id, title: it.title }} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
       </ul>
       <div className="min-w-0 flex-1 overflow-y-auto">
@@ -471,10 +492,11 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
   );
 }
 
-function ListRow({ it, active, onClick }: { it: ItemSummary; active: boolean; onClick: () => void }) {
+function ListRow({ it, pin, active, onClick }: { it: ItemSummary; pin: PinTarget; active: boolean; onClick: () => void }) {
+  const pinnable = usePinnable();
   return (
     <li>
-      <button onClick={onClick} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
+      <button onClick={onClick} {...pinnable(pin)} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
         <div className="flex items-center gap-2">
           {it.new && <NewDot />}
           <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
@@ -488,7 +510,8 @@ function ListRow({ it, active, onClick }: { it: ItemSummary; active: boolean; on
   );
 }
 
-function AssignmentList({ list, current, onSelect }: { list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
+function AssignmentList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
+  const pinnable = usePinnable();
   const groups = useMemo(() => {
     const now = Date.now();
     const g: [string, ItemSummary[]][] = [[t("即将截止"), []], [t("已过截止"), []], [t("没有截止日期"), []]];
@@ -506,7 +529,8 @@ function AssignmentList({ list, current, onSelect }: { list: ItemSummary[]; curr
           <ul>
             {xs.map((a) => (
               <li key={a.id}>
-                <button onClick={() => onSelect(a.id)} className={`block w-full rounded-md px-2.5 py-2 text-left ${a.id === current ? "bg-selected" : "hover:bg-chip"}`}>
+                <button onClick={() => onSelect(a.id)} {...pinnable({ course, kind: "assignment", id: a.id, title: a.title })}
+                  className={`block w-full rounded-md px-2.5 py-2 text-left ${a.id === current ? "bg-selected" : "hover:bg-chip"}`}>
                   <div className="flex items-center gap-2">
                     {a.new && <NewDot />}
                     <span className={`truncate text-sm ${a.new ? "font-medium" : ""}`}>{a.title}</span>
@@ -634,6 +658,7 @@ export function CourseGrades({ course, version, onOpenDoc, query, onWiden }: {
   query: string; // the search box: only assignments with these words in their titles
   onWiden: () => void;
 }) {
+  const pinnable = usePinnable();
   const [g, setG] = useState<Grades | null>(null);
   useEffect(() => {
     api.grades(course.id).then(setG, () => setG({ total: null, assignments: [] }));
@@ -673,6 +698,7 @@ export function CourseGrades({ course, version, onOpenDoc, query, onWiden }: {
               <li key={a.id}>
                 <button
                   onClick={() => onOpenDoc("assignment", a.id)}
+                  {...pinnable({ course: course.id, kind: "assignment", id: a.id, title: a.title })}
                   className="grid w-full grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-chip"
                 >
                   <span className="flex min-w-0 items-center gap-2">

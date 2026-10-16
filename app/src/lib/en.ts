@@ -25,6 +25,13 @@ export const en: Record<string, string | [string, string]> = {
   "置顶": "Pin",
   "置顶@@heading": "Pinned",
   "置顶失败": "Couldn't pin",
+  "已置顶“{name}”": "Pinned “{name}”",
+  "打开失败": "Couldn't open it",
+  "放在这里置顶": "Drop here to pin",
+  "把课程、文件夹、文件、公告、页面、工具拖到这里，或者右键选“置顶”。点 + 新建智能文件夹（保存的搜索）。":
+    "Drag courses, folders, files, announcements, pages or tools here, or right-click one and choose Pin. + makes a smart folder (a saved search).",
+  "找不到这个文件了": "This file isn't there any more",
+  "Canvas 上已经没有了": "No longer on Canvas",
   "上移": "Move up",
   "移动失败": "Couldn't move",
   "下移": "Move down",
@@ -78,8 +85,6 @@ export const en: Record<string, string | [string, string]> = {
   "搜索": "Search",
   "全部文件": "All files",
   "添加到置顶": "Add to pinned",
-  "右键课程或文件夹选择“置顶”，或点 + 新建智能文件夹（保存的搜索）。":
-    "Right-click a course or folder and choose “Pin”, or click + for a smart folder (a saved search).",
   "课程 #{id}": "Course #{id}",
   "找不到这门课了": "This course is gone",
   "找不到这个文件夹了": "This folder is gone",

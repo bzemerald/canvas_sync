@@ -145,11 +145,12 @@ class AutoScroll {
     this.box = el;
   }
 
-  update(_x: number, y: number) {
+  update(x: number, y: number) {
     if (!this.box) return;
     const r = this.box.getBoundingClientRect();
     const edge = 40;
-    this.speed = y < r.top + edge ? -Math.ceil((r.top + edge - y) / 4) : y > r.bottom - edge ? Math.ceil((y - (r.bottom - edge)) / 4) : 0;
+    const beside = x < r.left || x > r.right; // (dragged over to the sidebar, say: leave the list be)
+    this.speed = beside ? 0 : y < r.top + edge ? -Math.ceil((r.top + edge - y) / 4) : y > r.bottom - edge ? Math.ceil((y - (r.bottom - edge)) / 4) : 0;
     if (this.speed && !this.frame) this.tick();
   }
 

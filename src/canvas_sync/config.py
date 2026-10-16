@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -108,13 +108,27 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # term_order = ["Fall 2026", "Spring 2026"]
 # course_order = [12345, 67890]
 
-# The app's sidebar: pinned folders, and smart folders (saved searches), in order.
+# The app's sidebar: what's pinned, in order: courses, folders, files, a course's
+# announcements, assignments, pages, modules and tools, web links, smart folders.
 #
 # [[pinned]]
 # course = 12345                        # a course
 #
 # [[pinned]]
 # path = "Fall 2026/MATH 221/Modules"   # a folder
+#
+# [[pinned]]
+# file = "Fall 2026/MATH 221/Files/schedule.pdf"
+#
+# [[pinned]]
+# course = 12345                        # in a course: an announcement, assignment or page,
+# kind = "page"                         # (or module = <id>, tool = <id>)
+# id = "schedule"
+# title = "Schedule"
+#
+# [[pinned]]
+# url = "https://math221.example.edu"
+# title = "Course website"
 #
 # [[pinned]]
 # name = "Midterm 1"                    # a smart folder
@@ -220,7 +234,46 @@ class PinnedCourse:
     course: int  # Canvas course id: a course, not its folder, so it survives renames and layouts
 
 
-Pinned = PinnedFolder | PinnedCourse | SmartFolder
+@dataclass(frozen=True)
+class PinnedFile:
+    file: str  # relative to the sync folder
+
+
+# In a course: an announcement, assignment, page (or the syllabus); a module; an external tool.
+# The title is what it was called when pinned, for when it's gone; it's not what tells them apart.
+DOC_KINDS = ("announcement", "assignment", "page", "syllabus")
+
+
+@dataclass(frozen=True)
+class PinnedDoc:
+    course: int
+    kind: str
+    id: str
+    title: str = field(default="", compare=False)
+
+
+@dataclass(frozen=True)
+class PinnedModule:
+    course: int
+    module: int
+    title: str = field(default="", compare=False)
+
+
+@dataclass(frozen=True)
+class PinnedTool:
+    course: int
+    tool: int
+    title: str = field(default="", compare=False)
+
+
+@dataclass(frozen=True)
+class PinnedLink:
+    url: str
+    title: str = field(default="", compare=False)
+
+
+PinnedThing = PinnedFolder | PinnedCourse | PinnedFile | PinnedDoc | PinnedModule | PinnedTool | PinnedLink
+Pinned = PinnedThing | SmartFolder
 
 
 @dataclass
@@ -324,8 +377,22 @@ def _smart_folder(f: dict[str, Any]) -> SmartFolder:
 
 
 def _pinned_item(d: dict[str, Any]) -> Pinned:
+    title = str(d.get("title", ""))
+    if "url" in d:
+        return PinnedLink(str(d["url"]), title)
+    if "file" in d:
+        return PinnedFile(str(d["file"]).strip("/"))
     if "course" in d:
-        return PinnedCourse(int(d["course"]))
+        course = int(d["course"])
+        if "kind" in d:
+            if d["kind"] not in DOC_KINDS:
+                raise ConfigError(f"pinned: unknown kind {d['kind']!r}; use {list(DOC_KINDS)}")
+            return PinnedDoc(course, str(d["kind"]), str(d.get("id", "")), title)
+        if "module" in d:
+            return PinnedModule(course, int(d["module"]), title)
+        if "tool" in d:
+            return PinnedTool(course, int(d["tool"]), title)
+        return PinnedCourse(course)
     if "path" in d:
         return PinnedFolder(str(d["path"]).strip("/"))
     return _smart_folder(d)
@@ -333,11 +400,10 @@ def _pinned_item(d: dict[str, Any]) -> Pinned:
 
 def _pinned_table(item: Pinned) -> Any:
     t = tomlkit.table()
-    if isinstance(item, PinnedFolder):
-        t["path"] = item.path
-        return t
-    if isinstance(item, PinnedCourse):
-        t["course"] = item.course
+    if not isinstance(item, SmartFolder):
+        for k, v in asdict(item).items():
+            if v != "" or k != "title":  # (no title: left out)
+                t[k] = v
         return t
     t["name"] = item.name
     t["query"] = item.query
@@ -398,13 +464,21 @@ def delete_smart_folder(path: Path, name: str) -> None:
     save_pinned(path, items)
 
 
-def pin(path: Path, item: PinnedFolder | PinnedCourse) -> None:
+def pin(path: Path, item: PinnedThing, at: int | None = None) -> None:
+    """Pin `item` (at the end, or at position `at`); pinned already, it moves there."""
     items = load_pinned(path)
-    if item not in items:
-        save_pinned(path, [*items, item])
+    if item in items:
+        if at is None:
+            return
+        was = items.index(item)
+        del items[was]
+        if was < at:
+            at -= 1  # (`at` counted it where it was)
+    items.insert(len(items) if at is None else max(0, min(at, len(items))), item)
+    save_pinned(path, items)
 
 
-def unpin(path: Path, item: PinnedFolder | PinnedCourse) -> None:
+def unpin(path: Path, item: PinnedThing) -> None:
     items = load_pinned(path)
     if item not in items:
         raise LookupError(f"{item} is not pinned")
@@ -464,8 +538,11 @@ def record_folder_rename(path: Path, canonical: str, name: str | None, old: str,
     else:
         names[canonical] = name
     path.write_text(tomlkit.dumps(doc))
+    under = lambda p: p == old or p.startswith(old + "/")  # noqa: E731
     moved = [
-        PinnedFolder(new + i.path[len(old):]) if isinstance(i, PinnedFolder) and (i.path == old or i.path.startswith(old + "/")) else i
+        PinnedFolder(new + i.path[len(old):]) if isinstance(i, PinnedFolder) and under(i.path)
+        else PinnedFile(new + i.file[len(old):]) if isinstance(i, PinnedFile) and under(i.file)
+        else i
         for i in load_pinned(path)
     ]
     save_pinned(path, moved)

@@ -181,10 +181,16 @@ export interface SmartFolder {
   content: boolean; // also match text inside files and pages, not just names
 }
 
-/** A sidebar entry: a pinned folder, or a smart folder (a saved search). */
+/** A sidebar entry under 置顶. Things in a course are listed with what they're called now
+ * (`exists`: false when they've gone from Canvas, or from the sync folder). */
 export type PinnedItem =
   | { type: "course"; id: number; exists: boolean }
   | { type: "folder"; path: string; course_id: number | null; exists: boolean }
+  | { type: "file"; path: string; course_id: number | null; exists: boolean }
+  | { type: "doc"; course_id: number; kind: DocKind; id: string; title: string; exists: boolean }
+  | { type: "module"; course_id: number; module: number; title: string; exists: boolean }
+  | { type: "tool"; course_id: number; tool: number; title: string; exists: boolean }
+  | { type: "link"; url: string; title: string }
   | ({ type: "smart" } & SmartFolder);
 
 /** A card on a course's overview: built in (upcoming, announcements, modules, files, grades,
@@ -233,6 +239,35 @@ export type PinTarget =
   | { course: number; module: number; title: string } // a module
   | { course: number; tool: number; title: string } // an external tool
   | { url: string; title: string }; // a web link
+
+/** What a pinned item is, to unpin it (smart folders are deleted instead). */
+export function targetOf(item: PinnedItem): PinTarget | null {
+  switch (item.type) {
+    case "course": return { course: item.id };
+    case "folder": return { path: item.path };
+    case "file": return { file: item.path };
+    case "doc": return { course: item.course_id, kind: item.kind, id: item.id, title: item.title };
+    case "module": return { course: item.course_id, module: item.module, title: item.title };
+    case "tool": return { course: item.course_id, tool: item.tool, title: item.title };
+    case "link": return { url: item.url, title: item.title };
+    default: return null;
+  }
+}
+
+/** Tells pinned things apart (titles don't count). */
+export function pinKey(t: PinTarget): string {
+  if ("url" in t) return `link:${t.url}`;
+  if ("file" in t) return `file:${t.file}`;
+  if ("path" in t) return `folder:${t.path}`;
+  if ("kind" in t) return `doc:${t.course}:${t.kind}:${t.id}`;
+  if ("module" in t) return `module:${t.course}:${t.module}`;
+  if ("tool" in t) return `tool:${t.course}:${t.tool}`;
+  return `course:${t.course}`;
+}
+export const pinnedKey = (item: PinnedItem) => (item.type === "smart" ? `smart:${item.name}` : pinKey(targetOf(item)!));
+/** A search result, to pin: the file, or the announcement / assignment / page. */
+export const hitTarget = (h: Hit): PinTarget | null =>
+  h.path ? { file: h.path } : h.doc_id ? { course: h.course_id, kind: h.kind as DocKind, id: h.doc_id, title: h.title } : null;
 
 /** A term, course, folder or file: what a sync or restore applies to. */
 export interface Scope {
@@ -351,11 +386,10 @@ export const restore = (scope: Scope) =>
 const post = <T,>(path: string, body: unknown) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 export const pinned = () => api<PinnedItem[]>("/pinned");
-export const pinFolder = (path: string) => post<PinnedItem[]>("/pinned", { path });
-export const unpinFolder = (path: string) => post<PinnedItem[]>("/pinned/remove", { path });
-export const pinCourse = (course: number) => post<PinnedItem[]>("/pinned", { course });
-export const unpinCourse = (course: number) => post<PinnedItem[]>("/pinned/remove", { course });
 export const movePinned = (index: number, to: number) => post<PinnedItem[]>("/pinned/move", { index, to });
+/** Pin anything pinnable (at a place in the list; else at the end). */
+export const pin = (target: PinTarget, at?: number) => post<PinnedItem[]>("/pinned", { ...target, at });
+export const unpin = (target: PinTarget) => post<PinnedItem[]>("/pinned/remove", target);
 
 /** How the sidebar is arranged: terms (by Canvas's name for them) and courses, in order. */
 export interface SidebarOrder {

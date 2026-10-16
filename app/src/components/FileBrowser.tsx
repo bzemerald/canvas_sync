@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Entry } from "../lib/api";
 import { fileCommand } from "../lib/keys";
+import { useDragToPin } from "../lib/pinnable";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import { FileIcon } from "./FileIcon";
 import { RenameInput } from "./RenameInput";
@@ -69,6 +70,7 @@ export function FileBrowser({
   path, root, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
+  const dragPin = useDragToPin(); // (置顶 is in their menus)
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -201,6 +203,7 @@ export function FileBrowser({
     onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(), // no word selection on double-click
     onClick: (ev: React.MouseEvent) => sel.click(e.path, ev),
     onDoubleClick: () => activate(e),
+    ...dragPin(e.deleted ? null : e.type === "dir" ? { path: e.path } : { file: e.path }),
     onContextMenu: (ev: React.MouseEvent) => {
       ev.preventDefault();
       // Right-clicking outside the selection acts on that item alone, as in Finder/Explorer.
