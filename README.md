@@ -65,6 +65,8 @@ announcements and the syllabus, so a hidden Files tab doesn't hide anything.
 | delete a file | not downloaded again (`sync.on_local_delete`); `canvas restore` brings it back |
 | move/rename a file in Finder | remembered; future updates go to the new spot (`sync.on_local_move`) |
 | rename a folder in the app | remembered in `[folder_names]`; what Canvas adds to it later still goes there, links into it are updated (renaming in Finder only counts as moving the files) |
+| delete in the app | to the Trash; files from Canvas aren't downloaded again (restorable). A deleted folder can also stop what Canvas adds to it later (`skip_folders`) |
+| stop syncing in the app | the file stays as your own; Canvas updates no longer touch it (and new files in a folder aren't downloaded) until you resume |
 
 Files removed from Canvas are kept locally (`sync.on_remote_delete`). An instructor
 re-uploading a file (Canvas gives it a new id) is treated as an update, not a new file.

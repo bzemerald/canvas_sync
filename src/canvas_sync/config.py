@@ -45,6 +45,9 @@ views = ["modules", "files"]
 link_other_views = true
 # Where files go that appear in none of `views` (e.g. only linked from a page).
 fallback_view = "attachments"
+# Folders you deleted or stopped syncing in the app: files Canvas adds to them later
+# aren't downloaded. Paths as Canvas names would make them (see [folder_names]).
+skip_folders = []
 
 [layout.view_dirs]
 modules = "Modules"
@@ -154,6 +157,7 @@ class Settings:
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
     pinned: list[Pinned] = field(default_factory=list)
     folder_names: dict[str, str] = field(default_factory=dict)
+    skip_folders: list[str] = field(default_factory=list)
 
     @property
     def smart_folders(self) -> list[SmartFolder]:
@@ -191,6 +195,7 @@ class Settings:
             pinned=[_pinned_item(f) for f in data.get("pinned", [])]
             + [_smart_folder(f) for f in data.get("smart_folders", [])],
             folder_names={str(k).strip("/"): str(v) for k, v in data.get("folder_names", {}).items()},
+            skip_folders=[str(x).strip("/") for x in layout.get("skip_folders", [])],
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -304,6 +309,20 @@ def move_pinned(path: Path, index: int, to: int) -> None:
         raise LookupError("no such position")
     items.insert(to, items.pop(index))
     save_pinned(path, items)
+
+
+def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = ()) -> None:  # type: ignore[assignment]
+    """Add folders to [layout] skip_folders, and drop those at or under `remove_under`."""
+    doc = tomlkit.parse(path.read_text())
+    layout = doc.setdefault("layout", tomlkit.table())
+    current = [str(x) for x in layout.get("skip_folders", [])]
+    gone = lambda p: any(p == r or p.startswith(r + "/") for r in remove_under)  # noqa: E731
+    wanted = [p for p in dict.fromkeys([*current, *add]) if not gone(p)]
+    if wanted != current:
+        arr = tomlkit.array()
+        arr.extend(wanted)
+        layout["skip_folders"] = arr
+        path.write_text(tomlkit.dumps(doc))
 
 
 def record_folder_rename(path: Path, canonical: str, name: str | None, old: str, new: str) -> None:

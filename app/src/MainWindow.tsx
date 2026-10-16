@@ -5,13 +5,16 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
+import { DeleteDialog } from "./components/DeleteDialog";
+import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
-import { HitGrid, HitList, KIND, fileManager, isMac } from "./components/Result";
+import { KIND } from "./components/Result";
 import { RenameDialog } from "./components/RenameDialog";
 import { RestoreDialog } from "./components/RestoreDialog";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
 import type { Course, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
+import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 
@@ -41,7 +44,8 @@ function groupByTerm(list: Course[]): [string, Course[]][] {
 
 const under = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(dir + "/");
 const RESTORABLE = new Set(["modified", "missing", "ignored"]);
-const primaryKey = (e: KeyboardEvent | React.KeyboardEvent) => (isMac ? e.metaKey : e.ctrlKey);
+const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+const countLabel = (names: string[]) => (names.length === 1 ? names[0] : `${names.length} 项`);
 
 export function MainWindow() {
   const [courseList, setCourseList] = useState<Course[]>([]);
@@ -56,6 +60,7 @@ export function MainWindow() {
   const [version, setVersion] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
+  const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
   const [renameDialog, setRenameDialog] = useState<{ path: string; what: string } | null>(null);
@@ -102,19 +107,30 @@ export function MainWindow() {
     return () => clearInterval(timer);
   }, [sync?.running]);
 
-  // ⌘F search, ⌘[ / ⌘] back and forward.
+  // Window-wide keys (back, forward, search, show deleted), per platform; and the mouse's
+  // back / forward buttons.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!primaryKey(e)) return;
-      if (e.key.toLowerCase() === "f") searchBox.current?.focus();
-      else if (e.key === "[") step(-1);
-      else if (e.key === "]") step(1);
+      const command = appCommand(e, typingIn(e.target));
+      if (command === "back") step(-1);
+      else if (command === "forward") step(1);
+      else if (command === "search") searchBox.current?.focus();
+      else if (command === "toggleDeleted") setShowDeleted(!showDeleted);
       else return;
       e.preventDefault();
     };
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3) step(-1);
+      else if (e.button === 4) step(1);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("mouseup", onMouse);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mouseup", onMouse);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDeleted]);
 
   // -- where we are ---------------------------------------------------------------------
   const browsing = view.kind === "browse" ? view.path : null;
@@ -195,52 +211,115 @@ export function MainWindow() {
     }
   };
 
+  const askDelete = (paths: string[], names: string[]) => paths.length > 0 && setDeleting({ paths, label: countLabel(names) });
+  const untrack = (paths: string[], names: string[]) =>
+    api.untrack(paths).then(() => {
+      say(`已停止同步 ${countLabel(names)}：文件留在原处，现在是你自己的了`);
+      refresh();
+    }, fail("停止同步失败"));
+  const track = (paths: string[], names: string[]) =>
+    api.track(paths).then(() => {
+      say(`已恢复同步 ${countLabel(names)}，下次同步时会更新`);
+      refresh();
+    }, fail("恢复同步失败"));
+  const deleteItem = (e: Entry): MenuItem => ({
+    label: `移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy, onSelect: () => askDelete([e.path], [e.name]),
+  });
+  const restoreScope = (e: Entry): Scope => (e.type === "dir" ? { paths: [e.path] } : { file_ids: [e.file_id!] });
+
   const entryMenu = (e: Entry): MenuItem[] => {
-    if (e.type === "dir") {
-      return [
-        { label: "打开", onSelect: () => go({ kind: "browse", path: e.path }) },
-        { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
-        "separator",
-        pinItem(e.path),
-        { label: "重命名…", hint: "F2", disabled: syncBusy, onSelect: () => setRenaming(e.path) },
-        "separator",
-        { label: "从 Canvas 同步此文件夹", disabled: syncBusy, onSelect: () => startSync({ paths: [e.path] }, e.name) },
-        { label: "恢复此文件夹的原版…", disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
-      ];
-    }
     if (e.deleted) {
       return [
-        { label: "恢复…", onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) },
+        { label: "恢复…", onSelect: () => setRestoring({ scope: restoreScope(e), label: e.name }) },
         ...(e.url ? [{ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(e.url!) }] : []),
       ];
     }
+    if (e.type === "dir") {
+      return [
+        { label: "打开", hint: shortcut.open, onSelect: () => go({ kind: "browse", path: e.path }) },
+        { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
+        "separator",
+        pinItem(e.path),
+        { label: "重命名…", hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
+        "separator",
+        { label: "从 Canvas 同步此文件夹", disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
+        { label: "恢复此文件夹的原版…", disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
+        e.skipped
+          ? { label: "恢复同步此文件夹", disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
+          : { label: "停止同步此文件夹（保留文件）", disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
+        "separator",
+        deleteItem(e),
+      ];
+    }
     const items: MenuItem[] = [
-      { label: "打开", onSelect: () => void api.openPath(e.path) },
-      ...(isMac ? [{ label: "快速预览", hint: "空格", onSelect: () => void api.openPath(e.path, { preview: true }) }] : []),
+      { label: "打开", hint: shortcut.open, onSelect: () => void api.openPath(e.path) },
+      ...(isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(e.path, { preview: true }) }] : []),
       { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(e.path) },
     ];
     if (e.url) items.push({ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(e.url!) });
     if (e.link) items.push({ label: "显示原始文件", onSelect: () => go({ kind: "browse", path: parentOf(e.link!), select: e.link! }) });
-    if (e.file_id !== null) {
+    if (e.states.includes("untracked")) {
+      items.push("separator", { label: "恢复同步", disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
+    } else if (e.file_id !== null) {
       items.push(
         "separator",
         { label: "从 Canvas 同步", disabled: syncBusy, onSelect: () => startSync({ file_ids: [e.file_id!] }, e.name) },
         { label: "恢复 Canvas 原版…", disabled: !e.states.includes("modified"), onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) },
+        { label: "停止同步（保留文件）", disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
       );
     }
+    items.push("separator", deleteItem(e));
     return items;
   };
 
-  const hitMenu = (h: Hit): MenuItem[] => [
-    { label: "打开", onSelect: () => void api.openHit(h) },
-    ...(h.path
-      ? [
-          { label: "在文件夹中显示", onSelect: () => go({ kind: "browse", path: parentOf(h.path!), select: h.path! }) },
-          { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(h.path!) },
-        ]
-      : []),
-    ...(h.url ? [{ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(h.url!) }] : []),
-  ];
+  /** Right-clicking a selection of several. */
+  const entriesMenu = (es: Entry[]): MenuItem[] => {
+    if (es.length === 1) return entryMenu(es[0]);
+    const live = es.filter((e) => !e.deleted);
+    const files = live.filter((e) => e.type === "file");
+    const synced = live.filter((e) => e.type === "dir" || e.file_id !== null);
+    const label = countLabel(es.map((e) => e.name));
+    const scope: Scope = {
+      paths: es.filter((e) => e.type === "dir").map((e) => e.path),
+      file_ids: es.filter((e) => e.type === "file" && e.file_id !== null).map((e) => e.file_id!),
+    };
+    return [
+      { label: `打开 ${files.length} 个文件`, disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
+      "separator",
+      { label: "从 Canvas 同步", disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
+      { label: "恢复原版…", onSelect: () => setRestoring({ scope, label }) },
+      { label: "停止同步（保留文件）", disabled: syncBusy || !synced.length, onSelect: () => void untrack(synced.map((e) => e.path), synced.map((e) => e.name)) },
+      "separator",
+      {
+        label: `把 ${countLabel(live.map((e) => e.name))} 移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy || !live.length,
+        onSelect: () => askDelete(live.map((e) => e.path), live.map((e) => e.name)),
+      },
+    ];
+  };
+
+  const hitsMenu = (hs: Hit[]): MenuItem[] => {
+    const onDisk = hs.filter((h) => h.path);
+    const del: MenuItem = {
+      label: `${hs.length > 1 ? `把 ${onDisk.length} 个文件` : ""}移到${trashName}…`, hint: shortcut.delete, danger: true, disabled: syncBusy || !onDisk.length,
+      onSelect: () => askDelete(onDisk.map((h) => h.path!), onDisk.map((h) => h.title)),
+    };
+    if (hs.length > 1) {
+      return [{ label: `打开 ${hs.length} 项`, onSelect: () => hs.slice(0, 20).forEach((h) => void api.openHit(h)) }, "separator", del];
+    }
+    const h = hs[0];
+    return [
+      { label: "打开", hint: shortcut.open, onSelect: () => void api.openHit(h) },
+      ...(h.path && isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
+      ...(h.path
+        ? [
+            { label: "在文件夹中显示", onSelect: () => go({ kind: "browse", path: parentOf(h.path!), select: h.path! }) },
+            { label: `在 ${fileManager} 中显示`, onSelect: () => reveal(h.path!) },
+          ]
+        : []),
+      ...(h.url ? [{ label: "在 Canvas 中打开", onSelect: () => void api.openUrl(h.url!) }] : []),
+      ...(h.path ? ["separator" as const, del] : []),
+    ];
+  };
 
   const courseMenu = (c: Course): MenuItem[] => [
     { label: "打开", onSelect: () => go({ kind: "browse", path: c.dir }) },
@@ -375,8 +454,8 @@ export function MainWindow() {
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
           <div className="flex shrink-0">
-            <ToolButton title={`后退 (${isMac ? "⌘[" : "Ctrl+["})`} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
-            <ToolButton title={`前进 (${isMac ? "⌘]" : "Ctrl+]"})`} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
+            <ToolButton title={`后退 (${shortcut.back})`} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
+            <ToolButton title={`前进 (${shortcut.forward})`} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
           </div>
           <div className="min-w-0 flex-1">
             {view.kind === "browse" && <Breadcrumb path={view.path} onGo={(p) => go({ kind: "browse", path: p })} />}
@@ -394,7 +473,11 @@ export function MainWindow() {
               </div>
               {view.kind === "browse" && (
                 <>
-                  <ToolButton title={showDeleted ? "隐藏你删除的文件" : "显示你删除的文件"} pressed={showDeleted} onClick={() => setShowDeleted(!showDeleted)}>
+                  <ToolButton
+                    title={`${showDeleted ? "隐藏你删除的文件" : "显示你删除的文件"}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
+                    pressed={showDeleted}
+                    onClick={() => setShowDeleted(!showDeleted)}
+                  >
                     {showDeleted ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                   </ToolButton>
                   <ToolButton
@@ -436,9 +519,13 @@ export function MainWindow() {
             mode={mode}
             showDeleted={showDeleted}
             onNavigate={(p) => go({ kind: "browse", path: p })}
-            onOpen={(e) => (e.deleted ? setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) : void api.openPath(e.path))}
+            onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}
-            onMenu={(e, x, y) => openMenu(entryMenu(e), x, y)}
+            onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
+            onDelete={(es) => {
+              const live = es.filter((e) => !e.deleted);
+              if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
+            }}
             renaming={renaming}
             onStartRename={(e) => canRename(e) && !syncBusy && setRenaming(e.path)}
             onRename={(e, name) => void renameFolder(e.path, name)}
@@ -451,7 +538,8 @@ export function MainWindow() {
             query={query}
             results={results}
             showCourse={view.kind !== "browse" || !course}
-            onMenu={(h, x, y) => openMenu(hitMenu(h), x, y)}
+            onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
+            onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
         )}
       </main>
@@ -466,6 +554,18 @@ export function MainWindow() {
         />
       )}
       <Notice message={notice} onDone={() => setNotice(null)} />
+      {deleting && (
+        <DeleteDialog
+          paths={deleting.paths}
+          label={deleting.label}
+          onClose={() => setDeleting(null)}
+          onDone={() => {
+            say(`已移到${trashName}：${deleting.label}`);
+            setDeleting(null);
+            refresh();
+          }}
+        />
+      )}
       {restoring && (
         <RestoreDialog
           scope={restoring.scope}
@@ -506,6 +606,8 @@ function pinnedWhere(item: { path: string; course_id: number | null }, courses: 
 
 /** Backend messages, said the way the rest of the app talks. */
 function friendly(message: string): string {
+  if (/does not exist/.test(message)) return "找不到这个文件了（可能已经在别处删除或移动）";
+  if (/can't be changed/.test(message)) return "这个不能改";
   if (/already exists/.test(message)) return "这里已经有同名的文件夹了";
   if (/empty or start with a dot/.test(message)) return "名称不能为空，也不能以“.”开头";
   if (/wait for the sync/.test(message)) return "正在同步，等同步完成再试";
@@ -530,13 +632,14 @@ function Notice({ message, onDone }: { message: string | null; onDone: () => voi
   );
 }
 
-function Results({ view, mode, query, results, showCourse, onMenu }: {
+function Results({ view, mode, query, results, showCourse, onMenu, onDelete }: {
   view: View;
   mode: ViewMode;
   query: string;
   results: { hits: Hit[]; error: string | null; loading: boolean };
   showCourse: boolean;
-  onMenu: (h: Hit, x: number, y: number) => void;
+  onMenu: (hits: Hit[], x: number, y: number) => void;
+  onDelete: (hits: Hit[]) => void;
 }) {
   const [kind, setKind] = useState<Kind | null>(null);
   const { hits, error, loading } = results;
@@ -546,8 +649,8 @@ function Results({ view, mode, query, results, showCourse, onMenu }: {
   for (const h of hits) counts[h.kind] = (counts[h.kind] ?? 0) + 1;
   const asked = view.kind === "smart" || query.trim() !== "";
 
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+  const header = (
+    <>
       {hits.length > 0 && Object.keys(counts).length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1.5 px-2 text-xs">
           <Chip active={!kind} onClick={() => setKind(null)}>全部 {hits.length}</Chip>
@@ -559,9 +662,9 @@ function Results({ view, mode, query, results, showCourse, onMenu }: {
       {error && <p className="px-2 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
       {!error && !asked && view.kind === "home" && <Welcome />}
       {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">没有结果</p>}
-      {mode === "grid" ? <HitGrid hits={shown} onMenu={onMenu} /> : <HitList hits={shown} showCourse={showCourse} onMenu={onMenu} />}
-    </div>
+    </>
   );
+  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onMenu={onMenu} onDelete={onDelete} />;
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {

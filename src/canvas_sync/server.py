@@ -97,6 +97,15 @@ class PathRequest(BaseModel):
     path: str
 
 
+class PathsRequest(BaseModel):
+    paths: list[str]
+
+
+class DeleteRequest(PathsRequest):
+    dry_run: bool = False
+    stop_syncing_folders: bool = True  # also don't download what Canvas adds to the folders later
+
+
 class RenameRequest(BaseModel):
     path: str
     name: str
@@ -201,10 +210,61 @@ def create_app(account: Account, token: str) -> FastAPI:
             todo = e.restorable(scope)
             if req.dry_run:
                 return {"files": [asdict(s) for s in todo]}
+            if job.running:
+                raise HTTPException(409, "wait for the sync to finish")
             try:
-                return {"restored": e.restore_files([s.file_id for s in todo])}
+                restored = e.restore_in(scope)
             except LookupError as err:
                 raise HTTPException(409, str(err))
+            e.reindex()
+            return {"restored": restored}
+
+    def changing(paths: list[str]) -> None:
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        if not paths:
+            raise HTTPException(400, "say which files")
+        for p in paths:
+            inside(p)
+
+    @api.post("/delete")
+    def delete(req: DeleteRequest) -> dict[str, Any]:
+        changing(req.paths)
+        with engine() as e:
+            try:
+                if req.dry_run:
+                    return e.delete_preview(req.paths)
+                deleted = e.delete(req.paths, req.stop_syncing_folders)
+            except ValueError as err:
+                raise HTTPException(400, str(err))
+            except LookupError as err:
+                raise HTTPException(404, str(err))
+            e.reindex()
+            return {"deleted": deleted}
+
+    @api.post("/untrack")
+    def untrack(req: PathsRequest) -> dict[str, int]:
+        changing(req.paths)
+        with engine() as e:
+            try:
+                n = e.untrack(req.paths)
+            except ValueError as err:
+                raise HTTPException(400, str(err))
+            except LookupError as err:
+                raise HTTPException(404, str(err))
+            e.reindex()
+            return {"files": n}
+
+    @api.post("/track")
+    def track(req: PathsRequest) -> dict[str, int]:
+        changing(req.paths)
+        with engine() as e:
+            try:
+                n = e.track(req.paths)
+            except (ValueError, LookupError) as err:
+                raise HTTPException(400, str(err))
+            e.reindex()
+            return {"files": n}
 
     config = account.root / META_DIR / "config.toml"
 

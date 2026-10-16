@@ -97,6 +97,8 @@ body {
   background: var(--bg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Like a native app: dragging selects items, not text. WebKit (macOS) needs the prefix. */
+  -webkit-user-select: none;
   user-select: none;
   cursor: default;
 }
@@ -109,6 +111,7 @@ html.launcher body {
 
 input,
 textarea {
+  -webkit-user-select: text;
   user-select: text;
 }
 

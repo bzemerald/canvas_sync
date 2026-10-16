@@ -6,6 +6,7 @@ const LABEL: Record<string, { text: string; className: string; hint: string }> =
   missing: { text: "已删除", className: "bg-chip text-muted", hint: "你删除了它；下次同步时不会再下载" },
   ignored: { text: "已删除", className: "bg-chip text-muted", hint: "你删除了它，之后不再同步；可以恢复" },
   remote_deleted: { text: "Canvas 已删除", className: "bg-danger-soft text-danger", hint: "老师已经从 Canvas 删除了它；本地副本保留着" },
+  untracked: { text: "不再同步", className: "bg-chip text-muted", hint: "你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它" },
 };
 
 /** Badges for what changed. A file from Canvas that nobody touched shows nothing. */
@@ -19,6 +20,11 @@ export function StatusBadges({ entry }: { entry: Entry }) {
             {LABEL[s].text}
           </span>
         ) : null,
+      )}
+      {entry.type === "dir" && entry.skipped && (
+        <span title="你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载" className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
+          不再同步
+        </span>
       )}
       {entry.type === "dir" && entry.changes > 0 && (
         <span title="里面有你改过或删除的文件" className="rounded bg-warn-soft px-1.5 py-px text-[11px] whitespace-nowrap text-warn">

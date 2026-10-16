@@ -12,7 +12,7 @@ from send2trash import send2trash
 
 from .api import CanvasClient
 from .browse import RESTORABLE, Entry, list_dir
-from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename
+from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename, update_skip_folders
 from .discover import discover_course
 from .execute import EventHandler, Executor
 from .layout import Layout, sanitize
@@ -138,7 +138,8 @@ class Engine:
         for r in self.state.all_files():
             states, path = [], r.path
             if r.ignored:
-                states.append("ignored")
+                # Not synced any more: deleted by you, or kept as your own file.
+                states.append("untracked" if r.path and is_regular(self.root / r.path) else "ignored")
             elif r.path:
                 info = inspector.inspect(r)
                 if info.path is None:
@@ -169,6 +170,143 @@ class Engine:
         except ValueError:
             raise LookupError(f"{path} is not inside {self.root}") from None
 
+    # -- deleting, and stopping / resuming sync ------------------------------------------
+
+    def _checked(self, rel: str) -> str:
+        rel = rel.strip("/")
+        if not rel or rel.split("/")[0] == META_DIR:
+            raise ValueError("that can't be changed")
+        if not os.path.lexists(self.root / rel):
+            raise LookupError(f"{rel} does not exist")
+        return rel
+
+    def _where(self) -> dict[int, str]:
+        """Where each synced file is now, following moves you haven't pulled yet."""
+        moved = {s.file_id: s.path for s in self.status() if "moved" in s.states and s.path}
+        return {r.id: moved.get(r.id, r.path) for r in self.state.all_files() if r.path and not r.ignored}
+
+    def _affected(self, rels: list[str]) -> tuple[dict[int, str], list[str]]:
+        """Synced files at or under these paths (a view link stands for its file), with
+        where they are; and which of the paths are folders."""
+        where = self._where()
+        links = {row[0]: row[1] for row in self.state.db.execute("SELECT path, file_id FROM links")}
+        ids: set[int] = set()
+        folders = []
+        for rel in rels:
+            if (self.root / rel).is_dir() and not (self.root / rel).is_symlink():
+                folders.append(rel)
+                ids |= {fid for fid, p in where.items() if _under(p, rel)}
+            elif rel in links:
+                ids.add(links[rel])
+            else:
+                ids |= {fid for fid, p in where.items() if p == rel}
+        return {fid: where[fid] for fid in ids if fid in where}, folders
+
+    def _has_canvas_content(self, folder: str) -> bool:
+        if any(r.path and _under(r.path, folder) for r in self.state.all_files()):
+            return True
+        return any(_under(row[0], folder) for row in self.state.db.execute("SELECT path FROM links"))
+
+    def _stop_syncing(self, files: dict[int, str]) -> None:
+        """Mark files as not synced. Their view links go: they'd point at a file we no
+        longer manage. A file you moved is recorded where it is now."""
+        for fid, now in files.items():
+            for path, linked in list(self.state.db.execute("SELECT path, file_id FROM links")):
+                if linked == fid:
+                    if (self.root / path).is_symlink():
+                        (self.root / path).unlink()
+                    self.state.remove_link(path)
+            rec = self.state.get(fid)
+            moved = rec is not None and rec.path != now
+            self.state.update(fid, ignored=1, **({"path": now, "pinned_path": now} if moved else {}))
+
+    def delete_preview(self, rels: list[str]) -> dict[str, object]:
+        """What `delete` would do, for the confirmation."""
+        rels = [self._checked(r) for r in rels]
+        files, folders = self._affected(rels)
+        own = 0
+        for rel in rels:
+            p = self.root / rel
+            if p.is_dir() and not p.is_symlink():
+                tracked = {v for v in files.values()}
+                for dirpath, _, names in os.walk(p):
+                    for n in names:
+                        full = Path(dirpath) / n
+                        rel_n = full.relative_to(self.root).as_posix()
+                        if is_regular(full) and rel_n not in tracked:
+                            own += 1
+            elif not self.state.is_link(rel) and rel not in files.values():
+                own += 1
+        return {
+            "canvas_files": len(files),
+            "own_files": own,
+            "folders": folders,
+            "canvas_folders": [f for f in folders if self._has_canvas_content(f)],
+        }
+
+    def delete(self, rels: list[str], stop_syncing_folders: bool = True) -> list[str]:
+        """Move files and folders to the Trash. Files from Canvas aren't downloaded again
+        (they can be restored); deleting a view link deletes the file it shows. With
+        `stop_syncing_folders`, files Canvas adds to the deleted folders later aren't
+        downloaded either."""
+        rels = [self._checked(r) for r in rels]
+        files, folders = self._affected(rels)
+        skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)] if stop_syncing_folders else []
+        for path, _ in list(self.state.db.execute("SELECT path, file_id FROM links")):
+            if any(_under(path, f) for f in folders):
+                self.state.remove_link(path)  # goes to the Trash with its folder
+        self._stop_syncing(files)
+        self.state.commit()
+        trash = sorted({*rels, *files.values()}, key=len)
+        done = []
+        for rel in trash:
+            p = self.root / rel
+            if os.path.lexists(p) and not any(_under(rel, d) for d in done):
+                send2trash(p)
+                done.append(rel)
+        if skip:
+            update_skip_folders(self.meta / "config.toml", add=skip)
+            self._reload()
+        return done
+
+    def untrack(self, rels: list[str]) -> int:
+        """Stop syncing these files and folders but keep them, as your own files. Files
+        Canvas adds to the folders later aren't downloaded. Returns how many files."""
+        rels = [self._checked(r) for r in rels]
+        files, folders = self._affected(rels)
+        skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)]
+        self._stop_syncing(files)
+        self.state.commit()
+        if skip:
+            update_skip_folders(self.meta / "config.toml", add=skip)
+            self._reload()
+        return len(files)
+
+    def track(self, rels: list[str]) -> int:
+        """Undo `untrack`: sync these files and folders again. Returns how many files."""
+        rels = [self._checked(r) for r in rels]
+        n = 0
+        for r in self.state.all_files():
+            if r.ignored and r.path and is_regular(self.root / r.path) and any(_under(r.path, rel) for rel in rels):
+                self.state.update(r.id, ignored=0)
+                n += 1
+        self.state.commit()
+        update_skip_folders(self.meta / "config.toml", remove_under=[self.layout.canonical(r) for r in rels])
+        self._reload()
+        return n
+
+    def restore_in(self, scope: Scope) -> list[str]:
+        """Restore everything you changed or deleted in `scope`, and sync its folders again."""
+        restored = self.restore_files([s.file_id for s in self.restorable(scope)])
+        if scope.paths:
+            update_skip_folders(self.meta / "config.toml", remove_under=[self.layout.canonical(p) for p in scope.paths])
+            self._reload()
+        return restored
+
+    def _reload(self) -> None:
+        self.settings = Settings.load(self.meta / "config.toml")
+        self.layout = Layout(self.settings)
+
     def restorable(self, scope: Scope) -> list[FileStatus]:
         """Files in `scope` that `restore_files` would put back: edited or deleted by you."""
         return [
@@ -181,11 +319,13 @@ class Engine:
         a folder. Your edited versions go to the Trash."""
         rel = self.relative(path)
         if (self.root / rel).is_dir() and not (self.root / rel).is_symlink():
-            return self.restore_files([s.file_id for s in self.restorable(Scope([rel]))])
+            return self.restore_in(Scope([rel]))
         rec = self.state.by_path(rel)
         if rec is None:  # maybe a file you moved here
             moved = {s.path: s.file_id for s in self.status() if "moved" in s.states}
             rec = self.state.get(moved[rel]) if rel in moved else None
+        if rec is None and not os.path.lexists(self.root / rel) and self.restorable(Scope([rel])):
+            return self.restore_in(Scope([rel]))  # a folder you deleted
         if rec is None or rec.path is None:
             raise LookupError(f"{rel} is not a file canvas-sync tracks")
         return self.restore_files([rec.id])
@@ -248,8 +388,7 @@ class Engine:
             self.state.db.rollback()
             os.rename(dest, src)
             raise
-        self.settings = Settings.load(self.meta / "config.toml")
-        self.layout = Layout(self.settings)
+        self._reload()
         self._relink()
         return new
 
@@ -286,3 +425,6 @@ class Engine:
         """A folder's contents as the app shows them; see `browse.list_dir`."""
         return list_dir(self.root, self.state, self.layout, self.status(), rel.strip("/"))
 
+
+def _under(path: str, folder: str) -> bool:
+    return path == folder or path.startswith(folder + "/")

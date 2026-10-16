@@ -282,7 +282,8 @@ class Index:
         for row in state.db.execute("SELECT path, file_id FROM links"):
             links.setdefault(row[1], []).append(row[0])
         for r in state.all_files():
-            if r.ignored or (r.remote_deleted and not r.path):
+            # Files you stopped syncing are still yours to search; deleted ones aren't there.
+            if (r.ignored and not (r.path and (root / r.path).is_file())) or (r.remote_deleted and not r.path):
                 continue
             local = root / r.path if r.path else None
             try:

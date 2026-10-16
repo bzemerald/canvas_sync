@@ -80,6 +80,11 @@ class Layout:
             canon.append(by_new_name.get((parent, seg), seg))
         return "/".join(canon)
 
+    def skipped(self, path: PurePosixPath) -> bool:
+        """Under a folder in `skip_folders` (Canvas-derived paths, like `path`)."""
+        p = path.as_posix()
+        return any(p == s or p.startswith(s + "/") for s in self.s.skip_folders)
+
     def canonical_course_dir(self, course: Course) -> PurePosixPath:
         """The course's folder as Canvas names would make it, before any rename."""
         override = self.s.course_names.get(course.id)
@@ -127,14 +132,20 @@ class Layout:
             candidates = [path_in(s) for s in f.sources if s.kind == fb] or [
                 cdir / self.s.view_dirs.get(fb, fb) / name
             ]
-        candidates = list(dict.fromkeys(candidates))
+        # Folders you deleted or stopped syncing in the app: nothing new goes there. A file
+        # that also appears somewhere else still syncs there.
+        candidates = [c for c in dict.fromkeys(candidates) if not self.skipped(c)]
 
         rule = self.rule_for(course, f)
         if rule is not None:
             if rule.skip:
                 return None
             primary = cdir.joinpath(*(sanitize(p) for p in rule.to.split("/") if p), name)
+            if self.skipped(primary):
+                return None
             others = candidates if rule.keep_views else []
+        elif not candidates:
+            return None
         else:
             primary, others = candidates[0], candidates[1:]
         links = tuple(p for p in others if p != primary) if self.s.link_other_views else ()

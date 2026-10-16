@@ -12,7 +12,7 @@ import posixpath
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from .layout import Layout
@@ -41,9 +41,10 @@ class Entry:
     course_id: int | None = None  # files: their course; dirs: set if this is a course's folder
     url: str | None = None        # the file on Canvas, relative to the Canvas site
     link: str | None = None       # a view link: path of the real file it points at
-    states: list[str] = field(default_factory=list)  # modified moved missing ignored remote_deleted
+    states: list[str] = field(default_factory=list)  # modified moved missing ignored untracked remote_deleted
     deleted: bool = False         # not on disk any more because you deleted it
     changes: int = 0              # dirs: files below with changes `restore` can undo
+    skipped: bool = False         # dirs: you deleted or stopped syncing it; Canvas's new files don't come here
 
 
 def _natural(name: str) -> list[object]:
@@ -86,18 +87,30 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
             elif st is not None and d.is_dir():
                 prefix = path + "/"
                 out.append(Entry(d.name, path, "dir", mtime=st.st_mtime, course_id=course_dirs.get(path),
-                                 changes=sum(p.startswith(prefix) for p in changed)))
+                                 changes=sum(p.startswith(prefix) for p in changed),
+                                 skipped=layout.skipped(PurePosixPath(layout.canonical(path)))))
             elif st is not None:
                 s, rec = at.get(path), tracked.get(path)
                 fid, cid = (s.file_id, s.course_id) if s else (rec.id, rec.course_id) if rec else (None, None)
                 extra = canvas(fid, cid) if fid is not None and cid is not None else {}
                 out.append(Entry(d.name, path, "file", st.st_size, st.st_mtime, **extra))  # type: ignore[arg-type]
 
-    # Files you deleted (or deleted and then pulled, so they're no longer synced).
+    # Files you deleted (or deleted and then pulled, so they're no longer synced), and
+    # folders that are gone with them, so what's in them can still be brought back.
+    gone_dirs: dict[str, int] = {}
+    prefix = rel + "/" if rel else ""
     for s in statuses:
-        if s.path and GONE & set(s.states) and posixpath.dirname(s.path) == rel and not os.path.lexists(root / s.path):
+        if not (s.path and GONE & set(s.states) and s.path.startswith(prefix)) or os.path.lexists(root / s.path):
+            continue
+        child = s.path[len(prefix):].split("/")[0]
+        if "/" not in s.path[len(prefix):]:
             out.append(Entry(posixpath.basename(s.path), s.path, "file", deleted=True,
                              **canvas(s.file_id, s.course_id)))  # type: ignore[arg-type]
+        elif not os.path.lexists(root / (prefix + child)):
+            gone_dirs[prefix + child] = gone_dirs.get(prefix + child, 0) + 1
+    for path, n in gone_dirs.items():
+        out.append(Entry(posixpath.basename(path), path, "dir", deleted=True, changes=n, skipped=True
+                         if layout.skipped(PurePosixPath(layout.canonical(path))) else False))
 
     out.sort(key=lambda e: (e.type != "dir", _natural(e.name)))
     return out

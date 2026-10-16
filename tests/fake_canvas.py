@@ -26,10 +26,13 @@ class FakeCanvas:
         self.announcements: list[dict] = []
         self.files_tab_hidden = False
 
-    def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z") -> None:
+    def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
+            listed: bool = True) -> None:
+        """listed=False: not in the Files tab (only reachable from a module or a link)."""
         self.files[fid] = {
             "id": fid, "display_name": name, "folder_id": folder, "size": len(content),
             "modified_at": version, "url": f"{BASE}/files/{fid}/download?verifier=x", "_content": content,
+            "_unlisted": not listed,
         }
 
     def module(self, position: int, name: str, items: list[dict]) -> None:
@@ -53,7 +56,7 @@ class FakeCanvas:
         if path == "/api/v1/courses/1/files":
             if self.files_tab_hidden:
                 return httpx.Response(403, json={"errors": [{"message": "unauthorized"}]})
-            return httpx.Response(200, json=[public(f) for f in self.files.values()])
+            return httpx.Response(200, json=[public(f) for f in self.files.values() if not f.get("_unlisted")])
         if (m := re.fullmatch(r"/api/v1/courses/1/files/(\d+)", path)) and int(m[1]) in self.files:
             return httpx.Response(200, json=public(self.files[int(m[1])]))
         if (m := re.fullmatch(r"/api/v1/courses/1/pages/(.+)", path)) and m[1] in self.pages:

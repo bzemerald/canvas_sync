@@ -38,6 +38,7 @@ export interface Entry {
   states: string[];
   deleted: boolean;
   changes: number;
+  skipped: boolean; // dirs: deleted or unsynced by you; Canvas's new files don't come here
 }
 
 export interface FileStatus {
@@ -143,6 +144,21 @@ export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
   post<PinnedItem[]>("/smart-folders", { ...folder, replaces });
 export const deleteSmartFolder = (name: string) =>
   api<PinnedItem[]>(`/smart-folders/${encodeURIComponent(name)}`, { method: "DELETE" });
+
+export interface DeletePreview {
+  canvas_files: number;
+  own_files: number;
+  folders: string[];
+  canvas_folders: string[];
+}
+
+export const deletePreview = (paths: string[]) => post<DeletePreview>("/delete", { paths, dry_run: true });
+/** To the Trash; files from Canvas aren't downloaded again (and can be restored). */
+export const deletePaths = (paths: string[], stopSyncingFolders: boolean) =>
+  post<{ deleted: string[] }>("/delete", { paths, stop_syncing_folders: stopSyncingFolders });
+/** Keep the files, as your own; stop syncing them (and new files in the folders). */
+export const untrack = (paths: string[]) => post<{ files: number }>("/untrack", { paths });
+export const track = (paths: string[]) => post<{ files: number }>("/track", { paths });
 
 /** Rename a folder; syncing keeps putting Canvas's files in it. Returns the new path. */
 export const rename = (path: string, name: string) => post<{ path: string }>("/rename", { path, name });
