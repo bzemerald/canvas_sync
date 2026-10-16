@@ -106,6 +106,9 @@ Rules, learned the hard way:
   matches.
 - **Look before clicking a menu item.** Screenshot after a menu opens and click from that
   (menus differ by context; a mis-click once deleted a card).
+- **Wait a second after a screenshot before clicking.** For about a second after a capture,
+  macOS's screenshot process takes clicks, and the app never sees them. (This once looked like
+  a broken Undo button.)
 - **Let the sidebar settle.** Its sync status changes height while syncing, which shifts
   everything below it.
 - **Don't type Latin text with synthetic keystrokes.** The Chinese input method garbles it.

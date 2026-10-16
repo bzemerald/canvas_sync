@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ghost",
+  "description": "The window that carries a dragged thing past the main window's edge: it only hears what to show",
+  "windows": [
+    "ghost"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

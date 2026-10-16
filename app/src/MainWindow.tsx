@@ -111,7 +111,7 @@ export function MainWindow() {
   const [editing, setEditing] = useState<{ folder: SmartFolder | null } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
   const [renameDialog, setRenameDialog] = useState<{ path: string; title: string; current: string; hint?: string } | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
   const trafficLights = useTrafficLights();
@@ -243,7 +243,7 @@ export function MainWindow() {
   const toTab = (v: View & { kind: "course" }, k: TabKey): View & { kind: "course" } => {
     const item = itemOfTab(k);
     const c = courseList.find((x) => x.id === v.id);
-    return { ...v, tab: k, item: undefined, select: undefined, path: item?.type === "folder" ? item.path! : folderTab ? c?.dir ?? v.path : v.path };
+    return { ...v, tab: k, item: undefined, select: undefined, first: false, path: item?.type === "folder" ? item.path! : folderTab ? c?.dir ?? v.path : v.path };
   };
   // The first tab that shows something here (not one that opens a file, a tool or a link).
   const firstTab = tabOrder.find((k) => {
@@ -254,9 +254,8 @@ export function MainWindow() {
   useEffect(() => {
     if (view.kind !== "course" || !courseLayout) return;
     const gone = isAddedTab(view.tab) ? !itemOfTab(view.tab) || OPENS_ELSEWHERE.includes(itemOfTab(view.tab)!.type) : hiddenTabs.includes(view.tab);
-    if ((view.first && view.tab !== firstTab) || gone) {
-      replaceView({ ...toTab(view, firstTab), first: false });
-    }
+    if ((view.first && view.tab !== firstTab) || gone) replaceView(toTab(view, firstTab));
+    else if (view.first) replaceView({ ...view, first: false }); // (done: going to another tab later isn't opening it)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseLayout, view]);
   const arrangeLayout = (changes: LayoutChanges) => {
@@ -400,7 +399,7 @@ export function MainWindow() {
   const openMenu = (items: MenuItem[], x: number, y: number) => setMenu({ x, y, items });
   const reveal = (path: string) => void api.openPath(path, { reveal: true });
 
-  const say = (message: string) => setNotice(message);
+  const say = (message: string, action?: NoticeAction) => setNotice({ text: message, action });
   const fail = (what: string) => (e: unknown) => say(t("{what}：{why}", { what, why: friendly((e as Error).message) }));
 
   const isPinned = (path: string) => pinned.some((p) => p.type === "folder" && p.path === path);
@@ -852,11 +851,25 @@ export function MainWindow() {
             onMove={movePin}
             onPin={(target, at) => void pinThing(target, at)}
             onUnpin={(item) => {
-              const target = api.targetOf(item)!;
+              const at = pinned.indexOf(item);
               setPinned(pinned.filter((p) => p !== item)); // (gone at once: it was let go of)
+              if (item.type === "smart") {
+                // A smart folder is only here: taken away, it's deleted; 撤销 makes it again.
+                const { type: _, ...folder } = item;
+                api.deleteSmartFolder(item.name).then((list) => {
+                  setPinned(list);
+                  if (view.kind === "smart" && view.name === item.name) go({ kind: "home" });
+                  say(t("已删除智能文件夹“{name}”", { name: item.name }), {
+                    label: t("撤销"),
+                    run: () => void api.saveSmartFolder(folder).then((l) => api.movePinned(l.length - 1, at)).then(setPinned, fail(t("撤销失败"))),
+                  });
+                }, fail(t("删除失败")));
+                return;
+              }
+              const target = api.targetOf(item)!;
               api.unpin(target).then((list) => {
                 setPinned(list);
-                say(t("已取消置顶“{name}”", { name: pinLabel(target) }));
+                say(t("已取消置顶“{name}”", { name: pinLabel(target) }), { label: t("撤销"), run: () => void pinThing(target, at) });
               }, fail(t("取消置顶失败")));
             }}
           />
@@ -1014,6 +1027,7 @@ export function MainWindow() {
             onMenu={openMenu}
             onTab={(k) => go(toTab(view, k))}
             onOpenItem={(i) => openTabItem(course, i)}
+            onSay={say}
             onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
           />
         )}
@@ -1037,8 +1051,8 @@ export function MainWindow() {
             onMenu={openMenu}
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
             onOpenHit={openHere}
-            onTab={(t) => go({ ...view, tab: t, item: undefined })}
-            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+            onTab={(t) => go(toTab(view, t))}
+            onNavigate={(to) => go({ ...toTab(view, to.tab), item: to.id })}
             onSeen={seenChanged}
             onShowFile={(p) => goPath(parentOf(p), p)}
             onShowFolder={(p) => goPath(p)}
@@ -1070,7 +1084,7 @@ export function MainWindow() {
             kind={addedTab.kind!}
             id={addedTab.doc!}
             version={version}
-            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+            onNavigate={(to) => go({ ...toTab(view, to.tab), item: to.id })}
             onSeen={seenChanged}
           />
         ) : view.kind === "course" && course && !searching && addedTab?.type === "module" ? (
@@ -1091,7 +1105,7 @@ export function MainWindow() {
             selected={view.item ?? null}
             version={version}
             onSelect={(id) => replaceView({ ...view, item: id })}
-            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+            onNavigate={(to) => go({ ...toTab(view, to.tab), item: to.id })}
             onSeen={seenChanged}
             query={filtering ? query : ""}
             onWiden={() => setWide(true)}
@@ -1143,7 +1157,7 @@ export function MainWindow() {
           onSubmit={(name) => void renameFolder(renameDialog.path, name)}
         />
       )}
-      <Notice message={notice} onDone={() => setNotice(null)} />
+      <Notice notice={notice} onDone={() => setNotice(null)} />
       {choosingIcon && (
         <CourseIconDialog
           course={choosingIcon}
@@ -1245,8 +1259,7 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin,
   const drag = useReorder(items.length, onMove, "y", {
     zone: zone.id,
     pin: (i) => api.targetOf(items[i]), // (onto a course's tabs)
-    // A smart folder is only here: it's deleted on purpose, from its menu, not dragged away.
-    remove: (i) => (items[i].type === "smart" ? null : () => onUnpin(items[i])),
+    remove: (i) => () => onUnpin(items[i]),
   });
   const over = zone.state === "over" && !collapsed && items.length > 0;
   const line = (
@@ -1320,19 +1333,35 @@ function pinnedWhere(item: { path: string; course_id: number | null }, courses: 
   return parentOf(item.path) || t("全部文件");
 }
 
-/** A short message at the bottom of the window that goes away by itself. */
-function Notice({ message, onDone }: { message: string | null; onDone: () => void }) {
+/** What to do about a notice, from it: 撤销, say. */
+export type NoticeAction = { label: string; run: () => void };
+type NoticeState = { text: string; action?: NoticeAction };
+
+/** A short message at the bottom of the window that goes away by itself (a little later when
+ * there's something to do about it). */
+function Notice({ notice, onDone }: { notice: NoticeState | null; onDone: () => void }) {
   const done = useRef(onDone);
   done.current = onDone;
   useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => done.current(), 5000); // per message, not per re-render
+    if (!notice) return;
+    const t = setTimeout(() => done.current(), notice.action ? 8000 : 5000); // per message, not per re-render
     return () => clearTimeout(t);
-  }, [message]);
-  if (!message) return null;
+  }, [notice]);
+  if (!notice) return null;
   return (
-    <div role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-line bg-panel px-4 py-2 text-sm shadow-xl">
-      {message}
+    <div role="status" className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-lg border border-line bg-panel px-4 py-2 text-sm shadow-xl">
+      {notice.text}
+      {notice.action && (
+        <button
+          onClick={() => {
+            notice.action!.run();
+            done.current();
+          }}
+          className="shrink-0 font-medium text-accent hover:underline"
+        >
+          {notice.action.label}
+        </button>
+      )}
     </div>
   );
 }

@@ -13,6 +13,8 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const LAUNCHER: &str = "launcher";
+/// Carries what's being dragged past the main window's edge, where the page can't draw it.
+const GHOST: &str = "ghost";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -171,6 +173,9 @@ pub fn run() {
         )
         .setup(|app| {
             start_backend(app.handle());
+            if let Some(w) = app.get_webview_window(GHOST) {
+                let _ = w.set_ignore_cursor_events(true); // the pointer goes through, to the drag
+            }
             if let Err(e) = app.global_shortcut().register(launcher_shortcut()) {
                 eprintln!("could not register the search shortcut: {e}");
             }

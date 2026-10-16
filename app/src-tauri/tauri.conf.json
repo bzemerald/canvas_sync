@@ -39,6 +39,22 @@
         "skipTaskbar": true,
         "center": true,
         "shadow": false
+      },
+      {
+        "label": "ghost",
+        "title": "",
+        "url": "index.html",
+        "width": 300,
+        "height": 100,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "visible": false,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "focusable": false
       }
     ],
     "security": {

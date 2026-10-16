@@ -137,9 +137,12 @@ body {
   cursor: default;
 }
 
-/* The search window is transparent; only its rounded panel is drawn. */
+/* The search window is transparent; only its rounded panel is drawn. So is the window that
+   carries a dragged thing past the main window's edge. */
 html.launcher,
-html.launcher body {
+html.launcher body,
+html.ghost,
+html.ghost body {
   background: transparent;
 }
 

@@ -116,7 +116,7 @@ export function refill<T>(all: T[], subset: T[], reordered: T[]): T[] {
  * shown; 概览 and 文件 always are, unless you hid them. Drag something of the course (a page, a
  * folder, a module, a tool...) onto them and it's a tab too; drag one of those off, it's gone. */
 export function CourseTabs({
-  course, tab, overview, order, hidden, items, own, onTab, onOpenItem, onMarkAllSeen, onLayout, onReset, onMakeDefault, onMenu,
+  course, tab, overview, order, hidden, items, own, onTab, onOpenItem, onSay, onMarkAllSeen, onLayout, onReset, onMakeDefault, onMenu,
 }: {
   course: Course;
   tab: TabKey;
@@ -127,6 +127,7 @@ export function CourseTabs({
   own: boolean; // this course's tabs are arranged for itself
   onTab: (t: TabKey) => void;
   onOpenItem: (item: TabItem) => void; // a tab that opens elsewhere: a file, a tool, a link
+  onSay: (message: string, action?: { label: string; run: () => void }) => void;
   onMarkAllSeen: () => void;
   onLayout: (changes: LayoutChanges) => void; // for this course
   onReset: () => void; // back to how every course is
@@ -147,7 +148,11 @@ export function CourseTabs({
   };
   const itemOf = (k: TabKey) => (isAddedTab(k) ? items.find((i) => `x:${i.id}` === k) ?? null : null);
   const visible = order.filter((k) => (isAddedTab(k) ? !!itemOf(k) : !hidden.includes(k) && (has[k] || k === tab)));
-  const removeItem = (item: TabItem) => onLayout({ tab_items: items.filter((i) => i.id !== item.id) });
+  const removeItem = (item: TabItem) => {
+    const before = { tab_items: items, tabs: order };
+    onLayout({ tab_items: items.filter((i) => i.id !== item.id) });
+    onSay(t("已移除标签“{name}”", { name: tabItemLabel(item) }), { label: t("撤销"), run: () => onLayout(before) });
+  };
 
   // Dropped on the tabs: a tab of its own, where it was let go (already one: it moves there).
   const addTab = (target: PinTarget, slot: number) => {
@@ -225,7 +230,10 @@ export function CourseTabs({
 
   return (
     <nav
-      ref={bar}
+      ref={(el) => {
+        bar.current = el;
+        zone.ref(el); // (what drops land on)
+      }}
       className={`no-scrollbar relative flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4 ${
         zone.state === "over" ? "bg-accent/10" : zone.state === "ready" ? "outline-1 -outline-offset-2 outline-dashed outline-accent/60" : ""
       }`}

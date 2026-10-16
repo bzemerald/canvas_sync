@@ -3,6 +3,10 @@
 // lists scroll when you get near their edge, and the click that ends a drag isn't a click.
 // Pointer events rather than HTML5 drag and drop, which on Windows fights the webview's own
 // handling of files dropped on the window, and leaves no say over what dragging looks like.
+// Where the copy would be cut off by the window's edge, a window of its own carries it on.
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import { emitTo } from "@tauri-apps/api/event";
+import { Window } from "@tauri-apps/api/window";
 
 /** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs):
  * it shrinks out of the way of what shows there; dragged off its list to take it away: faded,
@@ -50,7 +54,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     const over = h.onMove?.(ev.clientX, ev.clientY);
     ghost.compact(over === "zone");
     ghost.removing(over === "remove");
-    ghost.move(ev.clientX, ev.clientY);
+    ghost.move(ev.clientX, ev.clientY, ev.screenX, ev.screenY);
   };
   const up = (ev: PointerEvent) => {
     const dragged = !!ghost;
@@ -90,14 +94,18 @@ function swallowNextClick() {
 /** A copy of what's dragged, under the pointer, held where it was grabbed. */
 class Ghost {
   private el: HTMLElement;
+  private source: HTMLElement;
   private dx: number;
   private dy: number;
   private grabbed: [number, number]; // dx, dy as grabbed
   private width: number;
   private small = false;
   private badge: HTMLElement | null = null; // the minus: let go, and it's taken away
+  private follower: Follower;
+  private following = false; // cut off by the window's edge: the follower carries it
 
   constructor(source: HTMLElement, x: number, y: number) {
+    this.source = source;
     const r = source.getBoundingClientRect();
     this.dx = x - r.left;
     this.dy = Math.min(y - r.top, GHOST_MAX - 12);
@@ -128,15 +136,38 @@ class Ghost {
     });
     document.body.appendChild(el);
     this.el = el;
+    this.follower = new Follower((shown) => void (this.el.style.visibility = shown && this.following ? "hidden" : ""));
     this.move(x, y);
+    this.sync();
   }
 
   private at(x: number, y: number) {
     return `translate(${x - this.dx}px, ${y - this.dy}px)`;
   }
 
-  move(x: number, y: number) {
+  /** At (x, y) in the window; (sx, sy) on the screen. Where the window's edge would cut the copy
+   * off (dragging a pin out of the sidebar, say), the follower carries it there. */
+  move(x: number, y: number, sx?: number, sy?: number) {
     this.el.style.transform = `${this.at(x, y)} scale(1.02)`; // a little lifted
+    if (sx === undefined || sy === undefined) return;
+    const [left, top] = [x - this.dx, y - this.dy];
+    const [w, h] = [parseFloat(this.el.style.width), parseFloat(this.el.style.height)];
+    if (left < 0 || top < 0 || left + w > window.innerWidth || top + h > window.innerHeight) {
+      this.following = true;
+      this.follower.show(sx - this.dx, sy - this.dy);
+    } else if (this.following) {
+      this.following = false;
+      this.el.style.visibility = "";
+      this.follower.hide();
+    }
+  }
+
+  /** The follower gets the copy as it looks now. */
+  private sync() {
+    const copy = this.el.cloneNode(true) as HTMLElement;
+    Object.assign(copy.style, { position: "relative", left: "0px", top: "0px", transform: "none", visibility: "visible", zIndex: "auto" });
+    inlineImages(this.source, copy);
+    this.follower.content(copy.outerHTML, parseFloat(this.el.style.width), parseFloat(this.el.style.height));
   }
 
   /** Over 置顶: narrower, and below and right of the pointer, so the line where it'll go shows. */
@@ -146,6 +177,7 @@ class Ghost {
     this.el.style.width = `${on ? Math.min(this.width, 220) : this.width}px`;
     this.el.style.opacity = on ? "0.85" : "0.95";
     [this.dx, this.dy] = on ? [-12, -10] : this.grabbed;
+    this.sync();
   }
 
   /** Off its list: let go and it's taken away (unpinned, removed). */
@@ -157,20 +189,99 @@ class Ghost {
       Object.assign(b.style, {
         position: "absolute", top: "4px", right: "4px", width: "18px", height: "18px", borderRadius: "9px",
         display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", lineHeight: "1",
-        background: "var(--danger)", color: "#fff", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.3)",
+        background: "#ff3b30", color: "#fff", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.3)", // (red, as macOS shows taking away)
       });
+      // What's in it fades; the minus doesn't (the copy's own opacity would take it along).
+      for (const c of Array.from(this.el.children) as HTMLElement[]) c.style.opacity = "0.45";
       this.el.appendChild(b);
       this.badge = b;
-      this.el.style.opacity = "0.6";
     } else {
       this.badge?.remove();
       this.badge = null;
-      this.el.style.opacity = this.small ? "0.85" : "0.95";
+      for (const c of Array.from(this.el.children) as HTMLElement[]) c.style.opacity = "";
     }
+    this.sync();
   }
 
   remove() {
+    this.follower.hide();
     this.el.remove();
+  }
+}
+
+/** Images the follower window can't load (blob: links belong to this page), as data. */
+function inlineImages(from: HTMLElement, to: HTMLElement) {
+  const sources = from.querySelectorAll("img");
+  to.querySelectorAll("img").forEach((img, i) => {
+    const src = sources[i];
+    if (!src?.src.startsWith("blob:") || !src.complete || !src.naturalWidth) return;
+    try {
+      const c = document.createElement("canvas");
+      [c.width, c.height] = [src.naturalWidth, src.naturalHeight];
+      c.getContext("2d")!.drawImage(src, 0, 0);
+      img.src = c.toDataURL();
+    } catch {
+      img.removeAttribute("src");
+    }
+  });
+}
+
+const PAD = 28; // room around the copy in the follower window, for its shadow
+let followerWindow: Promise<Window | null> | null = null;
+const followerWin = () => (followerWindow ??= Window.getByLabel("ghost").catch(() => null));
+
+/** The window (see components/DragGhost.tsx) that carries the copy once it reaches the main
+ * window's edge: transparent, letting the pointer through, never taking the focus (which would
+ * end the drag). It shows the same copy at the same place on the screen. Moves are sent one at
+ * a time, the latest one next. */
+class Follower {
+  private want = false; // should it be showing
+  private shown = false;
+  private busy = false;
+  private target: [number, number] | null = null; // where its top left goes, on the screen
+  private placed: [number, number] | null = null;
+  private onShown: (shown: boolean) => void;
+
+  constructor(onShown: (shown: boolean) => void) {
+    this.onShown = onShown;
+  }
+
+  /** What it shows: the copy's HTML, `w` by `h`. */
+  content(html: string, w: number, h: number) {
+    void emitTo("ghost", "drag-ghost", { html: `<div style="padding: ${PAD}px">${html}</div>` }).catch(() => {});
+    void followerWin().then((win) => win?.setSize(new LogicalSize(w + 2 * PAD, h + 2 * PAD))).catch(() => {});
+  }
+
+  /** The copy's top left at (x, y) on the screen. */
+  show(x: number, y: number) {
+    this.want = true;
+    this.target = [x - PAD, y - PAD];
+    if (!this.busy) void this.run();
+  }
+
+  hide() {
+    this.want = false;
+    if (!this.busy) void this.run();
+  }
+
+  private async run() {
+    this.busy = true;
+    try {
+      const win = await followerWin();
+      while (win) {
+        if (this.want && this.target && this.target !== this.placed) {
+          this.placed = this.target; // (placed before it shows, so it doesn't show somewhere else first)
+          await win.setPosition(new LogicalPosition(this.placed[0], this.placed[1]));
+        } else if (this.want !== this.shown) {
+          this.shown = this.want;
+          await (this.shown ? win.show() : win.hide());
+          this.onShown(this.shown);
+        } else break;
+      }
+    } catch {
+      // (no follower window: the copy just stops at the edge)
+    }
+    this.busy = false;
   }
 }
 
