@@ -425,6 +425,16 @@ export const en: Record<string, string | [string, string]> = {
   "已隐藏的课程": "Hidden courses",
   "已隐藏“{name}”": "Hid “{name}”",
 
+  // -- course icons
+  "更换图标…": "Change icon…",
+  "更换“{name}”的图标": "Icon for “{name}”",
+  "自动": "Automatic",
+  "不显示图标": "No icon",
+  "自动选择（按课程科目）": "Picked from the course's subject",
+  "图标@@heading": "Icon",
+  "颜色": "Color",
+  "或者用一个表情": "Or use an emoji",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

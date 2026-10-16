@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -38,7 +39,8 @@ from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder,
-    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_hidden, set_course_select, unpin,
+    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_hidden, set_course_icon,
+    set_course_select, unpin,
 )
 from .search import course_label
 from .engine import Engine
@@ -130,6 +132,13 @@ class SetupRequest(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class IconRequest(BaseModel):
+    """One of: an icon from the app's set (with a color), an emoji, "none", or nothing (the app picks)."""
+    icon: str | None = None
+    color: str | None = None
+    emoji: str | None = None
 
 
 class HideRequest(BaseModel):
@@ -368,6 +377,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     "default_name": canonical.name,              # renaming to this undoes that
                     "term_label": d.parent.name if term_renamed else c.term,
                     "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
+                    "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
                     "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
                     "excluded": c.id in e.settings.exclude,   # not synced
                 })
@@ -606,6 +616,19 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         except LookupError as err:
             raise HTTPException(404, str(err))
         return pinned()
+
+    @api.post("/courses/{course_id}/icon")
+    def course_icon(course_id: int, req: IconRequest) -> dict[str, Any]:
+        if req.emoji is not None and not 0 < len(req.emoji) <= 16:
+            raise HTTPException(400, "one emoji")
+        if req.icon is not None and not re.fullmatch(r"[a-z0-9-]{1,40}", req.icon):
+            raise HTTPException(400, "not an icon name")
+        if req.color is not None and not re.fullmatch(r"[a-z]{1,20}", req.color):
+            raise HTTPException(400, "not a color name")
+        icon = {"emoji": req.emoji} if req.emoji else {"icon": req.icon, "color": req.color or ""} if req.icon else None
+        set_course_icon(config(), course_id, icon)
+        with engine() as e:
+            return {"icon": e.settings.course_icons.get(course_id)}
 
     @api.post("/courses/{course_id}/hide")
     def hide_course(course_id: int, req: HideRequest) -> dict[str, Any]:

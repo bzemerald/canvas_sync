@@ -41,6 +41,10 @@ hidden = []    # course ids the app doesn't show (in its sidebar, search, what's
 [course_aliases]
 # Extra names search understands for a course:  12345 = ["linalg", "线代"]
 
+[course_icons]
+# A course's icon in the app (without one here, the app picks one from its department):
+# 12345 = { icon = "atom", color = "blue" }   # or { emoji = "🧪" }, or { icon = "none" }
+
 [layout]
 # Course folder relative to this root. Fields: {term} {code} {name} {id}
 course_dir = "{term}/{code}"
@@ -108,6 +112,8 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # content = false                     # true: also match text inside files and pages, not just names
 """
 
+ICON_KEYS = ("icon", "color", "emoji")
+
 CHOICES = {
     "select": {"active", "favorites"},
     "on_conflict": {"rename_local", "rename_remote", "skip"},
@@ -174,6 +180,7 @@ class Settings:
     on_remote_delete: str = "keep"
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
+    course_icons: dict[int, dict[str, str]] = field(default_factory=dict)  # {icon, color} or {emoji}
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
     pinned: list[Pinned] = field(default_factory=list)
     folder_names: dict[str, str] = field(default_factory=dict)
@@ -212,6 +219,10 @@ class Settings:
             on_remote_delete=sync.get("on_remote_delete", d.on_remote_delete),
             rules=[_rule(r) for r in data.get("rules", [])],
             course_aliases={int(k): _strings(v) for k, v in data.get("course_aliases", {}).items()},
+            course_icons={
+                int(k): {str(kk): str(vv) for kk, vv in v.items() if kk in ICON_KEYS}
+                for k, v in data.get("course_icons", {}).items() if isinstance(v, dict)
+            },
             abbreviations={
                 str(k).lower(): [x.lower() for x in _strings(v)]
                 for k, v in data.get("search", {}).get("abbreviations", {}).items()
@@ -435,6 +446,21 @@ def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool
         put("exclude", not syncing)
         if not syncing:
             put("include", False)
+    path.write_text(tomlkit.dumps(doc))
+
+
+def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> None:
+    """A course's icon in the app ({icon, color} or {emoji}); None: back to the app's pick."""
+    doc = tomlkit.parse(path.read_text())
+    icons = doc.setdefault("course_icons", tomlkit.table())
+    key = str(course_id)
+    if icon is None:
+        if key in icons:
+            del icons[key]
+    else:
+        value = tomlkit.inline_table()
+        value.update({k: v for k, v in icon.items() if k in ICON_KEYS and v})
+        icons[key] = value
     path.write_text(tomlkit.dumps(doc))
 
 

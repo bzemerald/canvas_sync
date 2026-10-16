@@ -183,3 +183,12 @@ def test_hide_a_course(root, tmp_path, canvas, keychain):
         api.post("/api/courses/1/hide", json={"hidden": False})
     settings = Settings.load(root / ".canvas" / "config.toml")
     assert (settings.hidden, settings.exclude) == ([], [])
+
+
+def test_course_icons(root, tmp_path, keychain):
+    with client(Account(BASE, root), tmp_path) as api:
+        assert api.post("/api/courses/1/icon", json={"icon": "atom", "color": "blue"}).json() == {"icon": {"icon": "atom", "color": "blue"}}
+        assert api.post("/api/courses/2/icon", json={"emoji": "🧪"}).json() == {"icon": {"emoji": "🧪"}}
+        assert api.post("/api/courses/1/icon", json={"icon": "../x"}).status_code == 400
+        assert api.post("/api/courses/2/icon", json={}).json() == {"icon": None}  # back to the app's pick
+    assert Settings.load(root / ".canvas" / "config.toml").course_icons == {1: {"icon": "atom", "color": "blue"}}

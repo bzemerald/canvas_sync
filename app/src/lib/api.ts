@@ -142,6 +142,7 @@ export interface Course {
   default_name: string; // renaming to this gives it its original name back
   term_label: string | null; // the term, as you named it
   new: number; // things in it you haven't opened yet
+  icon: { icon?: string; color?: string; emoji?: string } | null; // chosen; null: the app picks one
   hidden: boolean; // you hid it: not in the sidebar's terms, search or what's new
   excluded: boolean; // not synced
 }
@@ -309,6 +310,9 @@ export interface SidebarOrder {
   courses: number[];
 }
 export const sidebarOrder = () => api<SidebarOrder>("/sidebar");
+/** A course's icon: {icon, color}, {emoji}, {icon: "none"}; null: the app's pick. */
+export const setCourseIcon = (course: number, icon: { icon?: string; color?: string; emoji?: string } | null) =>
+  post<{ icon: Course["icon"] }>(`/courses/${course}/icon`, icon ?? {});
 /** Hide a course (syncing: false also stops syncing it), or show it again (syncing: true resumes). */
 export const hideCourse = (course: number, hidden: boolean, syncing?: boolean) =>
   post<{ hidden: boolean; excluded: boolean }>(`/courses/${course}/hide`, { hidden, syncing: syncing ?? null });

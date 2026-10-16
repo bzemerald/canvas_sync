@@ -9,6 +9,7 @@ import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import { CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
+import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
@@ -23,6 +24,7 @@ import type { AccountInfo, Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope,
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
+import { CourseIcon } from "./lib/courseIcons";
 import { DropMark, moved, useReorder } from "./lib/reorder";
 import { useTrafficLights } from "./lib/window";
 import { friendly } from "./lib/errors";
@@ -96,6 +98,7 @@ export function MainWindow() {
   const [collapsed, setCollapsed] = usePref<string[]>("sidebar-collapsed", []); // "pinned", "term:<term>"
   const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
   const [hiding, setHiding] = useState<Course | null>(null);
+  const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -449,6 +452,7 @@ export function MainWindow() {
       onSelect: () => setRenameDialog({ path: c.dir, title: t("重命名课程"), current: c.label, hint: t("只改在这里显示的名字，同步不受影响。") }),
     },
     ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.default_name }), disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
+    { label: t("更换图标…"), onSelect: () => setChoosingIcon(c) },
     "separator",
     { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: { name: "", query: "", courses: [c.id], kinds: [], content: false } }) },
     "separator",
@@ -548,7 +552,7 @@ export function MainWindow() {
       const c = courseList.find((x) => x.id === item.id);
       return (
         <NavItem
-          icon={<GraduationCap className="size-4" />}
+          icon={c ? <CourseIcon course={c} /> : <GraduationCap className="size-4" />}
           title={c?.label ?? t("课程 #{id}", { id: item.id })}
           subtitle={c ? (c.term_label ?? undefined) : t("找不到这门课了")}
           count={c?.new}
@@ -644,6 +648,7 @@ export function MainWindow() {
               onReorder={(ids) => reorderTerm(g.key, ids)}
               renderCourse={(c) => (
                 <NavItem
+                  icon={<CourseIcon course={c} />}
                   title={c.label}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
@@ -666,6 +671,7 @@ export function MainWindow() {
               {hiddenOpen && hiddenCourses.map((c) => (
                 <NavItem
                   key={c.id}
+                  icon={<CourseIcon course={c} />}
                   title={c.label}
                   subtitle={c.excluded ? t("不再同步") : (c.term_label ?? undefined)}
                   muted
@@ -693,7 +699,7 @@ export function MainWindow() {
             {view.kind === "course" && course && (
               <Breadcrumb
                 path={view.tab === "files" ? view.path : course.dir}
-                root={{ path: course.dir, label: course.label }}
+                root={{ path: course.dir, label: course.label, icon: <CourseIcon course={course} /> }}
                 onGo={(p) => (p === course.dir && view.tab !== "files" ? openCourse(course) : goPath(p))}
               />
             )}
@@ -837,6 +843,16 @@ export function MainWindow() {
         />
       )}
       <Notice message={notice} onDone={() => setNotice(null)} />
+      {choosingIcon && (
+        <CourseIconDialog
+          course={choosingIcon}
+          onClose={() => setChoosingIcon(null)}
+          onDone={() => {
+            setChoosingIcon(null);
+            refresh();
+          }}
+        />
+      )}
       {hiding && (
         <HideCourseDialog
           course={hiding}
@@ -1020,7 +1036,7 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
 /** Where you are. In a course it starts at the course (its name, not where its files live). */
 function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, onGo }: {
   path: string;
-  root?: { path: string; label: string };
+  root?: { path: string; label: string; icon?: React.ReactNode };
   onGo: (p: string) => void;
 }) {
   const rest = path.slice(root.path.length).replace(/^\//, "");
@@ -1028,7 +1044,10 @@ function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, onGo 
   const prefix = root.path ? root.path + "/" : "";
   return (
     <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
-      <button onClick={() => onGo(root.path)} className={`shrink-0 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>{root.label}</button>
+      <button onClick={() => onGo(root.path)} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
+        {root.icon}
+        {root.label}
+      </button>
       {parts.map((p, i) => (
         <span key={i} className="flex min-w-0 items-center gap-0.5">
           <ChevronRight className="size-3.5 shrink-0 text-muted" />
