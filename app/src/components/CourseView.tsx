@@ -72,13 +72,13 @@ export function CourseTabs({ tab, overview, onTab, onMarkAllSeen }: {
     ["pages", t("页面"), !!c?.pages, n?.pages ?? 0],
   ];
   return (
-    <nav className="flex items-center gap-1 border-b border-line px-4" aria-label={t("课程")}>
+    <nav className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4" aria-label={t("课程")}>
       {tabs.filter(([id, , shown]) => shown || id === tab).map(([id, label, , fresh]) => (
         <button
           key={id}
           onClick={() => onTab(id)}
           aria-current={tab === id ? "page" : undefined}
-          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
+          className={`-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === id ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
         >
           {label}
           {fresh > 0 && <Count n={fresh} label={t("{n} 个新的", { n: fresh })} />}
