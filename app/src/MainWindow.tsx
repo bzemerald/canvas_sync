@@ -764,7 +764,7 @@ export function MainWindow() {
     return (
       <NavItem
         icon={createElement(icon, { className: "size-4" })}
-        title={item.title || (item.type === "link" ? item.url : "")}
+        title={item.type === "doc" && item.kind === "syllabus" ? t("课程大纲") : item.title || (item.type === "link" ? item.url : "")}
         subtitle={launching === key ? t("正在打开…") : gone ? t("Canvas 上已经没有了") : where}
         muted={gone}
         active={pinnedOn(item)}

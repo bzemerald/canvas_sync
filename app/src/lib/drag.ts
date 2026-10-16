@@ -6,7 +6,8 @@
 
 export interface DragHandlers {
   onStart?: () => void;
-  onMove?: (x: number, y: number) => void;
+  /** true: it's over a place that takes it (置顶): the copy shrinks out of the way of what shows there. */
+  onMove?: (x: number, y: number) => boolean | void;
   onDrop?: (x: number, y: number) => void; // released after a drag
   onCancel?: () => void; // Escape, or the window lost focus
 }
@@ -41,9 +42,9 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       document.body.style.cursor = "grabbing";
       h.onStart?.();
     }
-    ghost.move(ev.clientX, ev.clientY);
     scroller?.update(ev.clientX, ev.clientY);
-    h.onMove?.(ev.clientX, ev.clientY);
+    ghost.compact(!!h.onMove?.(ev.clientX, ev.clientY));
+    ghost.move(ev.clientX, ev.clientY);
   };
   const up = (ev: PointerEvent) => {
     const dragged = !!ghost;
@@ -85,11 +86,16 @@ class Ghost {
   private el: HTMLElement;
   private dx: number;
   private dy: number;
+  private grabbed: [number, number]; // dx, dy as grabbed
+  private width: number;
+  private small = false;
 
   constructor(source: HTMLElement, x: number, y: number) {
     const r = source.getBoundingClientRect();
     this.dx = x - r.left;
     this.dy = Math.min(y - r.top, GHOST_MAX - 12);
+    this.grabbed = [this.dx, this.dy];
+    this.width = r.width;
     const el = source.cloneNode(true) as HTMLElement;
     el.removeAttribute("id");
     el.setAttribute("aria-hidden", "true");
@@ -124,6 +130,15 @@ class Ghost {
 
   move(x: number, y: number) {
     this.el.style.transform = `${this.at(x, y)} scale(1.02)`; // a little lifted
+  }
+
+  /** Over 置顶: narrower, and below and right of the pointer, so the line where it'll go shows. */
+  compact(on: boolean) {
+    if (on === this.small) return;
+    this.small = on;
+    this.el.style.width = `${on ? Math.min(this.width, 220) : this.width}px`;
+    this.el.style.opacity = on ? "0.85" : "0.95";
+    [this.dx, this.dy] = on ? [-12, -10] : this.grabbed;
   }
 
   remove() {

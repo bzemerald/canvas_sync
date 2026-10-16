@@ -67,7 +67,7 @@ export function usePinZone(onDrop: (target: PinTarget, slot: number) => void, sl
 export function dragToPin(e: React.PointerEvent, el: HTMLElement, target: PinTarget) {
   if (e.button !== 0) return;
   trackDrag(e, el, {
-    onMove: (x, y) => void pinZones.update(x, y, true),
+    onMove: (x, y) => pinZones.update(x, y, true),
     onDrop: (x, y) => void pinZones.drop(x, y, target),
     onCancel: () => pinZones.end(),
   });

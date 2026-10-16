@@ -124,7 +124,7 @@ export function useReorder(
             at = index;
             slide(index);
             setDrag({ from: index, target: index });
-            return;
+            return true;
           }
           const next = landing(x, y);
           if (next === at) return;
