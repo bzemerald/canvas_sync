@@ -985,6 +985,7 @@ export function MainWindow() {
           />
         ) : view.kind === "course" && course && !searching && view.tab === "overview" ? (
           <CourseOverview
+            key={course.id} // (each course's cards are placed afresh, not slid from the last course's places)
             course={course}
             overview={overview}
             layout={courseLayout}

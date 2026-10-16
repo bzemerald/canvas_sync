@@ -74,18 +74,18 @@ export function CourseOverview({
   const [fresh, setFresh] = useState<string | null>(null); // a card just added: scrolled to, outlined
   const sizes = useRef<ResizeObserver | null>(null);
   const watched = useRef(new WeakSet<Element>());
+  // How many columns fit, and how tall each card is. A grid taken off the page (while the next
+  // thing loads) measures 0 across and every card 0 tall: nothing to place cards by.
   const measure = useCallback(() => {
-    if (!grid) return;
+    if (!grid?.isConnected) return;
+    setColumns(grid.clientWidth >= 760 ? 2 : 1);
     const next: Record<string, number> = {};
     for (const el of Array.from(grid.children) as HTMLElement[]) if (el.dataset.card) next[el.dataset.card] = el.offsetHeight;
     setHeights((h) => (Object.keys(h).length === Object.keys(next).length && Object.keys(next).every((k) => h[k] === next[k]) ? h : next));
   }, [grid]);
   useEffect(() => {
     if (!grid) return;
-    const observer = new ResizeObserver(() => {
-      setColumns(grid.clientWidth >= 760 ? 2 : 1);
-      measure();
-    });
+    const observer = new ResizeObserver(measure);
     [grid, ...Array.from(grid.children)].forEach((el) => observer.observe(el));
     sizes.current = observer;
     watched.current = new WeakSet(Array.from(grid.children));
