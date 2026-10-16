@@ -25,6 +25,8 @@ class FakeCanvas:
         self.assignments: list[dict] = []
         self.announcements: list[dict] = []
         self.files_tab_hidden = False
+        self.media: dict[str, tuple[bytes, str]] = {}  # other paths: (body, content type)
+        self.seen_auth: list[str | None] = []
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
             listed: bool = True) -> None:
@@ -51,6 +53,10 @@ class FakeCanvas:
             "/api/v1/courses/1/assignments": lambda: self.assignments,
             "/api/v1/announcements": lambda: self.announcements,
         }
+        self.seen_auth.append(req.headers.get("authorization"))
+        if path in self.media:
+            body, ctype = self.media[path]
+            return httpx.Response(200, content=body, headers={"content-type": ctype})
         if path in routes:
             return httpx.Response(200, json=routes[path]())
         if path == "/api/v1/courses/1/files":

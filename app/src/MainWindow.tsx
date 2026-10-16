@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ChevronLeft, ChevronRight, Eye, EyeOff, Folder, FolderTree, GraduationCap, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search,
@@ -6,6 +7,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
+import { CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
@@ -14,16 +16,17 @@ import { RenameDialog } from "./components/RenameDialog";
 import { RestoreDialog } from "./components/RestoreDialog";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
-import type { Course, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
+import type { Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 
-// A course is its own kind of place, not "a folder": today it shows the course's files,
-// later also its other Canvas pages. `path` is the folder being looked at inside it.
+// A course is its own kind of place, not "a folder": it opens on an overview, with tabs for
+// its announcements, assignments, files, syllabus and pages. `path` is the folder the 文件
+// tab is in; `item` the announcement / assignment / page being read.
 type View =
   | { kind: "home" }
-  | { kind: "course"; id: number; path: string; select?: string }
+  | { kind: "course"; id: number; tab: CourseTab; path: string; select?: string; item?: string }
   | { kind: "browse"; path: string; select?: string }
   | { kind: "smart"; name: string };
 
@@ -78,6 +81,13 @@ export function MainWindow() {
     setHist((h) => ({ stack: [...h.stack.slice(0, h.i + 1), v], i: h.i + 1 }));
   }, []);
   const step = (d: number) => setHist((h) => ({ ...h, i: Math.max(0, Math.min(h.stack.length - 1, h.i + d)) }));
+  /** Change where we are without a new history entry (picking an item in a list). */
+  const replaceView = (v: View) =>
+    setHist((h) => {
+      const stack = [...h.stack];
+      stack[h.i] = v;
+      return { ...h, stack };
+    });
   const refresh = () => setVersion((n) => n + 1);
 
   // -- data ------------------------------------------------------------------------
@@ -137,15 +147,35 @@ export function MainWindow() {
   }, [showDeleted]);
 
   // -- where we are ---------------------------------------------------------------------
-  const filesView = view.kind === "browse" || view.kind === "course";
+  const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
+  const filesTab = view.kind === "browse" || (view.kind === "course" && view.tab === "files");
   const browsing = filesView ? view.path : null;
   const course = view.kind === "course" ? courseList.find((c) => c.id === view.id) ?? null : null;
   const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
   /** Go to a folder: inside a course, that's the course's page; elsewhere, a plain folder. */
   const goPath = (path: string, select?: string) => {
     const c = courseAt(path);
-    go(c ? { kind: "course", id: c.id, path, select } : { kind: "browse", path, select });
+    go(c ? { kind: "course", id: c.id, tab: "files", path, select } : { kind: "browse", path, select });
   };
+  const openCourse = (c: Course, tab: CourseTab = "overview") => go({ kind: "course", id: c.id, tab, path: c.dir });
+  /** An announcement, assignment, page or the syllabus, shown in its course's page. */
+  const openDoc = (courseId: number, kind: DocKind, id: string) => {
+    const c = courseList.find((x) => x.id === courseId);
+    go({ kind: "course", id: courseId, tab: TAB_OF_KIND[kind], path: c?.dir ?? "", item: kind === "syllabus" ? undefined : id });
+  };
+  const openHere = (h: Hit) =>
+    h.kind !== "file" && h.doc_id ? openDoc(h.course_id, h.kind as DocKind, h.doc_id) : void api.openHit(h);
+  const overview = useOverview(view.kind === "course" ? view.id : null, version);
+
+  // The search window asks us to show an announcement / assignment / page.
+  const openDocLater = useRef(openDoc);
+  openDocLater.current = openDoc;
+  useEffect(() => {
+    const off = listen<{ course_id: number; kind: DocKind; doc_id: string }>("open-doc", ({ payload }) =>
+      openDocLater.current(payload.course_id, payload.kind, payload.doc_id),
+    );
+    return () => void off.then((f) => f());
+  }, []);
   const smart = pinned.filter((p): p is PinnedItem & { type: "smart" } => p.type === "smart");
   const folder = view.kind === "smart" ? smart.find((f) => f.name === view.name) ?? null : null;
   const scopeCourses = useMemo(() => {
@@ -324,11 +354,11 @@ export function MainWindow() {
       onSelect: () => askDelete(onDisk.map((h) => h.path!), onDisk.map((h) => h.title)),
     };
     if (hs.length > 1) {
-      return [{ label: `打开 ${hs.length} 项`, onSelect: () => hs.slice(0, 20).forEach((h) => void api.openHit(h)) }, "separator", del];
+      return [{ label: `打开 ${hs.length} 项`, onSelect: () => hs.slice(0, 20).forEach(openHere) }, "separator", del];
     }
     const h = hs[0];
     return [
-      { label: "打开", hint: shortcut.open, onSelect: () => void api.openHit(h) },
+      { label: "打开", hint: shortcut.open, onSelect: () => openHere(h) },
       ...(h.path && isMac ? [{ label: "快速预览", hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
       ...(h.path
         ? [
@@ -342,7 +372,8 @@ export function MainWindow() {
   };
 
   const courseMenu = (c: Course): MenuItem[] => [
-    { label: "打开", onSelect: () => goPath(c.dir) },
+    { label: "打开", onSelect: () => openCourse(c) },
+    { label: "查看文件", onSelect: () => openCourse(c, "files") },
     { label: "在 Canvas 中打开", onSelect: () => void api.openUrl(`/courses/${c.id}`) },
     { label: `在 ${fileManager} 中显示课程文件`, onSelect: () => reveal(c.dir) },
     "separator",
@@ -467,7 +498,7 @@ export function MainWindow() {
                   subtitle={c ? (c.term_label ?? undefined) : "找不到这门课了"}
                   muted={!c}
                   active={course?.id === item.id && !pinnedHere}
-                  onClick={() => c && goPath(c.dir)}
+                  onClick={() => c && openCourse(c)}
                   onMenu={(x, y) => openMenu(pinnedCourseMenu(item), x, y)}
                 />
               );
@@ -508,7 +539,7 @@ export function MainWindow() {
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
                   badge={changes[c.id] ? `${changes[c.id]} 个文件有本地改动` : undefined}
-                  onClick={() => goPath(c.dir)}
+                  onClick={() => openCourse(c)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
                 />
               ))}
@@ -525,7 +556,13 @@ export function MainWindow() {
           </div>
           <div className="min-w-0 flex-1">
             {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goPath} />}
-            {view.kind === "course" && course && <Breadcrumb path={view.path} root={{ path: course.dir, label: course.label }} onGo={goPath} />}
+            {view.kind === "course" && course && (
+              <Breadcrumb
+                path={view.tab === "files" ? view.path : course.dir}
+                root={{ path: course.dir, label: course.label }}
+                onGo={(p) => (p === course.dir && view.tab !== "files" ? openCourse(course) : goPath(p))}
+              />
+            )}
             {view.kind === "smart" && folder && <SmartTitle folder={folder} courses={courseList} />}
             {view.kind === "home" && <span className="text-sm font-medium">搜索所有课程</span>}
           </div>
@@ -534,11 +571,13 @@ export function MainWindow() {
               {filesView && (
                 <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? `在 ${course.label} 中搜索` : "搜索"} compact />
               )}
-              <div className="flex shrink-0 rounded-md border border-line p-0.5">
-                <ToolButton title="列表" pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
-                <ToolButton title="图标" pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
-              </div>
-              {filesView && (
+              {(filesTab || view.kind === "smart" || searching) && (
+                <div className="flex shrink-0 rounded-md border border-line p-0.5">
+                  <ToolButton title="列表" pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
+                  <ToolButton title="图标" pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
+                </div>
+              )}
+              {filesTab && !searching && (
                 <>
                   <ToolButton
                     title={`${showDeleted ? "隐藏你删除的文件" : "显示你删除的文件"}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
@@ -578,7 +617,27 @@ export function MainWindow() {
           </div>
         )}
 
-        {(view.kind === "browse" || view.kind === "course") && !searching ? (
+        {view.kind === "course" && course && (
+          <CourseTabs tab={view.tab} overview={overview} onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })} />
+        )}
+
+        {view.kind === "course" && course && !searching && view.tab === "overview" ? (
+          <CourseOverview
+            course={course}
+            overview={overview}
+            onOpen={(kind, id) => openDoc(course.id, kind, id)}
+            onTab={(t) => go({ ...view, tab: t, item: undefined })}
+          />
+        ) : view.kind === "course" && course && !searching && view.tab !== "files" ? (
+          <CourseReader
+            course={course}
+            tab={view.tab}
+            selected={view.item ?? null}
+            version={version}
+            onSelect={(id) => replaceView({ ...view, item: id })}
+            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+          />
+        ) : (view.kind === "browse" || view.kind === "course") && !searching ? (
           <FileBrowser
             path={view.path}
             root={course?.dir ?? ""}
@@ -606,6 +665,7 @@ export function MainWindow() {
             query={query}
             results={results}
             showCourse={!course}
+            onOpen={openHere}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
             onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
@@ -701,12 +761,13 @@ function Notice({ message, onDone }: { message: string | null; onDone: () => voi
   );
 }
 
-function Results({ view, mode, query, results, showCourse, onMenu, onDelete }: {
+function Results({ view, mode, query, results, showCourse, onOpen, onMenu, onDelete }: {
   view: View;
   mode: ViewMode;
   query: string;
   results: { hits: Hit[]; error: string | null; loading: boolean };
   showCourse: boolean;
+  onOpen: (hit: Hit) => void;
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void;
 }) {
@@ -733,7 +794,7 @@ function Results({ view, mode, query, results, showCourse, onMenu, onDelete }: {
       {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">没有结果</p>}
     </>
   );
-  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onMenu={onMenu} onDelete={onDelete} />;
+  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onMenu={onMenu} onDelete={onDelete} />;
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {

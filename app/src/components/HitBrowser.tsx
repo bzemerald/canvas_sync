@@ -11,11 +11,12 @@ import type { ViewMode } from "./FileBrowser";
 import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
 import { Thumb } from "./Thumb";
 
-export function HitBrowser({ hits, mode, showCourse, header, onMenu, onDelete }: {
+export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onDelete }: {
   hits: Hit[];
   mode: ViewMode;
   showCourse: boolean;
   header?: React.ReactNode; // shown above the items, inside the scroll area
+  onOpen: (hit: Hit) => void; // a file opens; an announcement, assignment or page shows in the app
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void; // only files that are on disk are passed
 }) {
@@ -39,7 +40,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onMenu, onDelete }:
     const picked = chosen();
     const cur = byKey.get(sel.cursor ?? "");
     let handled = true;
-    if (command === "open") picked.forEach((h) => void api.openHit(h));
+    if (command === "open") picked.forEach(onOpen);
     else if (command === "selectAll") sel.all();
     else if (command === "delete" && picked.some((h) => h.path)) onDelete(picked.filter((h) => h.path));
     else if (command === "preview" && cur?.path) void api.openPath(cur.path, { preview: true });
@@ -59,7 +60,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onMenu, onDelete }:
       "aria-selected": sel.has(k),
       onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(),
       onClick: (ev: React.MouseEvent) => sel.click(k, ev),
-      onDoubleClick: () => void api.openHit(h),
+      onDoubleClick: () => onOpen(h),
       onContextMenu: (ev: React.MouseEvent) => {
         ev.preventDefault();
         const picked = sel.has(k) ? chosen() : [h];

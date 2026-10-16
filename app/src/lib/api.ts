@@ -13,6 +13,41 @@ export interface Hit {
   date: string | null;
   snippet: { text: string; match: boolean }[];
   match: "name" | "content"; // name: title or folder matched; content: only the text inside
+  doc_id: string | null; // pages, assignments, announcements, syllabus: which one
+}
+
+export type DocKind = "announcement" | "assignment" | "page" | "syllabus";
+
+/** An announcement / assignment / page / syllabus, as listed. */
+export interface ItemSummary {
+  kind: DocKind;
+  id: string;
+  title: string;
+  url: string | null; // on Canvas, relative to the site
+  date: string | null; // posted / due / updated
+  author?: string | null;
+  unread?: boolean;
+  preview?: string;
+  due_at?: string | null;
+  unlock_at?: string | null;
+  lock_at?: string | null;
+  points?: number | null;
+  submission_types?: string[];
+  front_page?: boolean;
+}
+
+/** One in full: its HTML, and local copies of the Canvas files it refers to. */
+export interface Item extends ItemSummary {
+  html: string;
+  files: Record<string, { path: string; name: string }>;
+  attachments: { id: number; name: string; path: string | null }[];
+}
+
+export interface Overview {
+  upcoming: ItemSummary[];
+  announcements: ItemSummary[];
+  new_files: { file_id: number; path: string; name: string; date: string | null }[];
+  counts: { announcements: number; assignments: number; pages: number; files: number; syllabus: boolean };
 }
 
 export interface Course {
@@ -126,6 +161,19 @@ export function search(
 }
 
 export const courses = () => api<Course[]>("/courses");
+export const overview = (course: number) => api<Overview>(`/courses/${course}/overview`);
+export const items = (course: number, kind: DocKind) => api<ItemSummary[]>(`/courses/${course}/items?kind=${kind}`);
+export const item = (course: number, kind: DocKind, id: string) =>
+  api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);
+
+/** An image in a page (needs the Canvas login, or is on another site), as an object URL. */
+export async function media(url: string): Promise<string | null> {
+  const { port, token } = await getBackend();
+  const res = await fetch(`http://127.0.0.1:${port}/api/media?${new URLSearchParams({ url })}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.ok ? URL.createObjectURL(await res.blob()) : null;
+}
 export const health = () => api<{ root: string; canvas: string }>("/health");
 export const status = () => api<FileStatus[]>("/status");
 export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
@@ -184,6 +232,15 @@ export function openPath(path: string, how: { reveal?: boolean; preview?: boolea
 export function openUrl(url: string) {
   return api("/open", { method: "POST", body: JSON.stringify({ url }) });
 }
+
+/** A link to anywhere on the web, in the browser. */
+export function openExternal(url: string) {
+  return api("/open", { method: "POST", body: JSON.stringify({ external: url }) });
+}
+
+let canvasBase: Promise<string> | null = null;
+/** The Canvas site's address, e.g. https://bcourses.berkeley.edu */
+export const canvasSite = () => (canvasBase ??= health().then((h) => h.canvas));
 
 /** Open a result: the local file if we have one, else its Canvas page in the browser. */
 export function openHit(hit: Hit, reveal = false) {

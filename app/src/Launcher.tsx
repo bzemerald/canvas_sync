@@ -1,5 +1,6 @@
 // The ⌘⇧Space window: type, arrow, enter. Hides itself when it loses focus.
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
@@ -32,7 +33,12 @@ export function Launcher() {
   const act = async (hit: Hit | undefined, how: "open" | "reveal" | "canvas") => {
     if (!hit) return;
     if (how === "canvas") await openCanvas(hit);
-    else await openHit(hit, how === "reveal");
+    else if (how === "open" && hit.kind !== "file" && hit.doc_id) {
+      // Read it in the app, not on the Canvas website.
+      await emitTo("main", "open-doc", { course_id: hit.course_id, kind: hit.kind, doc_id: hit.doc_id });
+      await invoke("show_main");
+      return;
+    } else await openHit(hit, how === "reveal");
     await hide();
   };
 

@@ -9,6 +9,7 @@ of stdout, and talks to it from then on.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import secrets
@@ -22,14 +23,18 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
+
+import httpx
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import __version__
+from . import __version__, content
 from .api import CanvasClient, CanvasError
+from .discover import FILE_REF
 from .config import (
     Account, ConfigError, PinnedCourse, PinnedFolder, SmartFolder, delete_smart_folder, move_pinned, pin,
     save_pinned, save_smart_folder, unpin,
@@ -45,6 +50,7 @@ from .thumbs import thumbnail
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"]
 
 TRANSFERS = (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT)
+MEDIA_MAX_BYTES = 25 * 1024 * 1024
 
 
 def _now() -> str:
@@ -72,6 +78,7 @@ class SyncJob:
 class OpenRequest(BaseModel):
     path: str | None = None    # relative to the sync folder
     url: str | None = None     # Canvas URL, relative to the Canvas base URL
+    external: str | None = None  # any http(s) link, in the browser
     reveal: bool = False       # show in the file manager instead of opening
     preview: bool = False      # Quick Look (macOS)
 
@@ -191,6 +198,68 @@ def create_app(account: Account, token: str) -> FastAPI:
                kind: list[str] = Query(default=[]), names_only: bool = False) -> list[dict[str, Any]]:
         with engine() as e:
             return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only)]
+
+    # -- a course's page ------------------------------------------------------------------
+
+    @api.get("/courses/{course_id}/overview")
+    def course_overview(course_id: int) -> dict[str, Any]:
+        with engine() as e:
+            return content.overview(e.state, e.root, course_id)
+
+    @api.get("/courses/{course_id}/items")
+    def course_items(course_id: int, kind: str) -> list[dict[str, Any]]:
+        if kind not in content.KINDS:
+            raise HTTPException(400, f"kind must be one of {content.KINDS}")
+        with engine() as e:
+            return content.items(e.state, course_id, kind)
+
+    @api.get("/courses/{course_id}/items/{kind}/{doc_id}")
+    def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
+        with engine() as e:
+            found = content.item(e.state, e.root, course_id, kind, doc_id)
+        if found is None:
+            raise HTTPException(404, "not found (pull to fetch what's new)")
+        return found
+
+    @api.get("/media")
+    async def media(url: str) -> Response:
+        """An image in a page. Canvas files we have come from disk; anything else is
+        fetched (with the Canvas token only for Canvas itself) and cached."""
+        target = urljoin(account.base_url + "/", url)
+        parts = urlsplit(target)
+        if parts.scheme not in ("http", "https"):
+            raise HTTPException(400, "only web images")
+        on_canvas = parts.netloc == urlsplit(account.base_url).netloc
+        if on_canvas and (m := FILE_REF.search(parts.path)) and m[1] in ("", "courses"):
+            with engine() as e:
+                rec = e.state.get(int(m[3]))
+            if rec and rec.path and not rec.ignored and (account.root / rec.path).is_file():
+                return FileResponse(account.root / rec.path)
+        cache = account.root / META_DIR / "cache" / "media" / hashlib.sha1(target.encode()).hexdigest()
+        if cache.exists() and cache.with_suffix(".type").exists():
+            return FileResponse(cache, media_type=cache.with_suffix(".type").read_text())
+        try:
+            if on_canvas:
+                token = account.token()
+                if not token:
+                    raise HTTPException(400, "no Canvas token")
+                async with CanvasClient(account.base_url, token) as client:
+                    body, ctype = await client.fetch(target, MEDIA_MAX_BYTES)
+            else:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=20) as plain:
+                    resp = await plain.get(target)
+                    resp.raise_for_status()
+                    if len(resp.content) > MEDIA_MAX_BYTES:
+                        raise HTTPException(413, "too large")
+                    body, ctype = resp.content, resp.headers.get("content-type", "")
+        except (CanvasError, httpx.HTTPError) as err:
+            raise HTTPException(502, f"could not fetch the image: {err}")
+        if not ctype.startswith("image/"):
+            raise HTTPException(415, "not an image")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(body)
+        cache.with_suffix(".type").write_text(ctype.split(";")[0])
+        return Response(body, media_type=ctype, headers={"Cache-Control": "max-age=86400"})
 
     @api.get("/tree")
     def tree(path: str = "") -> list[dict[str, Any]]:
@@ -383,6 +452,11 @@ def create_app(account: Account, token: str) -> FastAPI:
                 raise HTTPException(404, f"{req.path} does not exist")
             open_path(target, reveal=req.reveal, preview=req.preview)
             return {"opened": str(target)}
+        if req.external:
+            if urlsplit(req.external).scheme not in ("http", "https", "mailto"):
+                raise HTTPException(400, "only web links")
+            webbrowser.open(req.external)
+            return {"opened": req.external}
         if req.url:
             if not req.url.startswith("/"):
                 raise HTTPException(400, "url must be relative to the Canvas site")

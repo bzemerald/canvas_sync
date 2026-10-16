@@ -136,6 +136,21 @@ class CanvasClient:
             query = None  # the next link already carries the query string
         return items
 
+    async def fetch(self, url: str, max_bytes: int) -> tuple[bytes, str]:
+        """GET a Canvas resource (an image in a page, say): its bytes and content type.
+        Follows redirects to file storage; refuses anything over `max_bytes`."""
+        async with self._api_slots:
+            async with self._http.stream("GET", url) as resp:
+                if not resp.is_success:
+                    await resp.aread()
+                    _raise_for(resp)
+                body = bytearray()
+                async for chunk in resp.aiter_bytes(1 << 16):
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise CanvasError(413, url, "too large")
+                return bytes(body), resp.headers.get("content-type", "application/octet-stream")
+
     async def download(self, url: str, dest: Path) -> str:
         """Stream `url` into `dest`; returns the sha256 of the content."""
         async with self._download_slots:

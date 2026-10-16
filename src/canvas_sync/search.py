@@ -120,6 +120,7 @@ class Hit:
     date: str | None
     snippet: list[tuple[str, bool]] = field(default_factory=list)  # (text, is_match)
     match: str = "name"   # name: the title or a folder matched; content: only the text inside
+    doc_id: str | None = None  # pages, assignments, announcements: their id in the course
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -263,7 +264,7 @@ class _Item:
         return json.dumps([self.title, self.path, self.url, self.date, self.folder, self.content_stamp])
 
 
-def _relative_url(url: str | None) -> str | None:
+def relative_url(url: str | None) -> str | None:
     if not url:
         return None
     parts = urlsplit(url)
@@ -315,7 +316,7 @@ class Index:
             raw = json.loads(row["raw"] or "{}")
             html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
             cid, kind = row["course_id"], row["kind"]
-            url = _relative_url(raw.get("html_url"))
+            url = relative_url(raw.get("html_url"))
             if kind == "syllabus":
                 url = f"/courses/{cid}/assignments/syllabus"
             elif kind == "page" and not url:
@@ -422,7 +423,8 @@ class Index:
             Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
                 title=r["title"], path=r["path"], url=r["url"], date=r["date"],
                 snippet=_segments(r["snip"]) if r["snip"] else [],
-                match="name" if r["in_name"] else "content")
+                match="name" if r["in_name"] else "content",
+                doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None)
             for r in self.db.execute(sql, args)
         ]
 

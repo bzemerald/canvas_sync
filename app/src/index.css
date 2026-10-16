@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* Color tokens, light first; dark follows the system setting. */
 :root {
@@ -113,6 +114,14 @@ input,
 textarea {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* What you read (pages, announcements) can be selected and copied, unlike the app's chrome. */
+.selectable,
+.selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
 }
 
 /* Lists and grids handle their own keyboard focus; show it without the browser's ring. */
