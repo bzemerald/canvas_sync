@@ -389,13 +389,16 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/search")
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
-               kind: list[str] = Query(default=[]), names_only: bool = False) -> list[dict[str, Any]]:
+               kind: list[str] = Query(default=[]), names_only: bool = False, under: str = "") -> list[dict[str, Any]]:
+        """`under`: only files in that folder (the app's search box, on a course's 文件 tab)."""
+        if under:
+            inside(under)
         with engine() as e:
             if not course and e.settings.hidden:  # hidden courses only turn up when asked for by name
                 course = [c.id for c in e.state.courses() if c.id not in e.settings.hidden]
                 if not course:
                     return []
-            return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only)]
+            return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only, under or None)]
 
     # -- a course's page ------------------------------------------------------------------
 

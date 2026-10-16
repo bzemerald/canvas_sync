@@ -259,10 +259,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function search(
   q: string,
-  opts: { limit?: number; courses?: number[]; kinds?: Kind[]; namesOnly?: boolean } = {},
+  opts: { limit?: number; courses?: number[]; kinds?: Kind[]; namesOnly?: boolean; under?: string } = {},
 ): Promise<Hit[]> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 50) });
   if (opts.namesOnly) params.set("names_only", "true");
+  if (opts.under) params.set("under", opts.under); // only files in this folder
   for (const c of opts.courses ?? []) params.append("course", String(c));
   for (const k of opts.kinds ?? []) params.append("kind", k);
   return api(`/search?${params}`);

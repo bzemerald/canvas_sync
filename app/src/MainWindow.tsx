@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, arrangeCards, arrangeTabs, useOverview,
-  type CourseTab, type OverviewCard,
+  CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_LABEL, TAB_OF_KIND, arrangeCards, arrangeTabs,
+  useOverview, type CourseTab, type OverviewCard,
 } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
@@ -120,8 +120,10 @@ export function MainWindow() {
   const trafficLights = useTrafficLights();
 
   const view = hist.stack[hist.i];
+  const [wide, setWide] = useState(false); // searching the whole course, not just what the tab shows
   const go = useCallback((v: View) => {
     setQuery("");
+    setWide(false);
     setHist((h) => ({ stack: [...h.stack.slice(0, h.i + 1), v], i: h.i + 1 }));
   }, []);
   const step = (d: number) => setHist((h) => ({ ...h, i: Math.max(0, Math.min(h.stack.length - 1, h.i + d)) }));
@@ -257,7 +259,28 @@ export function MainWindow() {
     return courseList.filter((c) => under(c.dir, browsing) || under(browsing, c.dir)).map((c) => c.id);
   }, [browsing, courseList]);
 
-  const searching = view.kind === "home" || (filesView && query.trim() !== "");
+  // What the search box searches. In a course, what the tab shows: 公告 / 作业 / 页面 / 模块 / 成绩
+  // narrow their own lists as you type, 文件 searches the folder you're in; 概览 and 大纲 the
+  // course. Elsewhere, the folder you're in. "搜索整门课" widens it to the course.
+  const FILTERS_ITSELF: CourseTab[] = ["announcements", "assignments", "pages", "modules", "grades"];
+  const filtering = view.kind === "course" && !wide && FILTERS_ITSELF.includes(view.tab);
+  const folderScope = !wide && ((view.kind === "course" && view.tab === "files") || (view.kind === "browse" && view.path !== ""))
+    ? view.path : null;
+  const folderName = (path: string) => (course && path === course.dir ? TAB_LABEL.files : path.split("/").pop() ?? path);
+  useEffect(() => {
+    if (!query.trim()) setWide(false);
+  }, [query]);
+  const searching = view.kind === "home" || (filesView && query.trim() !== "" && !filtering);
+  const searchPlaceholder =
+    view.kind === "course" && course
+      ? wide || view.tab === "overview" || view.tab === "syllabus"
+        ? t("在 {label} 中搜索", { label: course.label })
+        : view.tab === "files"
+          ? t("在“{name}”中搜索", { name: folderName(view.path) })
+          : t("在{scope}中搜索", { scope: TAB_LABEL[view.tab] })
+      : view.kind === "browse" && view.path
+        ? t("在“{name}”中搜索", { name: folderName(view.path) })
+        : t("搜索");
   const results = useSearch(
     view.kind === "smart" ? `${folder?.query}|${folder?.courses}|${folder?.kinds}|${folder?.content}` : query,
     () => {
@@ -266,12 +289,30 @@ export function MainWindow() {
           ? api.search(folder.query, { courses: folder.courses, kinds: folder.kinds, namesOnly: !folder.content, limit: 500 })
           : Promise.resolve([]);
       }
-      if (!query.trim()) return Promise.resolve([]);
+      if (!query.trim() || filtering) return Promise.resolve([]);
+      if (folderScope !== null) return api.search(query, { limit: 300, under: folderScope });
       if (browsing !== null && browsing !== "" && scopeCourses.length === 0) return Promise.resolve([]);
       return api.search(query, { limit: 300, courses: browsing ? scopeCourses : [] });
     },
-    [view, folder, scopeCourses.join(","), version],
+    [view, folder, scopeCourses.join(","), version, folderScope, filtering],
   );
+  /** Above the results: what was searched, and the way to search more (or less) widely. */
+  const scopeNote = (() => {
+    if (!query.trim()) return null;
+    if (view.kind === "course" && course) {
+      if (wide && view.tab !== "overview" && view.tab !== "syllabus") {
+        const narrow = view.tab === "files" ? folderName(view.path) : TAB_LABEL[view.tab];
+        return { text: t("在 {label} 中搜索", { label: course.label }), action: t("只搜“{name}” ›", { name: narrow }), onAction: () => setWide(false) };
+      }
+      if (folderScope !== null) {
+        return { text: t("只搜“{name}”里的文件", { name: folderName(folderScope) }), action: t("搜索整门课 ›"), onAction: () => setWide(true) };
+      }
+    }
+    if (view.kind === "browse" && folderScope !== null) {
+      return { text: t("只搜“{name}”里的文件", { name: folderName(folderScope) }), action: t("搜索全部 ›"), onAction: () => setWide(true) };
+    }
+    return null;
+  })();
 
   // -- actions --------------------------------------------------------------------------
   const signedOut = account !== null && !account.signed_in;
@@ -731,7 +772,7 @@ export function MainWindow() {
           {view.kind !== "home" && view.kind !== "settings" && (
             <>
               {filesView && (
-                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={course ? t("在 {label} 中搜索", { label: course.label }) : t("搜索")} compact />
+                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} compact />
               )}
               {(filesTab || view.kind === "smart" || searching) && (
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
@@ -817,9 +858,18 @@ export function MainWindow() {
             version={version}
             onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
             onShowFolder={(p) => goPath(p)}
+            query={filtering ? query : ""}
+            onWiden={() => setWide(true)}
           />
         ) : view.kind === "course" && course && !searching && view.tab === "grades" ? (
-          <CourseGrades key={course.id} course={course} version={version} onOpenDoc={(kind, id) => openDoc(course.id, kind, id)} />
+          <CourseGrades
+            key={course.id}
+            course={course}
+            version={version}
+            onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
+            query={filtering ? query : ""}
+            onWiden={() => setWide(true)}
+          />
         ) : view.kind === "course" && course && !searching && view.tab !== "files" ? (
           <CourseReader
             course={course}
@@ -829,6 +879,8 @@ export function MainWindow() {
             onSelect={(id) => replaceView({ ...view, item: id })}
             onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
             onSeen={seenChanged}
+            query={filtering ? query : ""}
+            onWiden={() => setWide(true)}
           />
         ) : (view.kind === "browse" || view.kind === "course") && !searching ? (
           <FileBrowser
@@ -857,6 +909,7 @@ export function MainWindow() {
             mode={view.kind === "home" ? "list" : mode}
             query={query}
             results={results}
+            scope={scopeNote}
             showCourse={!course}
             onOpen={openHere}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
@@ -1006,11 +1059,12 @@ function Notice({ message, onDone }: { message: string | null; onDone: () => voi
   );
 }
 
-function Results({ view, mode, query, results, showCourse, onOpen, onMenu, onDelete }: {
+function Results({ view, mode, query, results, scope, showCourse, onOpen, onMenu, onDelete }: {
   view: View;
   mode: ViewMode;
   query: string;
   results: { hits: Hit[]; error: string | null; loading: boolean };
+  scope?: { text: string; action: string; onAction: () => void } | null;
   showCourse: boolean;
   onOpen: (hit: Hit) => void;
   onMenu: (hits: Hit[], x: number, y: number) => void;
@@ -1026,6 +1080,12 @@ function Results({ view, mode, query, results, showCourse, onOpen, onMenu, onDel
 
   const header = (
     <>
+      {scope && (
+        <p className="mb-2 flex items-center gap-2 px-2 text-xs text-muted">
+          {scope.text}
+          <button onClick={scope.onAction} className="text-accent hover:underline">{scope.action}</button>
+        </p>
+      )}
       {hits.length > 0 && Object.keys(counts).length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1.5 px-2 text-xs">
           <Chip active={!kind} onClick={() => setKind(null)}>{t("全部")} {hits.length}</Chip>
@@ -1059,6 +1119,10 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Escape" && onChange("")}
+        // A query ("mt", "hw3 sol"), not prose: no autocorrect or capitals.
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         placeholder={placeholder}
         className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-10"}`}
       />

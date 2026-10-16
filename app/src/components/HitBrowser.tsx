@@ -92,7 +92,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onD
                 key={hitKey(h)}
                 role="option"
                 {...itemProps(h)}
-                title={`${h.title} · ${h.course}`}
+                title={showCourse ? `${h.title} · ${h.course}` : h.title}
                 className={`flex flex-col items-center gap-1.5 rounded-lg p-2 ${shade(h)}`}
               >
                 {h.path ? (
@@ -101,7 +101,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onD
                   <div className="flex size-18 items-center justify-center"><Icon className="size-10 text-muted" /></div>
                 )}
                 <span className="line-clamp-2 w-full text-center text-xs break-words">{h.title}</span>
-                <span className="max-w-full truncate rounded bg-chip px-1.5 text-[10px] text-fg-soft">{h.course}</span>
+                {showCourse && <span className="max-w-full truncate rounded bg-chip px-1.5 text-[10px] text-fg-soft">{h.course}</span>}
               </div>,
             ];
           })}

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
 import { usePref } from "../lib/prefs";
+import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
@@ -499,6 +500,22 @@ function AssignmentRow({ a, onClick }: { a: ItemSummary; onClick: () => void }) 
   );
 }
 
+/** Words typed in the search box, all of which a title must contain. */
+function matcher(query: string): ((title: string) => boolean) | null {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return words.length ? (title) => words.every((w) => title.toLowerCase().includes(w)) : null;
+}
+
+/** Above a list narrowed by the search box. */
+function FilterNote({ n, onWiden }: { n: number; onWiden: () => void }) {
+  return (
+    <p className="flex items-center gap-2 px-2.5 pt-1 pb-2 text-xs text-muted">
+      {n ? t("找到 {n} 个", { n }) : t("没有找到")}
+      <button onClick={onWiden} className="text-accent hover:underline">{t("搜索整门课 ›")}</button>
+    </p>
+  );
+}
+
 // -- 模块 ----------------------------------------------------------------------------------
 
 const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -508,11 +525,13 @@ const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 
 /** The course as the instructor laid it out. Opens with the current modules expanded
  * (newest upload, next deadline); what you expand or collapse is remembered per course. */
-export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
+export function CourseModules({ course, version, onOpenDoc, onShowFolder, query, onWiden }: {
   course: Course;
   version: number;
   onOpenDoc: (kind: DocKind, id: string) => void;
   onShowFolder: (path: string) => void;
+  query: string; // the search box: only items (or modules) with these words in their titles
+  onWiden: () => void;
 }) {
   const [list, setList] = useState<Module[] | null>(null);
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
@@ -540,15 +559,29 @@ export function CourseModules({ course, version, onOpenDoc, onShowFolder }: {
   if (list.length === 0) {
     return <p className="px-6 py-8 text-sm text-muted">{t("还没有模块。（新加的课程同步一次后就会显示。）")}</p>;
   }
+  // Searching: modules whose name matches, whole; elsewhere just the matching items; all open.
+  const match = matcher(query);
+  const shown = match
+    ? list.flatMap((m) => {
+        if (match(m.name)) return [m];
+        const items = m.items.filter((i) => i.type !== "SubHeader" && match(i.title));
+        return items.length ? [{ ...m, items }] : [];
+      })
+    : list;
+  const found = shown.reduce((n, m) => n + m.items.filter((i) => i.type !== "SubHeader").length, 0);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-4">
-        <div className="mb-2 flex justify-end gap-3 text-xs text-muted">
-          <button className="hover:text-fg" onClick={() => setOpen(list.map((m) => m.id))}>{t("全部展开")}</button>
-          <button className="hover:text-fg" onClick={() => setOpen([])}>{t("全部收起")}</button>
-        </div>
-        {list.map((m) => {
-          const isOpen = expanded.has(m.id);
+        {match ? (
+          <FilterNote n={found} onWiden={onWiden} />
+        ) : (
+          <div className="mb-2 flex justify-end gap-3 text-xs text-muted">
+            <button className="hover:text-fg" onClick={() => setOpen(list.map((m) => m.id))}>{t("全部展开")}</button>
+            <button className="hover:text-fg" onClick={() => setOpen([])}>{t("全部收起")}</button>
+          </div>
+        )}
+        {shown.map((m) => {
+          const isOpen = !!match || expanded.has(m.id);
           const locked = m.state === "locked";
           return (
             <section key={m.id} className="mb-2 rounded-xl border border-line bg-panel">
@@ -626,7 +659,7 @@ function ModuleRow({ it, opening, onClick }: { it: ModuleItem; opening: boolean;
 // -- 公告 / 作业 / 页面 / 大纲 --------------------------------------------------------------
 
 /** A list on the left, the selected item on the right, like a mail client. */
-export function CourseReader({ course, tab, selected, version, onSelect, onNavigate, onSeen }: {
+export function CourseReader({ course, tab, selected, version, onSelect, onNavigate, onSeen, query, onWiden }: {
   course: Course;
   tab: CourseTab;
   selected: string | null;
@@ -634,6 +667,8 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
   onSelect: (id: string) => void;
   onNavigate: (to: CourseLink) => void;
   onSeen: () => void;
+  query: string; // the search box: the list shows what matches, best first (titles and text)
+  onWiden: () => void;
 }) {
   const kind = KIND_OF_TAB[tab]!;
   const [items, setItems] = useState<ItemSummary[] | null>(null);
@@ -643,9 +678,20 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
     setItems(null);
     api.items(course.id, kind).then(setItems, () => setItems([]));
   }, [course.id, kind, version]);
-  const list = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
+  const all = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
+  const searching = query.trim() !== "" && kind !== "syllabus";
+  const found = useSearch(
+    searching ? query : "",
+    (q) => (q ? api.search(q, { courses: [course.id], kinds: [kind], limit: 200 }) : Promise.resolve([])),
+    [course.id, kind, version],
+  );
+  const list = useMemo(() => {
+    if (!searching || !all) return all;
+    const byId = new Map(all.map((x) => [x.id, x]));
+    return found.hits.flatMap((h) => (h.doc_id && byId.has(h.doc_id) ? [byId.get(h.doc_id)!] : []));
+  }, [all, found.hits, searching]);
 
-  // Nothing chosen yet: the newest announcement, the next assignment, the front page.
+  // Nothing chosen yet: the newest announcement, the next assignment, the front page (or the best match).
   const current = selected ?? list?.[0]?.id ?? null;
   const seen = (id: string) => {
     setOpened((s) => new Set(s).add(id));
@@ -662,8 +708,9 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
   return (
     <div className="flex min-h-0 flex-1">
       <ul className="w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("列表")}>
+        {searching && !found.loading && <li><FilterNote n={list?.length ?? 0} onWiden={onWiden} /></li>}
         {list === null && <li className="px-2 py-3 text-sm text-muted">{t("正在加载…")}</li>}
-        {list?.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
+        {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
         {kind === "assignment" ? <AssignmentList list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
           <ListRow key={it.id} it={it} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
@@ -841,10 +888,12 @@ function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
 // -- 成绩 ----------------------------------------------------------------------------------
 
 /** Your total as Canvas computes it, and every assignment's grade, latest due first. */
-export function CourseGrades({ course, version, onOpenDoc }: {
+export function CourseGrades({ course, version, onOpenDoc, query, onWiden }: {
   course: Course;
   version: number;
   onOpenDoc: (kind: DocKind, id: string) => void;
+  query: string; // the search box: only assignments with these words in their titles
+  onWiden: () => void;
 }) {
   const [g, setG] = useState<Grades | null>(null);
   useEffect(() => {
@@ -852,6 +901,8 @@ export function CourseGrades({ course, version, onOpenDoc }: {
   }, [course.id, version]);
   if (!g) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
   const { total } = g;
+  const match = matcher(query);
+  const rows = match ? g.assignments.filter((a) => match(a.title)) : g.assignments;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-6">
@@ -871,14 +922,15 @@ export function CourseGrades({ course, version, onOpenDoc }: {
             <p className="text-sm text-muted">{t("这门课在 Canvas 上不显示总评。")}</p>
           )}
         </section>
-        {g.assignments.length === 0 ? (
+        {match && <FilterNote n={rows.length} onWiden={onWiden} />}
+        {rows.length === 0 && !match ? (
           <p className="text-sm text-muted">{t("还没有作业。")}</p>
         ) : (
           <ul className="rounded-xl border border-line bg-panel p-1.5">
             <li className="grid grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] gap-3 px-2.5 py-1.5 text-[11px] font-medium text-muted">
               <span>{t("作业")}</span><span>{t("截止")}</span><span className="text-right">{t("成绩")}</span>
             </li>
-            {g.assignments.map((a) => (
+            {rows.map((a) => (
               <li key={a.id}>
                 <button
                   onClick={() => onOpenDoc("assignment", a.id)}

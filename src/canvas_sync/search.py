@@ -381,10 +381,11 @@ class Index:
 
     def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50,
                course_ids: list[int] | None = None, kinds: list[str] | None = None,
-               names_only: bool = False) -> list[Hit]:
+               names_only: bool = False, under: str | None = None, also: list[str] = ()) -> list[Hit]:
         """`course_ids` restricts the search to those courses, whatever the query says;
         `kinds` to those kinds of item. With either, an empty query lists everything in them.
-        `names_only` skips items where only the text inside matches."""
+        `names_only` skips items where only the text inside matches. `under`: only files in
+        that folder (or at the paths in `also`: files a view link in it points to)."""
         abbreviations = {**DEFAULT_ABBREVIATIONS, **settings.abbreviations}
         q = parse(query, CourseMatcher(courses, settings), abbreviations)
         if course_ids:
@@ -399,6 +400,11 @@ class Index:
         if kinds:
             where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
             args += kinds
+        if under is not None:
+            like = under.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
+            others = f" OR i.path IN ({','.join('?' * len(also))})" if also else ""
+            where.append(f"(i.path = ? OR i.path LIKE ? ESCAPE '\\'{others})")
+            args += [under, like, *also]
         if q.groups:
             # bm25 alone can't tell "Lecture 3.pdf" from "HW3.pdf" in a "Lectures" folder when
             # nearly every file there matches "lec": title matches first, then folder matches,

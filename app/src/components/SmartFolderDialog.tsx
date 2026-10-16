@@ -81,7 +81,7 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
         </label>
         <label className="block">
           <span className="mb-1 block text-xs text-muted">{t("搜索内容（和搜索框一样，可以用课程名和缩写）")}</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：mt1、hw sol、期中")}
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：mt1、hw sol、期中")} autoCorrect="off" autoCapitalize="off" spellCheck={false}
             className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
         </label>
         <label className="-mt-2 flex items-start gap-2 text-xs text-fg-soft">

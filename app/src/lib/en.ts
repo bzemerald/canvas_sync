@@ -451,6 +451,16 @@ export const en: Record<string, string | [string, string]> = {
   "所有卡片都隐藏了。点右上角的“自定义概览”选几张。": "Every card is hidden. Choose some under “Customize” at the top right.",
   "拖动标题可以移动卡片，右键可以隐藏": "Drag the title to move this card; right-click to hide it",
 
+  // -- searching where you are
+  "在“{name}”中搜索": "Search “{name}”",
+  "在{scope}中搜索": "Search {scope}",
+  "只搜“{name}” ›": "Only “{name}” ›",
+  "只搜“{name}”里的文件": "Files in “{name}”",
+  "搜索整门课 ›": "Search the whole course ›",
+  "搜索全部 ›": "Search everything ›",
+  "找到 {n} 个": ["1 found", "{n} found"],
+  "没有找到": "Nothing found",
+
   // -- the platform's names for things
   "空格": "Space",
   "废纸篓": "Trash",

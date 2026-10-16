@@ -184,3 +184,18 @@ def test_names_first_then_content_and_names_only(root, course):
         assert ("Midterm 1 Solutions.pdf", "name") in [(h.title, h.match) for h in hits]
         names = [h.title for h in e.search("midterm", names_only=True)]
         assert "Midterm 1 Solutions.pdf" in names and "Week 5 slides.pdf" not in names
+
+
+def test_search_within_a_folder(root, fake):
+    """The search box on a course's 文件 tab keeps to the folder you're in, counting files that
+    are there as view links (stored in another view)."""
+    fake.put(101, "lec2.pdf", b"w2")
+    fake.module(2, "Week 2", [{"type": "File", "content_id": 101}])
+    pull(root, fake)
+    with Engine(root) as e:
+        e.reindex()
+        assert [h.title for h in e.search("lec", under=f"{COURSE}/Modules/01 Week 1")] == ["lec1.pdf"]
+        # Files/Lectures holds both as links to the copies in Modules.
+        assert sorted(h.title for h in e.search("lec", under=f"{COURSE}/Files/Lectures")) == ["lec1.pdf", "lec2.pdf"]
+        assert e.search("lec", under=f"{COURSE}/Files/Lec") == []  # a folder, not a prefix of a name
+        assert sorted(h.title for h in e.search("lec", under=COURSE)) == ["lec1.pdf", "lec2.pdf"]

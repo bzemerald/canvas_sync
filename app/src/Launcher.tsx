@@ -74,6 +74,9 @@ export function Launcher() {
           <Command.Input
             ref={input}
             autoFocus
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             value={query}
             onValueChange={setQuery}
             placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}

@@ -158,8 +158,18 @@ class Engine:
         return self.index.sync(self.state, self.root, on_progress)
 
     def search(self, query: str, limit: int = 50, course_ids: list[int] | None = None,
-               kinds: list[str] | None = None, names_only: bool = False) -> list[Hit]:
-        return self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds, names_only)
+               kinds: list[str] | None = None, names_only: bool = False, under: str | None = None) -> list[Hit]:
+        """`under`: only files in that folder, counting the ones its view links point to."""
+        also: list[str] = []
+        if under is not None:
+            under = under.strip("/")
+            also = [
+                r[0] for r in self.state.db.execute(
+                    "SELECT f.path FROM links l JOIN files f ON f.id = l.file_id WHERE f.path IS NOT NULL"
+                    " AND (l.path = ? OR substr(l.path, 1, ?) = ?)", (under, len(under) + 1, under + "/"))
+            ]
+        return self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds, names_only,
+                                 under, also)
 
     def relative(self, path: Path) -> str:
         """A user-supplied path (absolute, or relative to cwd) as a path relative to root.
