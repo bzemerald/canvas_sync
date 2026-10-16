@@ -66,15 +66,18 @@ without the Canvas website or Finder.
 - **Dragging uses pointer events, not HTML5 drag and drop:**
   - `lib/drag.ts` (`trackDrag`): threshold, the copy that follows the pointer, auto-scroll, the
     swallowed click.
-  - `lib/reorder.tsx` (`useReorder`): rows, columns, cards.
-  - `lib/pinZone.ts`: 置顶 as a drop target.
+  - `lib/reorder.tsx` (`useReorder`): rows, columns, cards. Options: `pin` (what an item is, to
+    drop elsewhere), `zone` (its own drop zone), `remove` (dragged off the list: take it away).
+  - `lib/pinZone.ts`: drop targets. 置顶 takes anything; a course's tab bar takes what's in
+    that course, and the item becomes a tab there.
   - `lib/pinnable.ts`: `usePinnable()(target)` makes any row draggable to 置顶 and adds
     置顶 / 取消置顶 to its right-click menu.
 - **Where settings live:**
   - `<sync folder>/.canvas/config.toml`: sync rules, and app things tied to courses:
     - `[[pinned]]`: courses, folders, files, docs, modules, tools, links, smart folders.
-    - `[course_layouts.<id>]`: tabs and overview arranged per course. A part left out follows
-      the default; one equal to the default is dropped (`settle()` in server.py).
+    - `[course_layouts.<id>]`: tabs and overview arranged per course, and the tabs you added
+      (`tab_items`, as `x:<id>` in `tabs`). A part left out follows the default; one equal to
+      the default is dropped (`settle()` in server.py).
     - `[course_icons]`, `[sidebar]` order, hidden courses.
   - Notes typed on an overview: `<sync folder>/.canvas/notes/<course>/<id>.md`.
   - `~/.config/canvas-sync/app.toml`: app prefs (language, auto sync, the default tabs and
