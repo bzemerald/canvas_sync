@@ -18,6 +18,9 @@ export interface Hit {
 
 export type DocKind = "announcement" | "assignment" | "page" | "syllabus";
 
+/** Where you are with an assignment. null: Canvas can't tell (handed in on Gradescope, on paper…). */
+export type SubmissionStatus = "graded" | "submitted" | "missing" | "excused" | "unsubmitted" | null;
+
 /** An announcement / assignment / page / syllabus, as listed. */
 export interface ItemSummary {
   kind: DocKind;
@@ -25,8 +28,8 @@ export interface ItemSummary {
   title: string;
   url: string | null; // on Canvas, relative to the site
   date: string | null; // posted / due / updated
+  new: boolean; // arrived since you last looked, and you haven't opened (or read / handed in on Canvas)
   author?: string | null;
-  unread?: boolean;
   preview?: string;
   due_at?: string | null;
   unlock_at?: string | null;
@@ -34,6 +37,34 @@ export interface ItemSummary {
   points?: number | null;
   submission_types?: string[];
   front_page?: boolean;
+  // assignments: your submission, and its grade once posted
+  grading_type?: string | null; // points / percent / letter_grade / gpa_scale / pass_fail / not_graded
+  status?: SubmissionStatus;
+  late?: boolean;
+  submitted_at?: string | null;
+  graded_at?: string | null;
+  score?: number | null;
+  grade?: string | null;
+}
+
+/** Your grade in a course as Canvas computes it. current: graded work only; final: the rest counts as 0. */
+export interface Total {
+  current_score: number;
+  current_grade: string | null;
+  final_score: number | null;
+  final_grade: string | null;
+}
+
+export interface Grades {
+  total: Total | null; // null: the course doesn't show one
+  assignments: ItemSummary[];
+}
+
+export interface NewCounts {
+  announcements: number;
+  assignments: number;
+  pages: number;
+  files: number;
 }
 
 /** One in full: its HTML, and local copies of the Canvas files it refers to. */
@@ -50,6 +81,7 @@ export interface ModuleItem {
   title: string;
   indent: number;
   done: boolean; // a completion requirement you've met
+  new: boolean;
   file?: string; // the local copy
   doc?: { kind: DocKind; id: string }; // shown in the app
   external?: string; // a web link
@@ -72,8 +104,12 @@ export interface Module {
 export interface Overview {
   upcoming: ItemSummary[];
   announcements: ItemSummary[];
-  new_files: { file_id: number; path: string; name: string; date: string | null }[];
-  counts: { modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean };
+  new_files: { file_id: number; path: string; name: string; date: string | null; new: boolean; updated: boolean }[];
+  grades: { total: Total | null; recent: ItemSummary[] };
+  new: NewCounts;
+  counts: {
+    modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean; grades: boolean;
+  };
 }
 
 export interface Course {
@@ -87,6 +123,7 @@ export interface Course {
   renamed: boolean;
   default_name: string; // renaming to this gives it its original name back
   term_label: string | null; // the term, as you named it
+  new: number; // things in it you haven't opened yet
 }
 
 export interface Entry {
@@ -103,6 +140,8 @@ export interface Entry {
   deleted: boolean;
   changes: number;
   skipped: boolean; // dirs: deleted or unsynced by you; Canvas's new files don't come here
+  new: "new" | "updated" | null; // files: arrived (or came in a new version) since you last opened it
+  new_inside: number; // dirs: new files below
 }
 
 export interface FileStatus {
@@ -190,8 +229,13 @@ export const courses = () => api<Course[]>("/courses");
 export const overview = (course: number) => api<Overview>(`/courses/${course}/overview`);
 export const modules = (course: number) => api<Module[]>(`/courses/${course}/modules`);
 export const items = (course: number, kind: DocKind) => api<ItemSummary[]>(`/courses/${course}/items?kind=${kind}`);
+/** One in full. Opening it marks it seen. */
 export const item = (course: number, kind: DocKind, id: string) =>
   api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);
+export const grades = (course: number) => api<Grades>(`/courses/${course}/grades`);
+/** Mark everything new in a course as seen (or only some kinds of things). */
+export const markSeen = (course: number, kinds?: ("announcement" | "assignment" | "page" | "file")[]) =>
+  api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ kinds: kinds ?? null }) });
 
 /** An image in a page (needs the Canvas login, or is on another site), as an object URL. */
 export async function media(url: string): Promise<string | null> {

@@ -1,8 +1,11 @@
 """A course as the app's course page shows it: an overview of what needs attention, and
-its announcements, assignments, pages and syllabus, from what the last pull stored.
+its announcements, assignments, pages, syllabus and grades, from what the last pull stored.
 
 HTML is returned as Canvas wrote it; the app sanitizes it. With it comes a map from the
 Canvas files it links to their local copies, so links and images can open those.
+
+What's "new" is what arrived since you last opened it (see `State.record_arrivals`), less
+what you've already read or handed in on Canvas.
 """
 
 from __future__ import annotations
@@ -15,10 +18,18 @@ from typing import Any
 from .discover import file_refs
 from .layout import Layout, sanitize
 from .search import DOC_BODY, relative_url
-from .state import State
+from .state import NEWS_KINDS, State
 from .text import html_to_text
 
 KINDS = ("announcement", "assignment", "page", "syllabus")
+
+# Ways of handing in that Canvas itself sees. Elsewhere (Gradescope, on paper) it can't
+# tell whether you did, so it isn't "not submitted".
+NATIVE_SUBMISSIONS = {
+    "online_upload", "online_text_entry", "online_url", "media_recording", "online_quiz", "discussion_topic",
+    "student_annotation",
+}
+HANDED_IN = {"submitted", "graded", "excused"}
 
 
 def _when(iso: str | None) -> datetime | None:
@@ -36,14 +47,43 @@ def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[s
     return [(r["kind"], r["id"], r["title"], json.loads(r["raw"] or "{}")) for r in rows]
 
 
-def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": relative_url(raw.get("html_url"))}
+def submission(assignment: dict[str, Any]) -> dict[str, Any]:
+    """Where you are with an assignment. status: graded / submitted / missing / excused /
+    unsubmitted, or None when Canvas can't know (handed in elsewhere, or nothing to hand in).
+    A grade not posted yet doesn't show: Canvas leaves it out."""
+    s = assignment.get("submission")
+    if not isinstance(s, dict):
+        return {"status": None}
+    graded = s.get("workflow_state") == "graded" and (s.get("score") is not None or s.get("grade") is not None)
+    if s.get("excused"):
+        status = "excused"
+    elif graded:
+        status = "graded"
+    elif s.get("submitted_at") or s.get("workflow_state") in ("submitted", "pending_review"):
+        status = "submitted"
+    elif s.get("missing"):
+        status = "missing"
+    elif set(assignment.get("submission_types") or []) & NATIVE_SUBMISSIONS:
+        status = "unsubmitted"
+    else:
+        status = None
+    return {
+        "status": status,
+        "late": bool(s.get("late")) and status in ("submitted", "graded"),
+        "submitted_at": s.get("submitted_at"),
+        "graded_at": s.get("graded_at") if graded else None,
+        "score": s.get("score") if graded else None,
+        "grade": s.get("grade") if graded else None,
+    }
+
+
+def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, Any], new: bool = False) -> dict[str, Any]:
+    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": relative_url(raw.get("html_url")), "new": new}
     if kind == "announcement":
         text = html_to_text(raw.get("message"))
         out |= {
             "date": raw.get("posted_at"),
             "author": (raw.get("author") or {}).get("display_name") or raw.get("user_name"),
-            "unread": raw.get("read_state") == "unread",  # as Canvas has it
             "preview": text[:160],
         }
     elif kind == "assignment":
@@ -53,7 +93,9 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
             "unlock_at": raw.get("unlock_at"),
             "lock_at": raw.get("lock_at"),
             "points": raw.get("points_possible"),
+            "grading_type": raw.get("grading_type"),
             "submission_types": raw.get("submission_types") or [],
+            **submission(raw),
         }
     elif kind == "page":
         out |= {"date": raw.get("updated_at"), "front_page": bool(raw.get("front_page"))}
@@ -63,9 +105,40 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
     return out
 
 
-def items(state: State, course_id: int, kind: str) -> list[dict[str, Any]]:
+def _still_new(kind: str, raw: dict[str, Any]) -> bool:
+    if kind == "announcement":
+        return raw.get("read_state") != "read"  # read on Canvas
+    if kind == "assignment":
+        return submission(raw)["status"] not in HANDED_IN
+    return True
+
+
+def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]:
+    """What's new to you in a course: kind -> {id: whether it's a new version (files)}."""
+    out: dict[str, dict[str, bool]] = {k: {} for k in NEWS_KINDS}
+    unseen = state.unseen(course_id)
+    if not unseen:
+        return out
+    docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
+    for (_, kind, i), updated in unseen.items():
+        if kind == "file":
+            rec = state.get(int(i))
+            if rec and rec.path and not rec.ignored and (root / rec.path).exists():
+                out["file"][i] = updated
+        elif (kind, i) in docs and _still_new(kind, docs[(kind, i)]):
+            out[kind][i] = False
+    return out
+
+
+def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:
+    return {"announcements": len(n["announcement"]), "assignments": len(n["assignment"]),
+            "pages": len(n["page"]), "files": len(n["file"])}
+
+
+def items(state: State, root: Path, course_id: int, kind: str) -> list[dict[str, Any]]:
     """Summaries of one kind of item, in the order the app lists them."""
-    out = [_summary(course_id, k, i, t, raw) for k, i, t, raw in _docs(state, course_id, kind)]
+    new = news(state, root, course_id).get(kind, {})
+    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind)]
     if kind == "assignment":
         # Upcoming soonest first, then past ones most recent first, then undated.
         now = datetime.now(timezone.utc)
@@ -100,7 +173,7 @@ def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> di
         attached = [a for a in raw.get("attachments") or [] if a.get("id")]
         refs = list(dict.fromkeys([*file_refs(html, course_id), *(a["id"] for a in attached)]))
         local = _local_files(state, root, refs)
-        return _summary(course_id, k, i, title, raw) | {
+        return _summary(course_id, k, i, title, raw, i in news(state, root, course_id).get(kind, {})) | {
             "html": html,
             "files": local,  # Canvas file id -> local copy
             "attachments": [
@@ -113,21 +186,24 @@ def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> di
 
 
 def overview(state: State, root: Path, course_id: int, now: datetime | None = None) -> dict[str, Any]:
-    """What a course page opens with: what's due, what was said, what's new."""
+    """What a course page opens with: what's due, what was said, what's new, how you're doing."""
     now = now or datetime.now(timezone.utc)
     docs = _docs(state, course_id)
     count = {k: sum(d[0] == k for d in docs) for k in KINDS}
     syllabus = next((raw for k, _, _, raw in docs if k == "syllabus"), None)
+    new = news(state, root, course_id)
 
-    assignments = [_summary(course_id, k, i, t, raw) for k, i, t, raw in docs if k == "assignment"]
+    assignments = [_summary(course_id, k, i, t, raw, i in new["assignment"]) for k, i, t, raw in docs if k == "assignment"]
     upcoming = sorted(
         (a for a in assignments if (due := _when(a["due_at"])) and now - timedelta(hours=12) <= due <= now + timedelta(days=21)),
         key=lambda a: a["due_at"],
     )
     announcements = sorted(
-        (_summary(course_id, k, i, t, raw) for k, i, t, raw in docs if k == "announcement"),
+        (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement"),
         key=lambda a: a.get("date") or "", reverse=True,
     )
+    total = _total(state, course_id)
+    graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
 
     files = []
     for r in state.db.execute(
@@ -136,13 +212,19 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         if (root / r["path"]).exists():
             raw = json.loads(r["raw"] or "{}")
             files.append({"file_id": r["id"], "path": r["path"], "name": Path(r["path"]).name,
-                          "date": raw.get("created_at") or raw.get("updated_at")})
+                          "date": raw.get("created_at") or raw.get("updated_at"),
+                          "new": str(r["id"]) in new["file"], "updated": new["file"].get(str(r["id"]), False)})
+    # Newest uploads, and anything else new to you (a new version of an old file).
     files.sort(key=lambda f: f["date"] or "", reverse=True)
+    shown = files[:8]
+    shown += [f for f in files[8:] if f["new"]][:8]
 
     return {
         "upcoming": upcoming[:8],
         "announcements": announcements[:5],
-        "new_files": files[:8],
+        "new_files": shown,
+        "grades": {"total": total, "recent": graded[:3]},
+        "new": news_counts(new),
         "counts": {
             "modules": len(state.modules(course_id)),
             "announcements": count["announcement"],
@@ -150,8 +232,23 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "pages": count["page"],
             "files": len(files),
             "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
+            "grades": total is not None or bool(graded),
         },
     }
+
+
+def _total(state: State, course_id: int) -> dict[str, Any] | None:
+    g = state.grades(course_id)
+    return g if g and g.get("current_score") is not None else None
+
+
+def grades(state: State, root: Path, course_id: int) -> dict[str, Any]:
+    """Your total as Canvas computes it, and each assignment's grade, latest due first."""
+    new = news(state, root, course_id)["assignment"]
+    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, "assignment")
+           if raw.get("grading_type") != "not_graded"]
+    dated = sorted((a for a in out if a["due_at"]), key=lambda a: a["due_at"], reverse=True)
+    return {"total": _total(state, course_id), "assignments": dated + [a for a in out if not a["due_at"]]}
 
 
 def modules(state: State, root: Path, layout: Layout, course_id: int, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -164,6 +261,7 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
         return []
     docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
     files = {r.id: r for r in state.files_for_course(course_id)}
+    new = news(state, root, course_id)
     created: dict[int, str] = {}
     for row in state.db.execute("SELECT id, raw FROM files WHERE course_id = ?", (course_id,)):
         raw = json.loads(row["raw"] or "{}")
@@ -204,9 +302,14 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
             title = it.get("title")
             if not title and it.get("type") == "File" and it.get("content_id") in files:
                 title = files[it["content_id"]].name
+            fresh = False
+            if "file" in t:
+                fresh = str(it.get("content_id")) in new["file"]
+            elif "doc" in t:
+                fresh = t["doc"]["id"] in new.get(t["doc"]["kind"], {})
             items.append({
                 "id": it.get("id"), "type": it.get("type"), "title": title or "", "indent": it.get("indent") or 0,
-                "done": bool((it.get("completion_requirement") or {}).get("completed")), **t,
+                "done": bool((it.get("completion_requirement") or {}).get("completed")), "new": fresh, **t,
             })
         name = m.get("name") or "Module"
         folder = layout.renamed(

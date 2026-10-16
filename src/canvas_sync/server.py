@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
+from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
@@ -43,7 +44,7 @@ from .search import course_label
 from .engine import Engine
 from .local import open_path
 from .plan import Kind, Scope
-from .state import META_DIR
+from .state import META_DIR, NEWS_KINDS
 from .thumbs import thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
@@ -81,6 +82,10 @@ class OpenRequest(BaseModel):
     external: str | None = None  # any http(s) link, in the browser
     reveal: bool = False       # show in the file manager instead of opening
     preview: bool = False      # Quick Look (macOS)
+
+
+class SeenRequest(BaseModel):
+    kinds: list[str] | None = None  # announcement / assignment / page / file; None: all
 
 
 class ScopeRequest(BaseModel):
@@ -190,6 +195,7 @@ def create_app(account: Account, token: str) -> FastAPI:
                     "renamed": d.name != canonical.name,         # you gave it a name
                     "default_name": canonical.name,              # renaming to this undoes that
                     "term_label": d.parent.name if term_renamed else c.term,
+                    "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
                 })
             return out
 
@@ -216,15 +222,33 @@ def create_app(account: Account, token: str) -> FastAPI:
         if kind not in content.KINDS:
             raise HTTPException(400, f"kind must be one of {content.KINDS}")
         with engine() as e:
-            return content.items(e.state, course_id, kind)
+            return content.items(e.state, e.root, course_id, kind)
 
     @api.get("/courses/{course_id}/items/{kind}/{doc_id}")
     def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
+        """One item in full. Opening it is reading it: it's no longer new."""
         with engine() as e:
             found = content.item(e.state, e.root, course_id, kind, doc_id)
+            if found is not None:
+                e.state.mark_seen(course_id, [(kind, doc_id)])
         if found is None:
             raise HTTPException(404, "not found (pull to fetch what's new)")
         return found
+
+    @api.get("/courses/{course_id}/grades")
+    def course_grades(course_id: int) -> dict[str, Any]:
+        with engine() as e:
+            return content.grades(e.state, e.root, course_id)
+
+    @api.post("/courses/{course_id}/seen")
+    def course_seen(course_id: int, req: SeenRequest | None = None) -> dict[str, int]:
+        """Mark everything new in a course (or just some kinds of things) as seen."""
+        kinds = (req.kinds if req else None) or None
+        if kinds and set(kinds) - set(NEWS_KINDS):
+            raise HTTPException(400, f"kinds must be among {NEWS_KINDS}")
+        with engine() as e:
+            e.state.mark_seen(course_id, kinds=kinds)
+            return news_counts(news(e.state, e.root, course_id))
 
     @api.get("/media")
     async def media(url: str) -> Response:
@@ -456,6 +480,10 @@ def create_app(account: Account, token: str) -> FastAPI:
             if not target.exists():
                 raise HTTPException(404, f"{req.path} does not exist")
             open_path(target, reveal=req.reveal, preview=req.preview)
+            if not req.reveal:  # opening (or previewing) a file is seeing it
+                with engine() as e:
+                    if rec := e.state.by_path(req.path.strip("/")):
+                        e.state.mark_seen(rec.course_id, [("file", str(rec.id))])
             return {"opened": str(target)}
         if req.external:
             if urlsplit(req.external).scheme not in ("http", "https", "mailto"):

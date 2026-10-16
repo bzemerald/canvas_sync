@@ -42,6 +42,8 @@ class CourseSnapshot:
     # The course's modules as Canvas lists them (with items), for the app's 模块 tab.
     # None if they couldn't be fetched this time: keep what was stored before.
     modules: list[dict[str, Any]] | None = None
+    # Your grade in the course as Canvas computes it; None if it couldn't be fetched.
+    grades: dict[str, Any] | None = None
     # False if some listing failed for a transient reason, so a file missing from
     # this snapshot does not mean it was deleted from Canvas.
     complete: bool = True
@@ -86,10 +88,12 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
         fetch("pages", client.pages(cid), empty),
         fetch("assignments", client.assignments(cid), empty),
         fetch("announcements", client.announcements(cid), empty),
-        fetch("syllabus", client.course(cid, ["syllabus_body"]), None),
+        fetch("syllabus", client.course(cid, ["syllabus_body", "total_scores"]), None),
     )
 
     snap.modules = modules if modules is not None else ([] if "modules" in snap.unavailable else None)
+    if syllabus is not None:
+        snap.grades = _grades(syllabus)
     modules = modules or []
 
     # 1. The Files tree.
@@ -163,6 +167,18 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
             for s in sources:
                 snap.files[fid].add_source(s)
     return snap
+
+
+def _grades(course: dict[str, Any]) -> dict[str, Any]:
+    """Your total from your student enrollment ({} if you aren't a student, or the course
+    hides totals: Canvas leaves the scores out then)."""
+    for e in course.get("enrollments") or []:
+        if e.get("type") in ("student", "StudentEnrollment") and "computed_current_score" in e:
+            return {
+                "current_score": e.get("computed_current_score"), "current_grade": e.get("computed_current_grade"),
+                "final_score": e.get("computed_final_score"), "final_grade": e.get("computed_final_grade"),
+            }
+    return {}
 
 
 async def _try_file(client: CanvasClient, course_id: int, file_id: int) -> dict[str, Any] | None:

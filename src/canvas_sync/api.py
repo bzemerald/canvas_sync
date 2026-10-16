@@ -216,7 +216,8 @@ class CanvasClient:
         return await self.get(f"/api/v1/courses/{course_id}/pages/{url}")
 
     async def assignments(self, course_id: int) -> list[dict[str, Any]]:
-        return await self.get_all(f"/api/v1/courses/{course_id}/assignments")
+        # With your submission: whether you handed it in, and its grade once posted.
+        return await self.get_all(f"/api/v1/courses/{course_id}/assignments", {"include[]": ["submission"]})
 
     async def announcements(self, course_id: int) -> list[dict[str, Any]]:
         # Without explicit dates Canvas only returns the last two weeks.

@@ -26,6 +26,16 @@ export function StatusBadges({ entry }: { entry: Entry }) {
           不再同步
         </span>
       )}
+      {entry.new === "updated" && (
+        <span title="Canvas 上有新版本，已经更新到这里；你还没打开过" className="rounded bg-info-soft px-1.5 py-px text-[11px] whitespace-nowrap text-info">
+          已更新
+        </span>
+      )}
+      {entry.type === "dir" && entry.new_inside > 0 && (
+        <span title="里面有你还没打开过的新文件" className="rounded bg-selected px-1.5 py-px text-[11px] whitespace-nowrap text-accent">
+          {entry.new_inside} 个新文件
+        </span>
+      )}
       {entry.type === "dir" && entry.changes > 0 && (
         <span title="里面有你改过或删除的文件" className="rounded bg-warn-soft px-1.5 py-px text-[11px] whitespace-nowrap text-warn">
           {entry.changes} 处改动
@@ -44,6 +54,22 @@ export function StatusDot({ entry }: { entry: Entry }) {
       ? "bg-danger"
       : s.includes("moved")
         ? "bg-info"
-        : null;
+        : entry.new || entry.new_inside > 0
+          ? "bg-accent"
+          : null;
   return color ? <span className={`size-2 rounded-full ${color}`} /> : null;
+}
+
+/** How many new things there are. */
+export function Count({ n, label }: { n: number; label: string }) {
+  return (
+    <span title={label} aria-label={label} className="min-w-4 shrink-0 rounded-full bg-accent px-1.5 text-center text-[10px] leading-4 font-medium text-on-accent">
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+/** Marks one new thing: arrived since you last looked, and you haven't opened it. */
+export function NewDot({ label = "新的" }: { label?: string }) {
+  return <span title={label} aria-label={label} className="size-1.5 shrink-0 rounded-full bg-accent" />;
 }

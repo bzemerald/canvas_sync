@@ -15,7 +15,7 @@ from .api import CanvasClient
 from .local import clone_file, is_regular, prune_empty_dirs
 from .models import RemoteFile
 from .plan import Action, Kind, Plan
-from .state import META_DIR, State
+from .state import META_DIR, NEWS_KINDS, State
 
 # Called after each action with (action, error message or None).
 EventHandler = Callable[[Action, str | None], None]
@@ -45,6 +45,13 @@ class Executor:
             self.state.save_documents(snap.course.id, snap.documents)
             if snap.modules is not None:
                 self.state.save_modules(snap.course.id, snap.modules)
+            if snap.grades is not None:
+                self.state.save_grades(snap.course.id, snap.grades)
+            self.state.record_arrivals(snap.course.id, [
+                *((d.kind, d.id, d.raw.get("posted_at") or d.raw.get("created_at"))
+                  for d in snap.documents if d.kind in NEWS_KINDS),
+                *(("file", str(fid), f.raw.get("created_at")) for fid, f in snap.files.items()),
+            ])
         self.state.commit()
 
         errors: list[tuple[Action, str]] = []
@@ -97,6 +104,7 @@ class Executor:
                 self._install(f, tmp, digest, a.path)
                 if a.src != a.path:
                     self._remove(root / a.src)
+                self.state.record_update(f.course_id, fid)
             case Kind.CONFLICT:
                 if a.resolution == "skip":
                     return

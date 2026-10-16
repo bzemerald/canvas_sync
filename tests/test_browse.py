@@ -18,7 +18,7 @@ from canvas_sync.config import Account, ConfigError, Settings, SmartFolder, dele
 from canvas_sync.plan import Scope
 from canvas_sync.server import create_app
 from canvas_sync.thumbs import thumbnail
-from fake_canvas import BASE, COURSE, FakeCanvas, kinds, make_pdf, pull
+from fake_canvas import BASE, COURSE, FakeCanvas, kinds, make_pdf, pull, wait_for_sync
 
 MOD1 = f"{COURSE}/Modules/01 Week 1/lec1.pdf"
 MOD2 = f"{COURSE}/Modules/02 Week 2/lec2.pdf"
@@ -207,15 +207,6 @@ def api(root, fake, monkeypatch):
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as c:
         c.opened = opened  # type: ignore[attr-defined]
         yield c
-
-
-def wait_for_sync(c: TestClient) -> dict:
-    for _ in range(200):
-        state = c.get("/api/sync").json()
-        if not state["running"]:
-            return state
-        time.sleep(0.02)
-    raise AssertionError("sync did not finish")
 
 
 def test_api_tree_and_restore(api, root):

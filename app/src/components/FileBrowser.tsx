@@ -10,7 +10,7 @@ import { fileCommand } from "../lib/keys";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import { FileIcon } from "./FileIcon";
 import { RenameInput } from "./RenameInput";
-import { StatusBadges, StatusDot } from "./Status";
+import { NewDot, StatusBadges, StatusDot } from "./Status";
 import { Thumb } from "./Thumb";
 
 export type ViewMode = "list" | "grid";
@@ -252,7 +252,9 @@ export function FileBrowser({
                       {expanded.has(e.path) ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                   ) : (
-                    <span className="w-4.5 shrink-0" />
+                    <span className="flex w-4.5 shrink-0 justify-center">
+                      {e.new && <NewDot label={e.new === "updated" ? "有新版本，你还没打开过" : "新文件，你还没打开过"} />}
+                    </span>
                   )}
                   <FileIcon name={e.name} dir={e.type === "dir"} />
                   {renaming === e.path ? (

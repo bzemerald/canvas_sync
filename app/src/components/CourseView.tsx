@@ -1,20 +1,21 @@
 // A course's page: tabs (概览 first), the overview, and readers for announcements,
-// assignments, pages and the syllabus. The 文件 tab is the file browser, rendered by
-// the main window.
+// assignments, pages, the syllabus and grades. The 文件 tab is the file browser, rendered
+// by the main window. A blue dot marks what's new to you; opening it clears the dot.
 import {
-  AppWindow, BookOpen, Check, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock,
+  AppWindow, Award, BookOpen, Check, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock,
   Megaphone, MessagesSquare, Paperclip, ScrollText,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Item, ItemSummary, Module, ModuleItem, Overview } from "../lib/api";
+import type { Course, DocKind, Grades, Item, ItemSummary, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
 import { usePref } from "../lib/prefs";
 import { shortDate, untilDue } from "../lib/dates";
 import { fileManager } from "../lib/keys";
 import { FileIcon } from "./FileIcon";
+import { Count, NewDot } from "./Status";
 import { RichText, type CourseLink } from "./RichText";
 
-export type CourseTab = "overview" | "modules" | "announcements" | "assignments" | "files" | "syllabus" | "pages";
+export type CourseTab = "overview" | "modules" | "announcements" | "assignments" | "grades" | "files" | "syllabus" | "pages";
 
 export const TAB_OF_KIND: Record<DocKind, CourseTab> = {
   announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus",
@@ -23,8 +24,9 @@ const KIND_OF_TAB: Partial<Record<CourseTab, DocKind>> = {
   announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus",
 };
 
-/** The overview, loaded once per course and version (it also says which tabs to show). */
-export function useOverview(courseId: number | null, version: number) {
+/** The overview, loaded once per course and version (it also says which tabs to show).
+ * `seen` changes when you open something, so the counts of what's new follow. */
+export function useOverview(courseId: number | null, version: number, seen: number) {
   const [data, setData] = useState<{ id: number; overview: Overview } | null>(null);
   useEffect(() => {
     if (courseId === null) return;
@@ -33,48 +35,113 @@ export function useOverview(courseId: number | null, version: number) {
     return () => {
       live = false;
     };
-  }, [courseId, version]);
+  }, [courseId, version, seen]);
   return data && data.id === courseId ? data.overview : null;
 }
 
-export function CourseTabs({ tab, overview, onTab }: { tab: CourseTab; overview: Overview | null; onTab: (t: CourseTab) => void }) {
+export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files : 0);
+
+export function CourseTabs({ tab, overview, onTab, onMarkAllSeen }: {
+  tab: CourseTab;
+  overview: Overview | null;
+  onTab: (t: CourseTab) => void;
+  onMarkAllSeen: () => void;
+}) {
   const c = overview?.counts;
+  const n = overview?.new;
   // Tabs with nothing in them aren't shown; 概览 and 文件 always are.
-  const tabs: [CourseTab, string, boolean][] = [
-    ["overview", "概览", true],
-    ["modules", "模块", !!c?.modules],
-    ["announcements", "公告", !!c?.announcements],
-    ["assignments", "作业", !!c?.assignments],
-    ["files", "文件", true],
-    ["syllabus", "大纲", !!c?.syllabus],
-    ["pages", "页面", !!c?.pages],
+  const tabs: [CourseTab, string, boolean, number][] = [
+    ["overview", "概览", true, 0],
+    ["modules", "模块", !!c?.modules, 0],
+    ["announcements", "公告", !!c?.announcements, n?.announcements ?? 0],
+    ["assignments", "作业", !!c?.assignments, n?.assignments ?? 0],
+    ["grades", "成绩", !!c?.grades, 0],
+    ["files", "文件", true, n?.files ?? 0],
+    ["syllabus", "大纲", !!c?.syllabus, 0],
+    ["pages", "页面", !!c?.pages, n?.pages ?? 0],
   ];
   return (
-    <nav className="flex gap-1 border-b border-line px-4" aria-label="课程">
-      {tabs.filter(([t, , shown]) => shown || t === tab).map(([t, label]) => (
+    <nav className="flex items-center gap-1 border-b border-line px-4" aria-label="课程">
+      {tabs.filter(([t, , shown]) => shown || t === tab).map(([t, label, , fresh]) => (
         <button
           key={t}
           onClick={() => onTab(t)}
           aria-current={tab === t ? "page" : undefined}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
+          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${tab === t ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
         >
           {label}
+          {fresh > 0 && <Count n={fresh} label={`${fresh} 个新的`} />}
         </button>
       ))}
+      {totalNew(n) > 0 && (
+        <button onClick={onMarkAllSeen} className="ml-auto shrink-0 py-2 text-xs text-muted hover:text-fg" title="清除这门课所有的“新”标记">
+          全部标为已读
+        </button>
+      )}
     </nav>
+  );
+}
+
+// -- submissions and grades ----------------------------------------------------------------
+
+const fmt = (x: number) => String(Math.round(x * 100) / 100);
+
+/** A grade the way the assignment is graded: "8.5 / 10", "A-", "通过". */
+export function scoreText(a: ItemSummary): string | null {
+  if (a.status !== "graded") return null;
+  switch (a.grading_type) {
+    case "pass_fail":
+      return a.grade === "complete" ? "通过" : a.grade === "incomplete" ? "未通过" : a.grade ?? null;
+    case "percent":
+    case "letter_grade":
+    case "gpa_scale":
+      return a.grade ?? (a.score != null ? fmt(a.score) : null);
+    default:
+      if (a.score == null) return a.grade ?? null;
+      return a.points ? `${fmt(a.score)} / ${fmt(a.points)}` : fmt(a.score);
+  }
+}
+
+const STATUS: Record<string, { text: string; className: string; hint: string }> = {
+  submitted: { text: "已提交", className: "bg-ok-soft text-ok", hint: "已提交，还没有成绩（或成绩还没公布）" },
+  missing: { text: "缺交", className: "bg-danger-soft text-danger", hint: "已过截止时间，Canvas 上没有你的提交" },
+  excused: { text: "免交", className: "bg-chip text-muted", hint: "老师免除了这项作业" },
+  unsubmitted: { text: "未提交", className: "bg-chip text-muted", hint: "Canvas 上还没有你的提交" },
+};
+
+/** Handed in? Graded? `quiet`: say nothing about work that's simply not done yet. */
+export function SubmissionBadges({ a, quiet = false }: { a: ItemSummary; quiet?: boolean }) {
+  const score = scoreText(a);
+  const s = a.status && a.status !== "graded" && !(quiet && a.status === "unsubmitted") ? STATUS[a.status] : null;
+  return (
+    <>
+      {score && <span title="成绩" className="rounded bg-ok-soft px-1.5 text-[11px] whitespace-nowrap text-ok tabular-nums">{score}</span>}
+      {s && <span title={s.hint} className={`rounded px-1.5 text-[11px] whitespace-nowrap ${s.className}`}>{s.text}</span>}
+      {a.late && <span title="提交时已过截止时间" className="rounded bg-warn-soft px-1.5 text-[11px] whitespace-nowrap text-warn">迟交</span>}
+    </>
+  );
+}
+
+function TotalLine({ total, big = false }: { total: Total; big?: boolean }) {
+  return (
+    <span className="flex items-baseline gap-2">
+      <span className={`${big ? "text-3xl" : "text-xl"} font-semibold tabular-nums`}>{fmt(total.current_score)}%</span>
+      {total.current_grade && <span className={`${big ? "text-lg" : "text-sm"} font-medium text-fg-soft`}>{total.current_grade}</span>}
+    </span>
   );
 }
 
 // -- 概览 --------------------------------------------------------------------------------
 
-export function CourseOverview({ course, overview, onOpen, onTab }: {
+export function CourseOverview({ course, overview, onOpen, onTab, onSeen }: {
   course: Course;
   overview: Overview | null;
   onOpen: (kind: DocKind, id: string) => void;
   onTab: (t: CourseTab) => void;
+  onSeen: () => void;
 }) {
   if (!overview) return <p className="px-6 py-8 text-sm text-muted">正在加载…</p>;
-  const { upcoming, announcements, new_files, counts } = overview;
+  const { upcoming, announcements, new_files, counts, grades } = overview;
   const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus;
   if (empty) {
     return (
@@ -101,9 +168,9 @@ export function CourseOverview({ course, overview, onOpen, onTab }: {
           ) : (
             announcements.map((a) => (
               <Row key={a.id} onClick={() => onOpen("announcement", a.id)}>
-                <div className="flex items-baseline gap-2">
-                  {a.unread && <span className="size-1.5 shrink-0 translate-y-[-1px] rounded-full bg-accent" aria-label="未读" />}
-                  <span className="truncate font-medium">{a.title}</span>
+                <div className="flex items-center gap-2">
+                  {a.new && <NewDot label="新公告" />}
+                  <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
                 </div>
                 {a.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{a.preview}</p>}
@@ -116,10 +183,12 @@ export function CourseOverview({ course, overview, onOpen, onTab }: {
             <Empty>还没有文件</Empty>
           ) : (
             new_files.map((f) => (
-              <Row key={f.file_id} onClick={() => void api.openPath(f.path)}>
+              <Row key={f.file_id} onClick={() => void api.openPath(f.path).then(onSeen)}>
                 <div className="flex items-center gap-2">
                   <FileIcon name={f.name} />
-                  <span className="truncate">{f.name}</span>
+                  <span className={`truncate ${f.new ? "font-medium" : ""}`}>{f.name}</span>
+                  {f.new && <NewDot label={f.updated ? "有新版本" : "新文件"} />}
+                  {f.updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">已更新</span>}
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(f.date, false)}</span>
                   <button
                     title={`在 ${fileManager} 中显示`}
@@ -137,24 +206,51 @@ export function CourseOverview({ course, overview, onOpen, onTab }: {
             ))
           )}
         </Card>
-        <Card title="链接" icon={<ExternalLink className="size-4" />}>
-          {counts.syllabus && (
-            <Row onClick={() => onTab("syllabus")}>
-              <span className="flex items-center gap-2"><ScrollText className="size-4 text-muted" />课程大纲</span>
+        {counts.grades && (
+          <Card title="成绩" icon={<Award className="size-4" />} more={() => onTab("grades")}>
+            {grades.total && (
+              <div className="px-2 pt-1 pb-2">
+                <TotalLine total={grades.total} />
+                <p className="mt-0.5 text-xs text-muted">当前总评（只算已评分的作业）</p>
+              </div>
+            )}
+            {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">最近评分</h3>}
+            {grades.recent.map((a) => (
+              <Row key={a.id} onClick={() => onOpen("assignment", a.id)}>
+                <div className="flex items-center gap-2">
+                  <span className="truncate">{a.title}</span>
+                  <span className="ml-auto flex shrink-0 gap-1"><SubmissionBadges a={a} /></span>
+                </div>
+              </Row>
+            ))}
+          </Card>
+        )}
+        <Card title="链接" icon={<ExternalLink className="size-4" />} className={counts.grades ? "lg:col-span-2" : ""}>
+          <div className={counts.grades ? "flex flex-wrap" : ""}>
+            {counts.syllabus && (
+              <Row onClick={() => onTab("syllabus")}>
+                <span className="flex items-center gap-2"><ScrollText className="size-4 text-muted" />课程大纲</span>
+              </Row>
+            )}
+            <Row onClick={() => void api.openUrl(`/courses/${course.id}`)}>
+              <span className="flex items-center gap-2"><ExternalLink className="size-4 text-muted" />在 Canvas 中打开</span>
             </Row>
-          )}
-          <Row onClick={() => void api.openUrl(`/courses/${course.id}`)}>
-            <span className="flex items-center gap-2"><ExternalLink className="size-4 text-muted" />在 Canvas 中打开</span>
-          </Row>
+          </div>
         </Card>
       </div>
     </div>
   );
 }
 
-function Card({ title, icon, more, children }: { title: string; icon: React.ReactNode; more?: () => void; children: React.ReactNode }) {
+function Card({ title, icon, more, className = "", children }: {
+  title: string;
+  icon: React.ReactNode;
+  more?: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-xl border border-line bg-panel">
+    <section className={`rounded-xl border border-line bg-panel ${className}`}>
       <header className="flex items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium">
         <span className="text-muted">{icon}</span>
         {title}
@@ -187,12 +283,13 @@ function Due({ iso }: { iso: string | null | undefined }) {
   );
 }
 
-function AssignmentRow({ a, onClick, selected }: { a: ItemSummary; onClick: () => void; selected?: boolean }) {
+function AssignmentRow({ a, onClick }: { a: ItemSummary; onClick: () => void }) {
   return (
     <Row onClick={onClick}>
-      <div className={`flex items-baseline gap-2 ${selected ? "font-medium" : ""}`}>
-        <span className="truncate">{a.title}</span>
-        <span className="ml-auto shrink-0"><Due iso={a.due_at} /></span>
+      <div className="flex items-center gap-2">
+        {a.new && <NewDot label="新作业" />}
+        <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5"><SubmissionBadges a={a} quiet /><Due iso={a.due_at} /></span>
       </div>
     </Row>
   );
@@ -301,7 +398,8 @@ function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
         className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm hover:bg-chip ${it.deleted ? "opacity-55" : ""}`}
       >
         {it.type === "File" ? <FileIcon name={it.title} /> : Icon ? <Icon className="size-4 shrink-0 text-muted" /> : <FileText className="size-4 shrink-0 text-muted" />}
-        <span className={`truncate ${it.deleted ? "line-through" : ""}`}>{it.title}</span>
+        <span className={`truncate ${it.deleted ? "line-through" : ""} ${it.new ? "font-medium" : ""}`}>{it.title}</span>
+        {it.new && <NewDot />}
         {it.done && <Check className="size-3.5 shrink-0 text-type-sheet" aria-label="已完成" />}
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {it.due_at && <Due iso={it.due_at} />}
@@ -315,23 +413,31 @@ function ModuleRow({ it, onClick }: { it: ModuleItem; onClick: () => void }) {
 // -- 公告 / 作业 / 页面 / 大纲 --------------------------------------------------------------
 
 /** A list on the left, the selected item on the right, like a mail client. */
-export function CourseReader({ course, tab, selected, version, onSelect, onNavigate }: {
+export function CourseReader({ course, tab, selected, version, onSelect, onNavigate, onSeen }: {
   course: Course;
   tab: CourseTab;
   selected: string | null;
   version: number;
   onSelect: (id: string) => void;
   onNavigate: (to: CourseLink) => void;
+  onSeen: () => void;
 }) {
   const kind = KIND_OF_TAB[tab]!;
-  const [list, setList] = useState<ItemSummary[] | null>(null);
+  const [items, setItems] = useState<ItemSummary[] | null>(null);
+  // Opened here: no dot, even if the list was fetched before opening it marked it seen.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   useEffect(() => {
-    setList(null);
-    api.items(course.id, kind).then(setList, () => setList([]));
+    setItems(null);
+    api.items(course.id, kind).then(setItems, () => setItems([]));
   }, [course.id, kind, version]);
+  const list = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
 
   // Nothing chosen yet: the newest announcement, the next assignment, the front page.
   const current = selected ?? list?.[0]?.id ?? null;
+  const seen = (id: string) => {
+    setOpened((s) => new Set(s).add(id));
+    onSeen(); // the counts in the tabs and the sidebar
+  };
 
   if (kind === "syllabus") {
     return (
@@ -350,7 +456,17 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
         ))}
       </ul>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {current && <ItemView key={`${kind}:${current}`} course={course} kind={kind} id={current} version={version} onNavigate={onNavigate} />}
+        {current && (
+          <ItemView
+            key={`${kind}:${current}`}
+            course={course}
+            kind={kind}
+            id={current}
+            version={version}
+            onNavigate={onNavigate}
+            onLoaded={(it) => it.new && seen(it.id)}
+          />
+        )}
       </div>
     </div>
   );
@@ -360,9 +476,9 @@ function ListRow({ it, active, onClick }: { it: ItemSummary; active: boolean; on
   return (
     <li>
       <button onClick={onClick} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
-        <div className="flex items-baseline gap-2">
-          {it.unread && <span className="size-1.5 shrink-0 translate-y-[-1px] rounded-full bg-accent" aria-label="未读" />}
-          <span className={`truncate text-sm ${it.unread ? "font-medium" : ""}`}>{it.title}</span>
+        <div className="flex items-center gap-2">
+          {it.new && <NewDot />}
+          <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
           {it.front_page && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">首页</span>}
           <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(it.date, false)}</span>
         </div>
@@ -392,8 +508,15 @@ function AssignmentList({ list, current, onSelect }: { list: ItemSummary[]; curr
             {xs.map((a) => (
               <li key={a.id}>
                 <button onClick={() => onSelect(a.id)} className={`block w-full rounded-md px-2.5 py-2 text-left ${a.id === current ? "bg-selected" : "hover:bg-chip"}`}>
-                  <div className="truncate text-sm">{a.title}</div>
-                  <div className="mt-0.5 flex gap-2"><Due iso={a.due_at} />{a.points != null && <span className="text-xs text-muted">· {a.points} 分</span>}</div>
+                  <div className="flex items-center gap-2">
+                    {a.new && <NewDot />}
+                    <span className={`truncate text-sm ${a.new ? "font-medium" : ""}`}>{a.title}</span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Due iso={a.due_at} />
+                    {a.points != null && a.status !== "graded" && <span className="text-xs text-muted">· {fmt(a.points)} 分</span>}
+                    <SubmissionBadges a={a} />
+                  </div>
                 </button>
               </li>
             ))}
@@ -409,19 +532,24 @@ const SUBMISSION: Record<string, string> = {
   discussion_topic: "讨论", external_tool: "外部工具", on_paper: "纸质", none: "不需要提交", media_recording: "录音/录像",
 };
 
-function ItemView({ course, kind, id, version, onNavigate }: {
+function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
   course: Course;
   kind: DocKind;
   id: string;
   version: number;
   onNavigate: (to: CourseLink) => void;
+  onLoaded?: (it: Item) => void; // (loading it marked it seen)
 }) {
   const [it, setIt] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setIt(null);
     setError(null);
-    api.item(course.id, kind, id).then(setIt, (e) => setError(e.message));
+    api.item(course.id, kind, id).then((x) => {
+      setIt(x);
+      onLoaded?.(x);
+    }, (e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course.id, kind, id, version]);
 
   if (error) {
@@ -443,8 +571,10 @@ function ItemView({ course, kind, id, version, onNavigate }: {
           {kind === "assignment" && (
             <>
               <Due iso={it.due_at} />
-              {it.points != null && <span>{it.points} 分</span>}
+              {it.points != null && <span>{fmt(it.points)} 分</span>}
               {!!it.submission_types?.length && <span>{it.submission_types.map((t) => SUBMISSION[t] ?? t).join("、")}</span>}
+              <span className="flex items-center gap-1"><SubmissionBadges a={it} /></span>
+              {it.submitted_at && <span>提交于 {shortDate(it.submitted_at)}</span>}
             </>
           )}
           {kind === "page" && it.date && <span>更新于 {shortDate(it.date)}</span>}
@@ -477,5 +607,70 @@ function ItemView({ course, kind, id, version, onNavigate }: {
         <p className="text-sm text-muted">没有正文。</p>
       )}
     </article>
+  );
+}
+
+// -- 成绩 ----------------------------------------------------------------------------------
+
+/** Your total as Canvas computes it, and every assignment's grade, latest due first. */
+export function CourseGrades({ course, version, onOpenDoc }: {
+  course: Course;
+  version: number;
+  onOpenDoc: (kind: DocKind, id: string) => void;
+}) {
+  const [g, setG] = useState<Grades | null>(null);
+  useEffect(() => {
+    api.grades(course.id).then(setG, () => setG({ total: null, assignments: [] }));
+  }, [course.id, version]);
+  if (!g) return <p className="px-6 py-8 text-sm text-muted">正在加载…</p>;
+  const { total } = g;
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-4xl px-6 py-6">
+        <section className="mb-5 rounded-xl border border-line bg-panel px-5 py-4">
+          {total ? (
+            <>
+              <p className="mb-1 text-xs text-muted">当前总评</p>
+              <TotalLine total={total} big />
+              <p className="mt-1.5 text-xs text-muted">
+                只算已经评分的作业，按 Canvas 的计算方式；每次同步时更新。
+                {total.final_score != null && total.final_score !== total.current_score && (
+                  <> 未评分的都按 0 分算的话是 {fmt(total.final_score)}%。</>
+                )}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted">这门课在 Canvas 上不显示总评。</p>
+          )}
+        </section>
+        {g.assignments.length === 0 ? (
+          <p className="text-sm text-muted">还没有作业。</p>
+        ) : (
+          <ul className="rounded-xl border border-line bg-panel p-1.5">
+            <li className="grid grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] gap-3 px-2.5 py-1.5 text-[11px] font-medium text-muted">
+              <span>作业</span><span>截止</span><span className="text-right">成绩</span>
+            </li>
+            {g.assignments.map((a) => (
+              <li key={a.id}>
+                <button
+                  onClick={() => onOpenDoc("assignment", a.id)}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-chip"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {a.new && <NewDot />}
+                    <span className="truncate">{a.title}</span>
+                  </span>
+                  <span className="truncate text-xs text-muted">{a.due_at ? shortDate(a.due_at) : "—"}</span>
+                  <span className="flex justify-end gap-1">
+                    <SubmissionBadges a={a} />
+                    {!scoreText(a) && a.points != null && <span className="text-xs text-muted tabular-nums">— / {fmt(a.points)}</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }

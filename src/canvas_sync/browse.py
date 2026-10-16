@@ -45,6 +45,8 @@ class Entry:
     deleted: bool = False         # not on disk any more because you deleted it
     changes: int = 0              # dirs: files below with changes `restore` can undo
     skipped: bool = False         # dirs: you deleted or stopped syncing it; Canvas's new files don't come here
+    new: str | None = None        # files: "new" (arrived since you last opened it) or "updated" (a new version)
+    new_inside: int = 0           # dirs: files below that are new to you
 
 
 def _natural(name: str) -> list[object]:
@@ -64,11 +66,15 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     links = {row[0]: row[1] for row in state.db.execute("SELECT path, file_id FROM links")}
     course_dirs = {layout.course_dir(c).as_posix(): c.id for c in state.courses()}
     changed = [s.path for s in statuses if s.path and RESTORABLE & set(s.states)]
+    unseen = {int(i): updated for (_, _, i), updated in state.unseen(kind="file").items()}
+    new_at = {r.path: r.id for r in tracked.values() if r.id in unseen}  # each new file, and its view links
+    new_at |= {p: fid for p, fid in links.items() if fid in unseen}
 
     def canvas(fid: int, cid: int) -> dict[str, object]:
         s = by_id.get(fid)
         return {"file_id": fid, "course_id": cid, "url": f"/courses/{cid}/files/{fid}",
-                "states": list(s.states) if s else []}
+                "states": list(s.states) if s else [],
+                "new": ("updated" if unseen[fid] else "new") if fid in unseen else None}
 
     out: list[Entry] = []
     with os.scandir(base) as it:
@@ -88,7 +94,8 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
                 prefix = path + "/"
                 out.append(Entry(d.name, path, "dir", mtime=st.st_mtime, course_id=course_dirs.get(path),
                                  changes=sum(p.startswith(prefix) for p in changed),
-                                 skipped=layout.skipped(PurePosixPath(layout.canonical(path)))))
+                                 skipped=layout.skipped(PurePosixPath(layout.canonical(path))),
+                                 new_inside=len({fid for p, fid in new_at.items() if p.startswith(prefix)})))
             elif st is not None:
                 s, rec = at.get(path), tracked.get(path)
                 fid, cid = (s.file_id, s.course_id) if s else (rec.id, rec.course_id) if rec else (None, None)

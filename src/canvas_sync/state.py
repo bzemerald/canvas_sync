@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import Course, Document, RemoteFile
 
 META_DIR = ".canvas"
+# What can be new to you (see `arrivals`).
+NEWS_KINDS = ("announcement", "assignment", "page", "file")
+# The first time a course is synced, what Canvas dates within this many days is still news.
+RECENT_DAYS = 7
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS courses (
@@ -44,6 +53,16 @@ CREATE TABLE IF NOT EXISTS documents (
     course_id INTEGER, kind TEXT, id TEXT, title TEXT, updated_at TEXT, raw TEXT,
     PRIMARY KEY (course_id, kind, id)
 );
+-- Your grade in each course as Canvas computes it (NULL scores: not shown to students).
+CREATE TABLE IF NOT EXISTS grades (course_id INTEGER PRIMARY KEY, raw TEXT);
+-- What's new to you: when each announcement / assignment / page / file first showed up
+-- here, and when you opened it (NULL: not yet). `updated`: a file came back in a new version.
+CREATE TABLE IF NOT EXISTS arrivals (
+    course_id INTEGER, kind TEXT, id TEXT, arrived_at TEXT, seen_at TEXT, updated INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (course_id, kind, id)
+);
+-- Courses whose arrivals are recorded, since when. What a course had before that isn't news.
+CREATE TABLE IF NOT EXISTS tracked (course_id INTEGER PRIMARY KEY, since TEXT);
 """
 
 LOCAL_COLUMNS = (
@@ -160,7 +179,7 @@ class State:
     def save_course(self, c: Course) -> None:
         self.db.execute(
             "INSERT OR REPLACE INTO courses (id, name, code, term, synced_at) VALUES (?, ?, ?, ?, ?)",
-            (c.id, c.name, c.code, c.term, datetime.now(timezone.utc).isoformat()),
+            (c.id, c.name, c.code, c.term, _now()),
         )
 
     def courses(self) -> list[Course]:
@@ -183,4 +202,69 @@ class State:
         self.db.executemany(
             "INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?, ?)",
             [(d.course_id, d.kind, d.id, d.title, d.updated_at, json.dumps(d.raw)) for d in docs],
+        )
+
+    def save_grades(self, course_id: int, grades: dict) -> None:
+        self.db.execute("INSERT OR REPLACE INTO grades VALUES (?, ?)", (course_id, json.dumps(grades)))
+
+    def grades(self, course_id: int) -> dict | None:
+        row = self.db.execute("SELECT raw FROM grades WHERE course_id = ?", (course_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    # -- what's new -------------------------------------------------------------------
+
+    def record_arrivals(self, course_id: int, items: Iterable[tuple[str, str, str | None]],
+                        now: datetime | None = None) -> None:
+        """Note items (kind, id, when Canvas says it appeared) showing up for the first time.
+        The first time for a course, only what appeared in the last RECENT_DAYS is news: the
+        rest counts as seen already."""
+        now = now or datetime.now(timezone.utc)
+        first = self.db.execute("SELECT 1 FROM tracked WHERE course_id = ?", (course_id,)).fetchone() is None
+        if first:
+            self.db.execute("INSERT INTO tracked VALUES (?, ?)", (course_id, now.isoformat()))
+
+        def recent(when: str | None) -> bool:
+            try:
+                t = datetime.fromisoformat((when or "").replace("Z", "+00:00"))
+            except ValueError:
+                return False
+            return t.tzinfo is not None and now - timedelta(days=RECENT_DAYS) <= t <= now
+
+        stamp = now.isoformat()
+        self.db.executemany(
+            "INSERT OR IGNORE INTO arrivals (course_id, kind, id, arrived_at, seen_at) VALUES (?, ?, ?, ?, ?)",
+            [(course_id, kind, i, stamp, stamp if first and not recent(when) else None) for kind, i, when in items],
+        )
+
+    def record_update(self, course_id: int, file_id: int) -> None:
+        """A file came again in a new version: new to you until you open it."""
+        self.db.execute(
+            """INSERT INTO arrivals (course_id, kind, id, arrived_at, seen_at, updated) VALUES (?, 'file', ?, ?, NULL, 1)
+               ON CONFLICT(course_id, kind, id) DO UPDATE SET arrived_at = excluded.arrived_at, seen_at = NULL, updated = 1""",
+            (course_id, str(file_id), _now()),
+        )
+
+    def unseen(self, course_id: int | None = None, kind: str | None = None) -> dict[tuple[int, str, str], bool]:
+        """(course, kind, id) -> whether it's an update, for everything not opened yet."""
+        sql, args = "SELECT course_id, kind, id, updated FROM arrivals WHERE seen_at IS NULL", []
+        if course_id is not None:
+            sql, args = sql + " AND course_id = ?", [*args, course_id]
+        if kind is not None:
+            sql, args = sql + " AND kind = ?", [*args, kind]
+        return {(r[0], r[1], r[2]): bool(r[3]) for r in self.db.execute(sql, args)}
+
+    def mark_seen(self, course_id: int, items: Iterable[tuple[str, str]] | None = None,
+                  kinds: Iterable[str] | None = None) -> None:
+        """Mark items opened; with no items, everything new in the course (of `kinds`)."""
+        now = _now()
+        if items is not None:
+            self.db.executemany(
+                "UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND kind = ? AND id = ? AND seen_at IS NULL",
+                [(now, course_id, k, i) for k, i in items],
+            )
+            return
+        kinds = list(kinds or [])
+        only = f" AND kind IN ({', '.join('?' * len(kinds))})" if kinds else ""
+        self.db.execute(
+            f"UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND seen_at IS NULL{only}", (now, course_id, *kinds)
         )

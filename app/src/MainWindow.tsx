@@ -7,13 +7,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
+import { CourseGrades, CourseModules, CourseOverview, CourseReader, CourseTabs, TAB_OF_KIND, useOverview, type CourseTab } from "./components/CourseView";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { KIND } from "./components/Result";
 import { RenameDialog } from "./components/RenameDialog";
 import { RestoreDialog } from "./components/RestoreDialog";
+import { Count } from "./components/Status";
 import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
 import type { Course, DocKind, Entry, Hit, Kind, PinnedItem, Scope, SmartFolder, SyncState } from "./lib/api";
@@ -65,6 +66,7 @@ export function MainWindow() {
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
+  const [seenTick, setSeenTick] = useState(0); // you opened something: what's new changed
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
@@ -89,12 +91,13 @@ export function MainWindow() {
       return { ...h, stack };
     });
   const refresh = () => setVersion((n) => n + 1);
+  const seenChanged = () => setSeenTick((n) => n + 1);
 
   // -- data ------------------------------------------------------------------------
   useEffect(() => {
     api.courses().then(setCourseList, (e) => setStartupError(String(e.message ?? e)));
-    api.pinned().then(setPinned, () => {});
-  }, [version]);
+  }, [version, seenTick]);
+  useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.syncState().then(setSync).catch(() => {}), []);
   useEffect(() => {
     api.status().then((all) => {
@@ -165,7 +168,7 @@ export function MainWindow() {
   };
   const openHere = (h: Hit) =>
     h.kind !== "file" && h.doc_id ? openDoc(h.course_id, h.kind as DocKind, h.doc_id) : void api.openHit(h);
-  const overview = useOverview(view.kind === "course" ? view.id : null, version);
+  const overview = useOverview(view.kind === "course" ? view.id : null, version, seenTick);
 
   // The search window asks us to show an announcement / assignment / page.
   const openDocLater = useRef(openDoc);
@@ -496,6 +499,7 @@ export function MainWindow() {
                   icon={<GraduationCap className="size-4" />}
                   title={c?.label ?? `课程 #${item.id}`}
                   subtitle={c ? (c.term_label ?? undefined) : "找不到这门课了"}
+                  count={c?.new}
                   muted={!c}
                   active={course?.id === item.id && !pinnedHere}
                   onClick={() => c && openCourse(c)}
@@ -539,6 +543,7 @@ export function MainWindow() {
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isCoursePinned(c.id)}
                   badge={changes[c.id] ? `${changes[c.id]} 个文件有本地改动` : undefined}
+                  count={c.new}
                   onClick={() => openCourse(c)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
                 />
@@ -618,7 +623,12 @@ export function MainWindow() {
         )}
 
         {view.kind === "course" && course && (
-          <CourseTabs tab={view.tab} overview={overview} onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })} />
+          <CourseTabs
+            tab={view.tab}
+            overview={overview}
+            onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })}
+            onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail("标记失败"))}
+          />
         )}
 
         {view.kind === "course" && course && !searching && view.tab === "overview" ? (
@@ -627,6 +637,7 @@ export function MainWindow() {
             overview={overview}
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
             onTab={(t) => go({ ...view, tab: t, item: undefined })}
+            onSeen={seenChanged}
           />
         ) : view.kind === "course" && course && !searching && view.tab === "modules" ? (
           <CourseModules
@@ -636,6 +647,8 @@ export function MainWindow() {
             onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
             onShowFolder={(p) => goPath(p)}
           />
+        ) : view.kind === "course" && course && !searching && view.tab === "grades" ? (
+          <CourseGrades key={course.id} course={course} version={version} onOpenDoc={(kind, id) => openDoc(course.id, kind, id)} />
         ) : view.kind === "course" && course && !searching && view.tab !== "files" ? (
           <CourseReader
             course={course}
@@ -644,6 +657,7 @@ export function MainWindow() {
             version={version}
             onSelect={(id) => replaceView({ ...view, item: id })}
             onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+            onSeen={seenChanged}
           />
         ) : (view.kind === "browse" || view.kind === "course") && !searching ? (
           <FileBrowser
@@ -872,13 +886,14 @@ function SmartTitle({ folder, courses }: { folder: SmartFolder; courses: Course[
   );
 }
 
-function NavItem({ icon, title, subtitle, active, badge, muted, onClick, onMenu }: {
+function NavItem({ icon, title, subtitle, active, badge, count, muted, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
   subtitle?: string;
   active: boolean;
   muted?: boolean;
   badge?: string;
+  count?: number; // new things in it
   onClick: () => void;
   onMenu?: (x: number, y: number) => void;
 }) {
@@ -895,6 +910,7 @@ function NavItem({ icon, title, subtitle, active, badge, muted, onClick, onMenu 
           {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
         </span>
         {badge && <span title={badge} aria-label={badge} className="size-1.5 shrink-0 rounded-full bg-warn group-hover:hidden" />}
+        {!!count && <span className="group-hover:hidden"><Count n={count} label={`${count} 个新的`} /></span>}
       </button>
       {onMenu && (
         <button

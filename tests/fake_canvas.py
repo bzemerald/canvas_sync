@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -85,6 +86,16 @@ def pull(root: Path, fake: FakeCanvas, scope: Scope | None = None):
                 return plan
 
     return asyncio.run(go())
+
+
+def wait_for_sync(c) -> dict:
+    """Wait for a sync started through the app's API (a TestClient) to finish."""
+    for _ in range(200):
+        state = c.get("/api/sync").json()
+        if not state["running"]:
+            return state
+        time.sleep(0.02)
+    raise AssertionError("sync did not finish")
 
 
 def kinds(plan) -> list[tuple[str, str | None]]:

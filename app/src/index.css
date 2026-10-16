@@ -21,6 +21,8 @@
   --warn-soft: #fdf3d7;
   --info: #1d5fc4;
   --info-soft: #e3ecfb;
+  --ok: #15803d;
+  --ok-soft: #e2f4e7;
   --type-pdf: #d1453b;
   --type-doc: #2f6fde;
   --type-slides: #d97706;
@@ -51,6 +53,8 @@
     --warn-soft: #3a2f12;
     --info: #7aa7f5;
     --info-soft: #1f2c45;
+    --ok: #4ade80;
+    --ok-soft: #173322;
     --type-pdf: #f07167;
     --type-doc: #6f9cf0;
     --type-slides: #f5a524;
@@ -81,6 +85,8 @@
   --color-warn-soft: var(--warn-soft);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
   --color-type-pdf: var(--type-pdf);
   --color-type-doc: var(--type-doc);
   --color-type-slides: var(--type-slides);
