@@ -262,3 +262,37 @@ def test_course_layouts(root, tmp_path, keychain):
         # Arranged just like the default, a course follows the default again.
         api.post("/api/courses/2/layout", json={"hidden_tabs": []})
         assert api.post("/api/courses/2/layout", json={"hidden_tabs": ["pages"]}).json()["own_tabs"] is False
+
+
+def test_added_tabs(root, tmp_path, keychain):
+    """Things dragged onto a course's tabs become tabs of its own; taken away, they're gone."""
+    with client(Account(BASE, root), tmp_path) as api:
+        page = {"id": "p1", "type": "doc", "kind": "page", "doc": "schedule", "title": "Schedule"}
+        folder = {"id": "f1", "type": "folder", "path": "Fall 2026/MATH 221/Files/Labs"}
+        # Added at the end, the course's tabs still follow the default.
+        r = api.post("/api/courses/1/layout", json={"tab_items": [page]}).json()
+        assert r["tabs"][-1] == "x:p1" and not r["own_tabs"] and r["tab_items"] == [page]
+        # Put in a place of its own: the tabs are arranged for the course.
+        order = [x for x in r["tabs"] if x != "x:p1"]
+        r = api.post("/api/courses/1/layout", json={"tab_items": [page, folder], "tabs": [order[0], "x:f1", *order[1:], "x:p1"]}).json()
+        assert r["tabs"][:2] == [order[0], "x:f1"] and r["own_tabs"]
+        assert api.get("/api/courses/2/layout").json()["tab_items"] == []  # (another course)
+
+        bad = [{"id": "z", "type": "doc", "kind": "movie", "doc": "x"}, {"id": "z", "type": "link", "url": "javascript:1"},
+               {"id": "z", "type": "folder"}, {"type": "file", "path": "x"}]
+        for item in bad:
+            assert api.post("/api/courses/1/layout", json={"tab_items": [item]}).status_code == 400
+        assert api.post("/api/courses/1/layout", json={"tab_items": [page, page]}).status_code == 400  # (one id, twice)
+        assert "x:nope" not in api.post("/api/courses/1/layout", json={"tabs": ["x:nope", *r["tabs"]]}).json()["tabs"]  # (gone: left out)
+
+        # Taken away, it's out of the order too; tabs you added can't be hidden, only removed.
+        r = api.post("/api/courses/1/layout", json={"tab_items": [page]}).json()
+        assert "x:f1" not in r["tabs"] and r["tabs"].count("x:p1") == 1
+        r = api.post("/api/courses/1/layout", json={"hidden_tabs": ["x:p1", "pages"]}).json()
+        assert r["hidden_tabs"] == ["pages"]
+        # Back to the default: what you added stays, at the end; and it isn't made everyone's default.
+        r = api.post("/api/courses/1/layout/reset/tabs").json()
+        assert not r["own_tabs"] and r["tabs"][-1] == "x:p1" and r["tab_items"] == [page]
+        api.post("/api/courses/1/layout", json={"tabs": ["x:p1", "files"]})
+        api.post("/api/courses/1/layout/default/tabs")
+        assert api.get("/api/courses/2/layout").json()["tabs"][0] == "files"

@@ -100,6 +100,9 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # cards = [{type = "upcoming"}, {type = "folder", id = "a1", path = "Fall 2026/MATH 221/Files/Labs"}]
 # extra_cards = [...]                   # without `cards`: added after the default ones
 # hidden_links = ["tool:5"]
+# tab_items = [{id = "t1", type = "doc", kind = "page", doc = "schedule", title = "Schedule"}]
+#                                       # tabs you added (in `tabs` as "x:t1"): a folder (path),
+#                                       # file (path), doc (kind, doc), module, tool, link (url)
 # links = [{title = "Course website", url = "https://..."}]
 
 [sidebar]
@@ -147,10 +150,25 @@ OVERVIEW_CARDS = ("upcoming", "announcements", "modules", "files", "grades", "li
 # a module (module), a saved search (query, content), the syllabus.
 ADDED_CARDS = ("folder", "file", "note", "page", "module", "search", "syllabus")
 CARD_KEYS = {"type": str, "id": str, "title": str, "path": str, "page": str, "module": int, "query": str, "content": bool}
+# Tabs you add: something in the course, or a web link. Folders, documents and modules open in
+# the tab; files, tools and links open where they open.
+TAB_NEEDS = {"folder": ("path",), "file": ("path",), "doc": ("kind", "doc"), "module": ("module",), "tool": ("tool",),
+             "link": ("url",)}
+TAB_KEYS = {"id": str, "type": str, "title": str, "path": str, "kind": str, "doc": str, "module": int, "tool": int, "url": str}
 
 
 def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
     return [n for n in dict.fromkeys(names) if n in allowed] if isinstance(names, list) else []
+
+
+def _tab_item(x: Any) -> dict[str, Any] | None:
+    """A tab you added, as config.toml has it, if it makes sense."""
+    if not isinstance(x, dict) or x.get("type") not in TAB_NEEDS or not isinstance(x.get("id"), str) or not x["id"]:
+        return None
+    out = {k: x[k] for k, kind in TAB_KEYS.items() if k in x and isinstance(x[k], kind) and not (kind is int and isinstance(x[k], bool))}
+    if any(k not in out for k in TAB_NEEDS[out["type"]]) or (out["type"] == "doc" and out["kind"] not in DOC_KINDS):
+        return None
+    return out
 
 
 def _card(c: Any) -> dict[str, Any] | None:
@@ -174,21 +192,24 @@ class CourseLayout:
     extra_cards: list[dict[str, Any]] = field(default_factory=list)  # without `cards`: after the default ones
     hidden_links: list[str] = field(default_factory=list)  # in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
     links: list[dict[str, str]] = field(default_factory=list)  # your own: {title, url}
+    tab_items: list[dict[str, Any]] = field(default_factory=list)  # tabs you added; "x:<id>" in `tabs`
 
     @classmethod
     def parse(cls, d: dict[str, Any]) -> CourseLayout:
         def cards(key: str) -> list[dict[str, Any]]:
             return [c for c in (_card(x) for x in d.get(key, []) or []) if c]
+        items = [i for i in (_tab_item(x) for x in d.get("tab_items", []) or []) if i]
+        names = (*COURSE_TABS, *(f"x:{i['id']}" for i in items))
         own_tabs = "tabs" in d or "hidden_tabs" in d
         links = [{"title": str(x.get("title", "")), "url": str(x["url"])}
                  for x in d.get("links", []) or [] if isinstance(x, dict) and isinstance(x.get("url"), str)]
-        return cls(_known(d.get("tabs"), COURSE_TABS) if own_tabs else None,
+        return cls(_known(d.get("tabs"), names) if own_tabs else None,
                    _known(d.get("hidden_tabs"), COURSE_TABS) if own_tabs else None,
                    cards("cards") if "cards" in d else None, cards("extra_cards"),
-                   [str(x) for x in d.get("hidden_links", []) or []], links)
+                   [str(x) for x in d.get("hidden_links", []) or []], links, items)
 
     def empty(self) -> bool:
-        return self.tabs is None and self.cards is None and not (self.extra_cards or self.hidden_links or self.links)
+        return self.tabs is None and self.cards is None and not (self.extra_cards or self.hidden_links or self.links or self.tab_items)
 
 CHOICES = {
     "select": {"active", "favorites"},
@@ -646,6 +667,8 @@ def save_course_layout(path: Path, course_id: int, layout: CourseLayout | None) 
         t["hidden_links"] = layout.hidden_links
     if layout.links:
         t["links"] = rows(layout.links)
+    if layout.tab_items:
+        t["tab_items"] = rows(layout.tab_items)
     layouts[key] = t
     path.write_text(tomlkit.dumps(doc))
 

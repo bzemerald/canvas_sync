@@ -8,7 +8,8 @@ import { Fragment, createElement, useCallback, useEffect, useMemo, useRef, useSt
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CourseGrades, CourseModules, CourseReader, CourseTabs, TAB_LABEL, TAB_OF_KIND, arrangeTabs, useOverview, type CourseTab,
+  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, OPENS_ELSEWHERE, TAB_LABEL, TAB_OF_KIND, arrangeTabs, isAddedTab,
+  useOverview, type CourseTab, type TabKey,
 } from "./components/CourseView";
 import { CourseOverview } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
@@ -26,7 +27,7 @@ import { SmartFolderDialog } from "./components/SmartFolderDialog";
 import * as api from "./lib/api";
 import type {
   AccountInfo, Course, CourseLayout, DocKind, Entry, Hit, Kind, LayoutChanges, LayoutPart, PinTarget, PinnedItem, Scope, SidebarOrder,
-  SmartFolder, SyncState,
+  SmartFolder, SyncState, TabItem,
 } from "./lib/api";
 import { PinsContext, pinMenuItem, type Pins } from "./lib/pinnable";
 import { usePinZone } from "./lib/pinZone";
@@ -45,7 +46,7 @@ import { t, tx } from "./lib/i18n";
 // tab is in; `item` the announcement / assignment / page being read.
 type View =
   | { kind: "home" }
-  | { kind: "course"; id: number; tab: CourseTab; path: string; select?: string; item?: string; first?: boolean } // first: opened on its first tab
+  | { kind: "course"; id: number; tab: TabKey; path: string; select?: string; item?: string; first?: boolean } // first: opened on its first tab
   | { kind: "browse"; path: string; select?: string }
   | { kind: "smart"; name: string }
   | { kind: "settings" };
@@ -204,15 +205,21 @@ export function MainWindow() {
 
   // -- where we are ---------------------------------------------------------------------
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
-  const filesTab = view.kind === "browse" || (view.kind === "course" && view.tab === "files");
+  // A tab you added to the course, showing: a folder (like 文件, from there), a page, a module.
+  const addedTab = view.kind === "course" && isAddedTab(view.tab) && layout?.id === view.id
+    ? (layout.layout.tab_items ?? []).find((i) => `x:${i.id}` === view.tab) ?? null : null;
+  const folderTab = addedTab?.type === "folder" ? addedTab : null;
+  const filesTab = view.kind === "browse" || (view.kind === "course" && (view.tab === "files" || !!folderTab));
   const browsing = filesView ? view.path : null;
   const folderShown = filesTab ? view.path : null; // a course's other tabs remember a folder, but don't show it
   const course = view.kind === "course" ? courseList.find((c) => c.id === view.id) ?? null : null;
   const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
-  /** Go to a folder: inside a course, that's the course's page; elsewhere, a plain folder. */
+  /** Go to a folder: inside a course, that's the course's page; elsewhere, a plain folder. (In a
+   * tab you added for a folder, a folder in it stays in that tab.) */
   const goPath = (path: string, select?: string) => {
     const c = courseAt(path);
-    go(c ? { kind: "course", id: c.id, tab: "files", path, select } : { kind: "browse", path, select });
+    const tab: TabKey = folderTab && view.kind === "course" && c?.id === view.id && under(path, folderTab.path!) ? view.tab : "files";
+    go(c ? { kind: "course", id: c.id, tab, path, select } : { kind: "browse", path, select });
   };
   /** A course opens on its first tab (概览, unless that course's 概览 is hidden). */
   const openCourse = (c: Course, tab?: CourseTab) => go({ kind: "course", id: c.id, tab: tab ?? "overview", path: c.dir, first: !tab });
@@ -228,14 +235,27 @@ export function MainWindow() {
     };
   }, [layoutId, version]);
   const courseLayout = layout && layout.id === layoutId ? layout.layout : null;
-  const tabOrder = arrangeTabs(courseLayout?.tabs ?? []);
+  const tabItems = courseLayout?.tab_items ?? [];
+  const tabOrder = arrangeTabs(courseLayout?.tabs ?? [], tabItems);
   const hiddenTabs = (courseLayout?.hidden_tabs ?? []) as CourseTab[];
-  const firstTab = tabOrder.find((x) => !hiddenTabs.includes(x)) ?? "overview";
-  // Opened on its first tab, or on a tab just hidden: go to the first one shown.
+  const itemOfTab = (k: TabKey) => tabItems.find((i) => `x:${i.id}` === k) ?? null;
+  /** What going to a tab means: a folder you added opens at that folder. */
+  const toTab = (v: View & { kind: "course" }, k: TabKey): View & { kind: "course" } => {
+    const item = itemOfTab(k);
+    const c = courseList.find((x) => x.id === v.id);
+    return { ...v, tab: k, item: undefined, select: undefined, path: item?.type === "folder" ? item.path! : folderTab ? c?.dir ?? v.path : v.path };
+  };
+  // The first tab that shows something here (not one that opens a file, a tool or a link).
+  const firstTab = tabOrder.find((k) => {
+    const item = isAddedTab(k) ? itemOfTab(k) : null;
+    return isAddedTab(k) ? !!item && !OPENS_ELSEWHERE.includes(item.type) : !hiddenTabs.includes(k);
+  }) ?? "overview";
+  // Opened on its first tab, or on a tab just hidden (or taken away): go to the first one shown.
   useEffect(() => {
     if (view.kind !== "course" || !courseLayout) return;
-    if ((view.first && view.tab !== firstTab) || hiddenTabs.includes(view.tab)) {
-      replaceView({ ...view, tab: firstTab, item: undefined, first: false });
+    const gone = isAddedTab(view.tab) ? !itemOfTab(view.tab) || OPENS_ELSEWHERE.includes(itemOfTab(view.tab)!.type) : hiddenTabs.includes(view.tab);
+    if ((view.first && view.tab !== firstTab) || gone) {
+      replaceView({ ...toTab(view, firstTab), first: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseLayout, view]);
@@ -276,6 +296,12 @@ export function MainWindow() {
       .catch(fail(t("打开失败")))
       .finally(() => setLaunching((k) => (k === key ? null : k)));
   };
+  /** A tab you added that opens elsewhere: a file in its app, a tool or a link in the browser. */
+  const openTabItem = (c: Course, i: TabItem) => {
+    if (i.type === "file") void api.openPath(i.path!).then(seenChanged, fail(t("打开失败")));
+    else if (i.type === "tool") launchTool(`tab:${c.id}:${i.id}`, c.id, i.tool!);
+    else if (i.type === "link") void api.openExternal(i.url!);
+  };
   const openHere = (h: Hit) =>
     h.kind !== "file" && h.doc_id ? openDoc(h.course_id, h.kind as DocKind, h.doc_id) : void api.openHit(h);
   const overview = useOverview(view.kind === "course" ? view.id : null, version, seenTick);
@@ -305,10 +331,12 @@ export function MainWindow() {
   // What the search box searches. In a course, what the tab shows: 公告 / 作业 / 页面 / 模块 / 成绩
   // narrow their own lists as you type, 文件 searches the folder you're in; 概览 and 大纲 the
   // course. Elsewhere, the folder you're in. "搜索整门课" widens it to the course.
-  const FILTERS_ITSELF: CourseTab[] = ["announcements", "assignments", "pages", "modules", "grades"];
+  const FILTERS_ITSELF: TabKey[] = ["announcements", "assignments", "pages", "modules", "grades"];
   const filtering = view.kind === "course" && !wide && FILTERS_ITSELF.includes(view.tab);
-  const folderScope = !wide && ((view.kind === "course" && view.tab === "files") || (view.kind === "browse" && view.path !== ""))
+  const folderScope = !wide && ((view.kind === "course" && filesTab) || (view.kind === "browse" && view.path !== ""))
     ? view.path : null;
+  // The whole course: on 概览 and 大纲, and on a page or module you added as a tab.
+  const courseWide = view.kind === "course" && (view.tab === "overview" || view.tab === "syllabus" || (!!addedTab && !folderTab));
   const folderName = (path: string) => (course && path === course.dir ? TAB_LABEL.files : path.split("/").pop() ?? path);
   useEffect(() => {
     if (!query.trim()) setWide(false);
@@ -316,11 +344,11 @@ export function MainWindow() {
   const searching = view.kind === "home" || (filesView && query.trim() !== "" && !filtering);
   const searchPlaceholder =
     view.kind === "course" && course
-      ? wide || view.tab === "overview" || view.tab === "syllabus"
+      ? wide || courseWide
         ? t("在 {label} 中搜索", { label: course.label })
-        : view.tab === "files"
+        : filesTab
           ? t("在“{name}”中搜索", { name: folderName(view.path) })
-          : t("在{scope}中搜索", { scope: TAB_LABEL[view.tab] })
+          : t("在{scope}中搜索", { scope: TAB_LABEL[view.tab as CourseTab] })
       : view.kind === "browse" && view.path
         ? t("在“{name}”中搜索", { name: folderName(view.path) })
         : t("搜索");
@@ -343,8 +371,8 @@ export function MainWindow() {
   const scopeNote = (() => {
     if (!query.trim()) return null;
     if (view.kind === "course" && course) {
-      if (wide && view.tab !== "overview" && view.tab !== "syllabus") {
-        const narrow = view.tab === "files" ? folderName(view.path) : TAB_LABEL[view.tab];
+      if (wide && !courseWide) {
+        const narrow = filesTab ? folderName(view.path) : TAB_LABEL[view.tab as CourseTab];
         return { text: t("在 {label} 中搜索", { label: course.label }), action: t("只搜“{name}” ›", { name: narrow }), onAction: () => setWide(false) };
       }
       if (folderScope !== null) {
@@ -686,8 +714,11 @@ export function MainWindow() {
   /** A pinned thing that's on screen: a folder in 文件, an announcement or page open, a module. */
   const pinnedOn = (item: PinnedItem) =>
     item.type === "folder" ? folderShown === item.path
-      : item.type === "doc" ? view.kind === "course" && view.id === item.course_id && view.tab === TAB_OF_KIND[item.kind] && (item.kind === "syllabus" || view.item === item.id)
-        : item.type === "module" ? view.kind === "course" && view.id === item.course_id && view.tab === "modules" && view.item === String(item.module)
+      : item.type === "doc" ? view.kind === "course" && view.id === item.course_id && (
+          (view.tab === TAB_OF_KIND[item.kind] && (item.kind === "syllabus" || view.item === item.id))
+          || (addedTab?.type === "doc" && addedTab.kind === item.kind && addedTab.doc === item.id))
+        : item.type === "module" ? view.kind === "course" && view.id === item.course_id && (
+            (view.tab === "modules" && view.item === String(item.module)) || (addedTab?.type === "module" && addedTab.module === item.module))
           : item.type === "smart" && view.kind === "smart" && view.name === item.name;
   const pinnedHere = pinned.some(pinnedOn); // highlight that, not also its course
   const renderPinned = (item: PinnedItem) => {
@@ -820,6 +851,14 @@ export function MainWindow() {
             render={renderPinned}
             onMove={movePin}
             onPin={(target, at) => void pinThing(target, at)}
+            onUnpin={(item) => {
+              const target = api.targetOf(item)!;
+              setPinned(pinned.filter((p) => p !== item)); // (gone at once: it was let go of)
+              api.unpin(target).then((list) => {
+                setPinned(list);
+                say(t("已取消置顶“{name}”", { name: pinLabel(target) }));
+              }, fail(t("取消置顶失败")));
+            }}
           />
 
           {courseList.length === 0 && !signedOut && (
@@ -900,9 +939,9 @@ export function MainWindow() {
             {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goPath} />}
             {view.kind === "course" && course && (
               <Breadcrumb
-                path={view.tab === "files" ? view.path : course.dir}
+                path={filesTab ? view.path : course.dir}
                 root={{ path: course.dir, label: course.label, icon: <CourseIcon course={course} /> }}
-                onGo={(p) => (p === course.dir && view.tab !== "files" ? openCourse(course) : goPath(p))}
+                onGo={(p) => (p === course.dir && !filesTab ? openCourse(course) : goPath(p))}
               />
             )}
             {view.kind === "smart" && folder && <SmartTitle folder={folder} courses={courseList} />}
@@ -962,16 +1001,19 @@ export function MainWindow() {
 
         {view.kind === "course" && course && (
           <CourseTabs
+            course={course}
             tab={view.tab}
             overview={overview}
             order={tabOrder}
             hidden={hiddenTabs}
+            items={tabItems}
             own={!!courseLayout?.own_tabs}
-            onArrange={(order, hidden) => arrangeLayout({ tabs: order, hidden_tabs: hidden })}
+            onLayout={arrangeLayout}
             onReset={() => void resetLayout("tabs")}
             onMakeDefault={() => void makeDefaultLayout("tabs")}
             onMenu={openMenu}
-            onTab={(t) => go({ ...view, tab: t, item: undefined, select: undefined })}
+            onTab={(k) => go(toTab(view, k))}
+            onOpenItem={(i) => openTabItem(course, i)}
             onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
           />
         )}
@@ -1022,7 +1064,27 @@ export function MainWindow() {
             query={filtering ? query : ""}
             onWiden={() => setWide(true)}
           />
-        ) : view.kind === "course" && course && !searching && view.tab !== "files" ? (
+        ) : view.kind === "course" && course && !searching && addedTab?.type === "doc" ? (
+          <CourseDoc
+            course={course}
+            kind={addedTab.kind!}
+            id={addedTab.doc!}
+            version={version}
+            onNavigate={(to) => go({ ...view, tab: to.tab, item: to.id })}
+            onSeen={seenChanged}
+          />
+        ) : view.kind === "course" && course && !searching && addedTab?.type === "module" ? (
+          <CourseModules
+            key={`${course.id}:${addedTab.id}`}
+            course={course}
+            version={version}
+            only={addedTab.module}
+            onOpenDoc={(kind, id) => openDoc(course.id, kind, id)}
+            onShowFolder={(p) => goPath(p)}
+            query=""
+            onWiden={() => setWide(true)}
+          />
+        ) : view.kind === "course" && course && !searching && view.tab !== "files" && !isAddedTab(view.tab) ? (
           <CourseReader
             course={course}
             tab={view.tab}
@@ -1159,8 +1221,8 @@ function hostOf(url: string): string {
 }
 
 /** 置顶: what's pinned, in the order you put it in. Anything pinnable dropped on it is pinned
- * where you let go (a line shows where). */
-function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin }: {
+ * where you let go (a line shows where); dragged off it, it's unpinned. */
+function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin, onUnpin }: {
   items: PinnedItem[];
   collapsed: boolean;
   header: React.ReactNode;
@@ -1168,9 +1230,9 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin 
   render: (item: PinnedItem) => React.ReactNode;
   onMove: (from: number, to: number) => void;
   onPin: (target: PinTarget, at?: number) => void;
+  onUnpin: (item: PinnedItem) => void; // dragged off the list
 }) {
   const list = useRef<HTMLDivElement>(null);
-  const drag = useReorder(items.length, onMove);
   const slotAt = (_x: number, y: number) => {
     const rows = Array.from(list.current?.querySelectorAll<HTMLElement>(":scope > [data-pin]") ?? []);
     const i = rows.findIndex((el) => {
@@ -1180,6 +1242,12 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin 
     return i < 0 ? rows.length : i;
   };
   const zone = usePinZone((target, at) => onPin(target, collapsed ? undefined : at), slotAt);
+  const drag = useReorder(items.length, onMove, "y", {
+    zone: zone.id,
+    pin: (i) => api.targetOf(items[i]), // (onto a course's tabs)
+    // A smart folder is only here: it's deleted on purpose, from its menu, not dragged away.
+    remove: (i) => (items[i].type === "smart" ? null : () => onUnpin(items[i])),
+  });
   const over = zone.state === "over" && !collapsed && items.length > 0;
   const line = (
     <div aria-hidden className="relative h-0">
@@ -1220,7 +1288,9 @@ function TermSection({ group, sectionRef, grab, collapsed, onToggle, onMenu, onR
   onReorder: (ids: number[]) => void;
   renderCourse: (c: Course) => React.ReactNode;
 }) {
-  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)), "y", (i) => ({ course: group.courses[i].id }));
+  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)), "y", {
+    pin: (i) => ({ course: group.courses[i].id }),
+  });
   const fresh = group.courses.reduce((n, c) => n + c.new, 0);
   return (
     <section ref={sectionRef}>

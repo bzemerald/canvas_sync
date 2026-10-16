@@ -214,10 +214,48 @@ export interface CourseLayout {
   cards: Card[]; // the overview's, shown, in order
   hidden_links: string[]; // in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
   links: { title: string; url: string }[]; // added to 工具与链接
+  tab_items: TabItem[]; // tabs you added; "x:<id>" in `tabs`
   own_tabs: boolean; // arranged for the course (else: the default)
   own_cards: boolean;
 }
 export type LayoutChanges = Partial<Omit<CourseLayout, "own_tabs" | "own_cards">>;
+
+/** A tab you added to a course, by dragging something in it onto its tabs (or a web link).
+ * Folders, documents and modules open in the tab; files, tools and links open where they open. */
+export interface TabItem {
+  id: string;
+  type: "folder" | "file" | "doc" | "module" | "tool" | "link";
+  title?: string; // documents, modules, tools, links; or a name of your own
+  path?: string; // folder, file
+  kind?: DocKind; // doc
+  doc?: string;
+  module?: number;
+  tool?: number;
+  url?: string;
+}
+
+/** Something dragged onto a course's tabs, as a tab (null: a course, which can't be one). */
+export function tabItemOf(t: PinTarget, id: string): TabItem | null {
+  if ("url" in t) return { id, type: "link", url: t.url, title: t.title };
+  if ("file" in t) return { id, type: "file", path: t.file };
+  if ("path" in t) return { id, type: "folder", path: t.path };
+  if ("kind" in t) return { id, type: "doc", kind: t.kind, doc: t.id, title: t.title };
+  if ("module" in t) return { id, type: "module", module: t.module, title: t.title };
+  if ("tool" in t) return { id, type: "tool", tool: t.tool, title: t.title };
+  return null;
+}
+
+/** What a tab shows, to pin it to the sidebar too (or to tell whether it's there already). */
+export function targetOfTab(i: TabItem, course: number): PinTarget {
+  switch (i.type) {
+    case "folder": return { path: i.path! };
+    case "file": return { file: i.path! };
+    case "doc": return { course, kind: i.kind!, id: i.doc!, title: i.title ?? "" };
+    case "module": return { course, module: i.module!, title: i.title ?? "" };
+    case "tool": return { course, tool: i.tool!, title: i.title ?? "" };
+    default: return { url: i.url!, title: i.title ?? "" };
+  }
+}
 export type LayoutPart = "tabs" | "overview";
 
 export const courseLayout = (course: number) => api<CourseLayout>(`/courses/${course}/layout`);

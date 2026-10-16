@@ -26,6 +26,11 @@ export const en: Record<string, string | [string, string]> = {
   "置顶@@heading": "Pinned",
   "置顶失败": "Couldn't pin",
   "已置顶“{name}”": "Pinned “{name}”",
+  "已取消置顶“{name}”": "Unpinned “{name}”",
+  "移除这个标签": "Remove this tab",
+  "拖离标签栏可以移除": "Drag it off the tabs to remove it",
+  "重命名标签": "Rename tab",
+  "只改这个标签的名字。": "Only this tab's name changes.",
   "打开失败": "Couldn't open it",
   "放在这里置顶": "Drop here to pin",
   "把课程、文件夹、文件、公告、页面、工具拖到这里，或者右键选“置顶”。点 + 新建智能文件夹（保存的搜索）。":

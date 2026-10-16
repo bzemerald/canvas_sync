@@ -40,7 +40,7 @@ from .discover import FILE_REF
 from .config import (
     ADDED_CARDS, COURSE_TABS, DOC_KINDS, OVERVIEW_CARDS, PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout,
     PinnedCourse, PinnedDoc, PinnedFile, PinnedFolder, PinnedLink, PinnedModule, PinnedThing, PinnedTool, SmartFolder,
-    _card, delete_smart_folder, save_course_layout,
+    _card, _tab_item, delete_smart_folder, save_course_layout,
     move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_icon, set_course_select,
     set_courses_hidden, unpin,
 )
@@ -147,6 +147,7 @@ class LayoutRequest(BaseModel):
     cards: list[dict[str, Any]] | None = None
     hidden_links: list[str] | None = None
     links: list[dict[str, str]] | None = None
+    tab_items: list[dict[str, Any]] | None = None  # tabs you added (in `tabs` as "x:<id>")
 
 
 class NoteRequest(BaseModel):
@@ -736,17 +737,21 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def added(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [c for c in cards if c["type"] not in OVERVIEW_CARDS]
 
-    def all_tabs(tabs: list[str]) -> list[str]:
-        return [*tabs, *(x for x in COURSE_TABS if x not in tabs)]
+    def all_tabs(tabs: list[str], items: list[dict[str, Any]]) -> list[str]:
+        """Every tab, in this order: ones it leaves out at the end (tabs you added last)."""
+        added_tabs = [f"x:{i['id']}" for i in items]
+        known = [x for x in tabs if x in COURSE_TABS or x in added_tabs]
+        return [*known, *(x for x in COURSE_TABS if x not in known), *(x for x in added_tabs if x not in known)]
 
     def layout_of(course_id: int) -> dict[str, Any]:
         own, usual = own_layout(course_id), default_layout()
         return {
-            "tabs": usual["tabs"] if own.tabs is None else all_tabs(own.tabs),
+            "tabs": all_tabs(usual["tabs"] if own.tabs is None else own.tabs, own.tab_items),
             "hidden_tabs": usual["hidden_tabs"] if own.hidden_tabs is None else own.hidden_tabs,
             "cards": [*usual["cards"], *own.extra_cards] if own.cards is None else own.cards,
             "hidden_links": own.hidden_links,
             "links": own.links,
+            "tab_items": own.tab_items,
             "own_tabs": own.tabs is not None,  # arranged for the course (else: the default)
             "own_cards": own.cards is not None or bool(own.hidden_links),
         }
@@ -754,7 +759,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def settle(own: CourseLayout) -> CourseLayout:
         """Arranged just as the default has it: then it follows the default (as that changes too)."""
         usual = default_layout()
-        if own.tabs is not None and (all_tabs(own.tabs), set(own.hidden_tabs or [])) == (usual["tabs"], set(usual["hidden_tabs"])):
+        if own.tabs is not None and (all_tabs(own.tabs, own.tab_items), set(own.hidden_tabs or [])) == (
+                all_tabs(usual["tabs"], own.tab_items), set(usual["hidden_tabs"])):
             own = replace(own, tabs=None, hidden_tabs=None)
         if own.cards is not None and own.cards == [*usual["cards"], *added(own.cards)]:
             own = replace(own, cards=None, extra_cards=added(own.cards))
@@ -777,15 +783,29 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "cards don't make sense")
         if any(c["type"] in ADDED_CARDS and c["type"] != "syllabus" and not c.get("id") for c in cards if c):
             raise HTTPException(400, "an added card needs an id")
-        for tab in [*merged["tabs"], *merged["hidden_tabs"]]:
-            if tab not in COURSE_TABS:
+        items = [_tab_item(i) for i in merged["tab_items"]]
+        if None in items or len({i["id"] for i in items if i}) != len(items):
+            raise HTTPException(400, "tabs don't make sense")
+        for item in items:
+            if item and item["type"] == "link" and urlsplit(item["url"]).scheme not in ("http", "https"):
+                raise HTTPException(400, "links must be web addresses")
+        added_tabs = {f"x:{i['id']}" for i in items if i}
+        # A tab you added and then took away leaves the order with it; it isn't hidden, it's gone.
+        tabs = [x for x in merged["tabs"] if not x.startswith("x:") or x in added_tabs]
+        hidden = [x for x in merged["hidden_tabs"] if not x.startswith("x:")]
+        for tab in [*tabs, *hidden]:
+            if tab not in COURSE_TABS and tab not in added_tabs:
                 raise HTTPException(400, f"no tab {tab!r}")
         for link in merged["links"]:
             if urlsplit(link.get("url", "")).scheme not in ("http", "https"):
                 raise HTTPException(400, "links must be web addresses")
         own = own_layout(course_id)
+        if "tab_items" in changes:
+            own = replace(own, tab_items=[i for i in items if i])
         if "tabs" in changes or "hidden_tabs" in changes:
-            own = replace(own, tabs=merged["tabs"], hidden_tabs=merged["hidden_tabs"])
+            own = replace(own, tabs=tabs, hidden_tabs=hidden)
+        elif own.tabs is not None:
+            own = replace(own, tabs=[x for x in own.tabs if not x.startswith("x:") or x in added_tabs])
         if "cards" in changes:
             own = replace(own, cards=[c for c in cards if c], extra_cards=[])
         if "hidden_links" in changes:
@@ -797,8 +817,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.post("/courses/{course_id}/layout/reset/{part}")
     def reset_course_layout(course_id: int, part: str) -> dict[str, Any]:
-        """The course's tabs, or its overview, back to the default. Cards added to the overview stay
-        (after the default ones), and so do links added to it."""
+        """The course's tabs, or its overview, back to the default. What you added stays: tabs (after
+        the default ones), cards (after the default ones), and links."""
         own = own_layout(course_id)
         if part == "tabs":
             own = replace(own, tabs=None, hidden_tabs=None)
@@ -814,8 +834,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """The course's tabs, or its overview's built-in cards, become the default: for courses that
         don't arrange them for themselves. (Cards it added are its own: a folder, a note...)"""
         now = layout_of(course_id)
-        if part == "tabs":
-            replace(prefs(), tab_order=now["tabs"], hidden_tabs=now["hidden_tabs"]).save(prefs_path)
+        if part == "tabs":  # (the tabs it added are its own)
+            replace(prefs(), tab_order=[x for x in now["tabs"] if x in COURSE_TABS], hidden_tabs=now["hidden_tabs"]).save(prefs_path)
         elif part == "overview":
             shown = [c["type"] for c in now["cards"] if c["type"] in OVERVIEW_CARDS]
             replace(prefs(), overview_order=[*shown, *(x for x in OVERVIEW_CARDS if x not in shown)],

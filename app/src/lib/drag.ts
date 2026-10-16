@@ -4,10 +4,14 @@
 // Pointer events rather than HTML5 drag and drop, which on Windows fights the webview's own
 // handling of files dropped on the window, and leaves no say over what dragging looks like.
 
+/** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs):
+ * it shrinks out of the way of what shows there; dragged off its list to take it away: faded,
+ * with a minus. */
+export type DragOver = "zone" | "remove" | void;
+
 export interface DragHandlers {
   onStart?: () => void;
-  /** true: it's over a place that takes it (置顶): the copy shrinks out of the way of what shows there. */
-  onMove?: (x: number, y: number) => boolean | void;
+  onMove?: (x: number, y: number) => DragOver;
   onDrop?: (x: number, y: number) => void; // released after a drag
   onCancel?: () => void; // Escape, or the window lost focus
 }
@@ -43,7 +47,9 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       h.onStart?.();
     }
     scroller?.update(ev.clientX, ev.clientY);
-    ghost.compact(!!h.onMove?.(ev.clientX, ev.clientY));
+    const over = h.onMove?.(ev.clientX, ev.clientY);
+    ghost.compact(over === "zone");
+    ghost.removing(over === "remove");
     ghost.move(ev.clientX, ev.clientY);
   };
   const up = (ev: PointerEvent) => {
@@ -89,6 +95,7 @@ class Ghost {
   private grabbed: [number, number]; // dx, dy as grabbed
   private width: number;
   private small = false;
+  private badge: HTMLElement | null = null; // the minus: let go, and it's taken away
 
   constructor(source: HTMLElement, x: number, y: number) {
     const r = source.getBoundingClientRect();
@@ -139,6 +146,27 @@ class Ghost {
     this.el.style.width = `${on ? Math.min(this.width, 220) : this.width}px`;
     this.el.style.opacity = on ? "0.85" : "0.95";
     [this.dx, this.dy] = on ? [-12, -10] : this.grabbed;
+  }
+
+  /** Off its list: let go and it's taken away (unpinned, removed). */
+  removing(on: boolean) {
+    if (on === !!this.badge) return;
+    if (on) {
+      const b = document.createElement("span");
+      b.textContent = "−";
+      Object.assign(b.style, {
+        position: "absolute", top: "4px", right: "4px", width: "18px", height: "18px", borderRadius: "9px",
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", lineHeight: "1",
+        background: "var(--danger)", color: "#fff", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.3)",
+      });
+      this.el.appendChild(b);
+      this.badge = b;
+      this.el.style.opacity = "0.6";
+    } else {
+      this.badge?.remove();
+      this.badge = null;
+      this.el.style.opacity = this.small ? "0.85" : "0.95";
+    }
   }
 
   remove() {

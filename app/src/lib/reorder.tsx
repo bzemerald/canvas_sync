@@ -1,11 +1,13 @@
 // Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards.
 // What's dragged follows the pointer (see drag.ts); in a row or a column the others slide
 // aside to open a gap where it will land; among cards, the one it will take the place of is
-// outlined. Things that can be pinned can also be dropped on 置顶 (see pinZone.ts).
+// outlined. Things that can be pinned can also be dropped on 置顶 or a course's tabs (see
+// pinZone.ts); things you put in a list (pins, tabs you added) can be dragged off it to take
+// them away.
 import { useRef, useState } from "react";
 import type { PinTarget } from "./api";
-import { trackDrag } from "./drag";
-import { pinZones } from "./pinZone";
+import { trackDrag, type DragOver } from "./drag";
+import { pinZones, type ZoneId } from "./pinZone";
 
 /** "y": a column; "x": a row; "cards": anything (columns of cards): dropped on a card, an item
  * takes its place. */
@@ -14,25 +16,31 @@ export type Axis = "x" | "y" | "cards";
 /** Where a dragged item would land, relative to one item (only "onto", for cards). */
 export type Mark = "onto" | null;
 
-export function useReorder(
-  count: number,
-  onMove: (from: number, to: number) => void,
-  axis: Axis = "y",
-  pin?: (index: number) => PinTarget | null, // what dropping it on 置顶 pins
-) {
+export interface ReorderOptions {
+  pin?: (index: number) => PinTarget | null; // what dropping it on 置顶 (or a course's tabs) adds there
+  zone?: ZoneId; // the drop zone this list is: its own items moving in it aren't drops on it
+  remove?: (index: number) => (() => void) | null; // dragged well off the list and let go: this takes it away
+}
+
+const OFF = 28; // px past the list's edges: dragged off it
+
+export function useReorder(count: number, onMove: (from: number, to: number) => void, axis: Axis = "y", options: ReorderOptions = {}) {
   const elements = useRef(new Map<number, HTMLElement>());
   const [drag, setDrag] = useState<{ from: number; target: number } | null>(null);
   const moveRef = useRef(onMove);
   moveRef.current = onMove;
-  const pinRef = useRef(pin);
-  pinRef.current = pin;
+  const opts = useRef(options);
+  opts.current = options;
 
   const handle = (index: number) => ({
     onPointerDown: (e: React.PointerEvent) => {
       if (e.button !== 0 || (e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]")) return;
       const source = elements.current.get(index);
       if (!source) return;
-      const target = pinRef.current?.(index) ?? null;
+      const target = opts.current.pin?.(index) ?? null;
+      const zone = opts.current.zone;
+      const remove = opts.current.remove?.(index) ?? null;
+      let removing = false;
       const shifts = new Map<number, number>(); // px each item is moved aside, now
       let size = 0; // the gap to open: the dragged item's length, with the space after it
       let at = index; // insertion point (0..count) for rows/columns; the card to take for cards
@@ -42,6 +50,7 @@ export function useReorder(
       // spots, and they're mid-animation half the time), kept in step with scrolling.
       const measure = () => Array.from({ length: count }, (_, i) => elements.current.get(i)?.getBoundingClientRect() ?? null);
       let base: (DOMRect | null)[] = [];
+      let list: DOMRect | null = null; // the list's box when the drag began, for "off it"
       const box = scrollParent(source);
       const scrolled = () => ({ x: box?.scrollLeft ?? 0, y: box?.scrollTop ?? 0 });
       let from0 = scrolled();
@@ -104,6 +113,7 @@ export function useReorder(
       trackDrag(e, source, {
         onStart: () => {
           base = measure();
+          list = source.parentElement?.getBoundingClientRect() ?? null;
           from0 = scrolled();
           const rs = rects();
           const me = rs[index];
@@ -118,23 +128,30 @@ export function useReorder(
           source.style.opacity = axis === "cards" ? "0.35" : "0";
           setDrag({ from: index, target: index });
         },
-        onMove: (x, y) => {
-          if (pinZones.update(x, y, !!target)) {
-            // Over 置顶: it'll be pinned, not moved; the list closes up again.
+        onMove: (x, y): DragOver => {
+          const elsewhere = pinZones.update(x, y, target, zone);
+          const off = !elsewhere && !!remove && !!list &&
+            (x < list.left - OFF || x > list.right + OFF || y < list.top - OFF || y > list.bottom + OFF);
+          if (elsewhere || off) {
+            // Over 置顶 (or a course's tabs): it'll be added there and stay here, so its gap stays
+            // open. Off the list: it'll be taken away, so the ones after it close the gap.
+            removing = off;
             at = index;
-            slide(index);
+            slide(off && axis !== "cards" ? count : index);
             setDrag({ from: index, target: index });
-            return true;
+            return elsewhere ? "zone" : "remove";
           }
           const next = landing(x, y);
-          if (next === at) return;
+          if (next === at && !removing) return;
+          removing = false; // (back over the list)
           at = next;
           slide(axis === "cards" ? index : at);
           setDrag({ from: index, target: at });
         },
         onDrop: (x, y) => {
           reset();
-          if (pinZones.drop(x, y, target)) return;
+          if (pinZones.drop(x, y, target, zone)) return;
+          if (removing && remove) return remove();
           const to = axis === "cards" ? at : at > index ? at - 1 : at;
           if (to !== index) moveRef.current(index, to);
         },
