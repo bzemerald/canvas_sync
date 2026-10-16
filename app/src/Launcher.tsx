@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ContentDivider, ResultBody, fileManager, firstContentMatch, hitKey, isMac } from "./components/Result";
+import { ContentDivider, ResultBody, firstContentMatch, hitKey, isMac } from "./components/Result";
 import { openCanvas, openHit, search, type Hit } from "./lib/api";
 import { useSearch } from "./lib/useSearch";
 import { friendly } from "./lib/errors";
@@ -40,7 +40,13 @@ export function Launcher() {
       await emitTo("main", "open-doc", { course_id: hit.course_id, kind: hit.kind, doc_id: hit.doc_id });
       await invoke("show_main");
       return;
-    } else await openHit(hit, how === "reveal");
+    } else if (how === "reveal") {
+      // Its folder, in the app (not Finder).
+      if (hit.path) await emitTo("main", "show-path", { path: hit.path });
+      else if (hit.kind !== "file" && hit.doc_id) await emitTo("main", "open-doc", { course_id: hit.course_id, kind: hit.kind, doc_id: hit.doc_id });
+      await invoke("show_main");
+      return;
+    } else await openHit(hit);
     await hide();
   };
 
@@ -106,7 +112,7 @@ export function Launcher() {
 
         <footer className="flex gap-4 border-t border-line px-4 py-2 text-xs text-muted">
           <span><Key>↵</Key> {t("打开")}</span>
-          <span><Key>{mod}↵</Key> {t("在 {app} 中显示", { app: fileManager })}</span>
+          <span><Key>{mod}↵</Key> {t("在文件夹中显示")}</span>
           <span><Key>{mod}⇧↵</Key> {t("在 Canvas 中打开")}</span>
           <span className="ml-auto"><Key>{mod}O</Key> {t("主窗口")}</span>
           <span><Key>esc</Key> {t("关闭")}</span>

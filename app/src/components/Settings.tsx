@@ -7,7 +7,7 @@ import type { AccountInfo, Prefs, SyncState } from "../lib/api";
 import { shortDate } from "../lib/dates";
 import { friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
-import { fileManager, shortcut } from "../lib/keys";
+import { shortcut } from "../lib/keys";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { SignInForm, inputClass } from "./SignIn";
@@ -16,10 +16,11 @@ const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
 ];
 
-export function Settings({ sync, onSync, onAccount }: {
+export function Settings({ sync, onSync, onAccount, onShowFiles }: {
   sync: SyncState | null;
   onSync: () => void;
   onAccount: (a: AccountInfo) => void; // signed in or out
+  onShowFiles: () => void; // the sync folder, in the app
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [check, setCheck] = useState<{ ok: boolean; error?: string } | null>(null);
@@ -117,7 +118,7 @@ export function Settings({ sync, onSync, onAccount }: {
               <Row label={t("同步文件夹")} hint={t("课程文件都在这里。")}>
                 <span className="flex min-w-0 items-center gap-2">
                   <code className="min-w-0 truncate text-xs" title={account.root ?? ""}>{account.root}</code>
-                  <button title={t("在 {app} 中显示", { app: fileManager })} onClick={() => void api.openPath("", { reveal: false })}
+                  <button title={t("在应用中查看全部文件")} onClick={onShowFiles}
                     className="shrink-0 rounded p-1 text-muted hover:bg-chip hover:text-fg">
                     <FolderOpen className="size-4" />
                   </button>

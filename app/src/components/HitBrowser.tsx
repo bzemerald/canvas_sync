@@ -5,19 +5,20 @@ import { ExternalLink, FolderOpen } from "lucide-react";
 import { useMemo, useRef } from "react";
 import * as api from "../lib/api";
 import type { Hit } from "../lib/api";
-import { fileCommand, fileManager } from "../lib/keys";
+import { fileCommand } from "../lib/keys";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import type { ViewMode } from "./FileBrowser";
 import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
 import { Thumb } from "./Thumb";
 import { t } from "../lib/i18n";
 
-export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onDelete }: {
+export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, onMenu, onDelete }: {
   hits: Hit[];
   mode: ViewMode;
   showCourse: boolean;
   header?: React.ReactNode; // shown above the items, inside the scroll area
   onOpen: (hit: Hit) => void; // a file opens; an announcement, assignment or page shows in the app
+  onReveal: (hit: Hit) => void; // a file: show it in its folder, in the app
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void; // only files that are on disk are passed
 }) {
@@ -122,7 +123,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onMenu, onD
               </div>
               <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100">
                 {h.path && (
-                  <IconButton title={t("在 {app} 中显示", { app: fileManager })} onClick={() => void api.openHit(h, true)}>
+                  <IconButton title={t("在文件夹中显示")} onClick={() => onReveal(h)}>
                     <FolderOpen className="size-4" />
                   </IconButton>
                 )}

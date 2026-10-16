@@ -243,14 +243,20 @@ export function MainWindow() {
     h.kind !== "file" && h.doc_id ? openDoc(h.course_id, h.kind as DocKind, h.doc_id) : void api.openHit(h);
   const overview = useOverview(view.kind === "course" ? view.id : null, version, seenTick);
 
-  // The search window asks us to show an announcement / assignment / page.
+  // The search window asks us to show an announcement / assignment / page, or a file in its folder.
   const openDocLater = useRef(openDoc);
   openDocLater.current = openDoc;
+  const goPathLater = useRef(goPath);
+  goPathLater.current = goPath;
   useEffect(() => {
     const off = listen<{ course_id: number; kind: DocKind; doc_id: string }>("open-doc", ({ payload }) =>
       openDocLater.current(payload.course_id, payload.kind, payload.doc_id),
     );
-    return () => void off.then((f) => f());
+    const off2 = listen<{ path: string }>("show-path", ({ payload }) => goPathLater.current(parentOf(payload.path), payload.path));
+    return () => {
+      void off.then((f) => f());
+      void off2.then((f) => f());
+    };
   }, []);
   const smart = pinned.filter((p): p is PinnedItem & { type: "smart" } => p.type === "smart");
   const folder = view.kind === "smart" ? smart.find((f) => f.name === view.name) ?? null : null;
@@ -834,7 +840,12 @@ export function MainWindow() {
         )}
 
         {view.kind === "settings" ? (
-          <Settings sync={sync} onSync={() => void startSync({}, t("全部课程"))} onAccount={(a) => (setAccount(a), refresh())} />
+          <Settings
+            sync={sync}
+            onSync={() => void startSync({}, t("全部课程"))}
+            onAccount={(a) => (setAccount(a), refresh())}
+            onShowFiles={() => go({ kind: "browse", path: "" })}
+          />
         ) : view.kind === "course" && course && !searching && view.tab === "overview" ? (
           <CourseOverview
             course={course}
@@ -842,6 +853,7 @@ export function MainWindow() {
             onOpen={(kind, id) => openDoc(course.id, kind, id)}
             onTab={(t) => go({ ...view, tab: t, item: undefined })}
             onSeen={seenChanged}
+            onShowFile={(p) => goPath(parentOf(p), p)}
             cards={cards.order}
             hiddenCards={cards.hidden}
             onArrange={(order, hidden) => {
@@ -912,6 +924,7 @@ export function MainWindow() {
             scope={scopeNote}
             showCourse={!course}
             onOpen={openHere}
+            onReveal={(h) => h.path && goPath(parentOf(h.path), h.path)}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
             onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
@@ -1059,12 +1072,13 @@ function Notice({ message, onDone }: { message: string | null; onDone: () => voi
   );
 }
 
-function Results({ view, mode, query, results, scope, showCourse, onOpen, onMenu, onDelete }: {
+function Results({ view, mode, query, results, scope, showCourse, onOpen, onReveal, onMenu, onDelete }: {
   view: View;
   mode: ViewMode;
   query: string;
   results: { hits: Hit[]; error: string | null; loading: boolean };
   scope?: { text: string; action: string; onAction: () => void } | null;
+  onReveal: (hit: Hit) => void;
   showCourse: boolean;
   onOpen: (hit: Hit) => void;
   onMenu: (hits: Hit[], x: number, y: number) => void;
@@ -1099,7 +1113,7 @@ function Results({ view, mode, query, results, scope, showCourse, onOpen, onMenu
       {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
     </>
   );
-  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onMenu={onMenu} onDelete={onDelete} />;
+  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} />;
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {

@@ -11,7 +11,6 @@ import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, 
 import { usePref } from "../lib/prefs";
 import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
-import { fileManager } from "../lib/keys";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
@@ -220,7 +219,7 @@ export function arrangeCards(saved: string[]): OverviewCard[] {
 /** What a course page opens with: cards for what's due, what was said, this week's module,
  * what's new in its files, grades, and its tools. Drag a card by its title to move it; choose
  * which to show under 自定义 (or right-click a title). The same in every course. */
-export function CourseOverview({ course, overview, cards, hiddenCards, onArrange, onMenu, onOpen, onTab, onSeen, onMarkSeen }: {
+export function CourseOverview({ course, overview, cards, hiddenCards, onArrange, onMenu, onOpen, onTab, onSeen, onShowFile, onMarkSeen }: {
   course: Course;
   overview: Overview | null;
   cards: OverviewCard[];
@@ -230,6 +229,7 @@ export function CourseOverview({ course, overview, cards, hiddenCards, onArrange
   onOpen: (kind: DocKind, id: string) => void;
   onTab: (t: CourseTab) => void;
   onSeen: () => void;
+  onShowFile: (path: string) => void; // in its folder, in the app
   onMarkSeen: (kinds: ("announcement" | "assignment" | "file")[]) => void;
 }) {
   const { launch, pending } = useLaunch(course.id);
@@ -329,11 +329,11 @@ export function CourseOverview({ course, overview, cards, hiddenCards, onArrange
             {f.updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("已更新")}</span>}
             <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(f.date, false)}</span>
             <button
-              title={t("在 {app} 中显示", { app: fileManager })}
-              aria-label={t("在 {app} 中显示", { app: fileManager })}
+              title={t("在文件夹中显示")}
+              aria-label={t("在文件夹中显示")}
               onClick={(e) => {
                 e.stopPropagation();
-                void api.openPath(f.path, { reveal: true });
+                onShowFile(f.path);
               }}
               className="shrink-0 rounded p-0.5 text-muted hover:text-fg"
             >
