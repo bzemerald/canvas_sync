@@ -81,6 +81,18 @@ export function ofCourse(t: Thing, course: { id: number; dir: string }): boolean
   }
 }
 
+/** What each of a course's places has of its own (as places.py has it): hidden, never taken away.
+ * The rest was put there, and can be taken away again. */
+const OWN_VIEWS: Record<"tabs" | "overview" | "links", ViewName[]> = {
+  tabs: ["overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages"],
+  overview: ["assignments", "announcements", "modules", "files", "grades", "tools", "syllabus"],
+  links: ["syllabus", "canvas"], // (and the course's tools)
+};
+export function ownIn(place: "tabs" | "overview" | "links", t: Thing, course: number): boolean {
+  if (courseOf(t) !== course) return false;
+  return t.type === "view" ? OWN_VIEWS[place].includes(t.view) : place === "links" && t.type === "tool";
+}
+
 /** Things that open somewhere else when you open them: a file in its app; a tool, a link or the
  * course on Canvas in the browser; a course on its own page. A tab of one opens it. */
 export const opensElsewhere = (t: Thing) =>

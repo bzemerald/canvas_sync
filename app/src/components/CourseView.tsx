@@ -14,8 +14,8 @@ import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ViewName, changed, ofCourse, opensElsewhere, putAt, refill, same, slotIndex, thingKey, thingOfItem,
-  without,
+  type Shown, type Thing, type ViewName, changed, ofCourse, opensElsewhere, ownIn, putAt, refill, same, slotIndex, thingKey,
+  thingOfItem, without,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
@@ -113,8 +113,8 @@ export function CourseTabs({
   const fresh: Partial<Record<ViewName, number>> = {
     announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages,
   };
-  const isOwn = (e: Thing) => e.type === "view" && e.course === course.id;
-  const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has((e as Thing & { type: "view" }).view))));
+  const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
+  const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
   const extra = !loaded || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
   const name = (e: Shown) => thingName(e, things.courses, "tab");
 
@@ -191,9 +191,7 @@ export function CourseTabs({
     >
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <span className="max-w-48 truncate">{name(e)}</span>
-      {isOwn(e) && !!fresh[(e as Thing & { type: "view" }).view] && (
-        <Count n={fresh[(e as Thing & { type: "view" }).view]!} label={t("{n} 个新的", { n: fresh[(e as Thing & { type: "view" }).view]! })} />
-      )}
+      {isOwn(e) && !!fresh[e.view] && <Count n={fresh[e.view]!} label={t("{n} 个新的", { n: fresh[e.view]! })} />}
       {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
     </button>
   );

@@ -14,7 +14,7 @@ import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ThingOf, changed, courseOf, isView, ofCourse, putAt, refill, slotIndex, thingKey, thingOfHit, view,
+  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, slotIndex, thingKey, thingOfHit, view,
   without,
 } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
@@ -30,10 +30,6 @@ import { ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings }
 
 const GAP = 16; // px between cards
 type Kinds = ("announcement" | "assignment" | "file")[];
-
-/** 工具与链接's own: the course's tools, its syllabus, Canvas (they're hidden, not taken away). */
-const ownLink = (e: Thing, course: number) =>
-  courseOf(e) === course && (e.type === "tool" || isView(e, "syllabus") || isView(e, "canvas"));
 
 /** Things with a card of their own; the rest (a tool, a link, a course...) go into 工具与链接. */
 const hasCard = (e: Thing) =>
@@ -111,7 +107,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   }, [fresh, grid, heights]);
 
   const all = cards ?? [];
-  const isOwn = (e: Thing) => e.type === "view" && e.course === course.id;
+  const isOwn = (e: Thing) => ownIn("overview", e, course.id);
   const available = (e: Thing) =>
     !isView(e) || !isOwn(e) ? true
       : e.view === "modules" ? !!overview?.current_modules.length
@@ -183,7 +179,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     return [
       { label: t("重命名…"), onSelect: () => setRenaming({ place, entry: e }) },
       ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, place === "overview" ? "card" : "row") }), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
-      (place === "overview" ? isOwn(e) : ownLink(e, course.id))
+      ownIn(place, e, course.id)
         ? { label: t("隐藏“{name}”", { name }), onSelect: () => onArrange(place, changed(list, e, { hidden: true })) }
         : { label: place === "overview" ? t("删除卡片") : t("删除链接"), danger: true, onSelect: () => takeAway(place, e, name) },
     ];
@@ -458,7 +454,7 @@ function LinksList({ course, links, shown, menu, onArrange, onTakeAway, onAdd }:
 }) {
   const things = useThings();
   const box = useRef<HTMLDivElement>(null);
-  const own = (e: Thing) => ownLink(e, course.id);
+  const own = (e: Thing) => ownIn("links", e, course.id);
   const slotAt = (x: number, y: number) => {
     const rows = Array.from(box.current?.querySelectorAll<HTMLElement>(":scope > [data-link]") ?? []);
     const i = rows.findIndex((el) => {
@@ -518,7 +514,7 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   const menu = (e: Shown): MenuItem[] => sections(things.ways(e), [
     { label: t("重命名…"), onSelect: () => setRenaming(e) },
     ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
-    ownLink(e, course.id)
+    ownIn("links", e, course.id)
       ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
       : { label: t("删除链接"), danger: true, onSelect: () => takeAway(e) },
   ], [pinItem(things, e)], links.filter((x) => x.hidden).map((x) => ({
