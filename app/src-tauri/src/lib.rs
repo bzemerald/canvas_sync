@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,8 @@ const LAUNCHER: &str = "launcher";
 /// Carries what's being dragged past the main window's edge, where the page can't draw it.
 const GHOST: &str = "ghost";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
+/// The main window was closed while full screen: hide it once it has left full screen.
+static HIDE_AFTER_FULLSCREEN: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Backend {
@@ -152,6 +155,34 @@ fn toggle_launcher(app: &AppHandle) {
     }
 }
 
+/// Hides the main window when it has finished leaving full screen, if it was closed while
+/// full screen. (Its Resized events come as leaving starts, when hiding is too early: AppKit
+/// brings the window back when the animation ends.)
+#[cfg(target_os = "macos")]
+fn hide_after_full_screen(app: &AppHandle) {
+    use objc2_app_kit::NSWindowDidExitFullScreenNotification;
+    use objc2_foundation::NSNotificationCenter;
+    let Some(w) = app.get_webview_window("main") else { return };
+    let Ok(ns_window) = w.ns_window() else { return };
+    let app = app.clone();
+    let block = block2::RcBlock::new(move |_| {
+        if HIDE_AFTER_FULLSCREEN.swap(false, Ordering::Relaxed) {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.hide();
+            }
+        }
+    });
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(NSWindowDidExitFullScreenNotification),
+            Some(&*(ns_window as *const objc2::runtime::AnyObject)),
+            None,
+            &block,
+        )
+    };
+    std::mem::forget(observer); // observes for the app's lifetime
+}
+
 fn launcher_shortcut() -> Shortcut {
     let modifier = if cfg!(target_os = "macos") { Modifiers::SUPER } else { Modifiers::CONTROL };
     Shortcut::new(Some(modifier | Modifiers::SHIFT), Code::Space)
@@ -173,6 +204,8 @@ pub fn run() {
         )
         .setup(|app| {
             start_backend(app.handle());
+            #[cfg(target_os = "macos")]
+            hide_after_full_screen(app.handle());
             if let Some(w) = app.get_webview_window(GHOST) {
                 let _ = w.set_ignore_cursor_events(true); // the pointer goes through, to the drag
             }
@@ -192,7 +225,14 @@ pub fn run() {
             ("main", WindowEvent::CloseRequested { api, .. }) => {
                 if cfg!(target_os = "macos") {
                     api.prevent_close();
-                    let _ = window.hide();
+                    // Hiding a full-screen window leaves its Space behind, black: leave full
+                    // screen first, and hide when that's done (hide_after_full_screen).
+                    if window.is_fullscreen().unwrap_or(false) {
+                        HIDE_AFTER_FULLSCREEN.store(true, Ordering::Relaxed);
+                        let _ = window.set_fullscreen(false);
+                    } else {
+                        let _ = window.hide();
+                    }
                 } else {
                     window.app_handle().exit(0);
                 }
