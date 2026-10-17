@@ -42,21 +42,27 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
           {hit.date && <span className="shrink-0">· {formatDate(hit.date)}</span>}
           {folder && <span className="truncate">· {folder}</span>}
         </div>
-        {hit.snippet.length > 0 && (
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-fg-soft">
-            {hit.snippet.map((s, i) =>
-              s.match ? (
-                <mark key={i} className="rounded-sm bg-highlight px-0.5 text-fg">
-                  {s.text}
-                </mark>
-              ) : (
-                <span key={i}>{s.text}</span>
-              ),
-            )}
-          </p>
-        )}
+        <Snippet hit={hit} />
       </div>
     </div>
+  );
+}
+
+/** The text around what matched, the match marked. */
+export function Snippet({ hit }: { hit: Hit }) {
+  if (!hit.snippet.length) return null;
+  return (
+    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-fg-soft">
+      {hit.snippet.map((s, i) =>
+        s.match ? (
+          <mark key={i} className="rounded-sm bg-highlight px-0.5 text-fg">
+            {s.text}
+          </mark>
+        ) : (
+          <span key={i}>{s.text}</span>
+        ),
+      )}
+    </p>
   );
 }
 

@@ -7,6 +7,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
+import { FoundSearch, type How, actionsFor, canvasUrl, useCatalog } from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
 } from "./components/CourseView";
@@ -28,6 +29,7 @@ import {
 import * as api from "./lib/api";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
+import type { Found } from "./lib/find";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
@@ -292,8 +294,10 @@ export function MainWindow() {
       .finally(() => setOpening((k) => (k === key ? null : k)));
   };
   /** Anything, wherever it opens: a file in its app; a tool, a link, the course on Canvas in the
-   * browser; a search as a smart folder; the rest in its course's page. */
-  const open = (x: Thing) => {
+   * browser; a search as a smart folder; the rest in its course's page. Noted, with what had been
+   * typed in search (`query`): what you open most and lately comes first there. */
+  const open = (x: Thing, query = "") => {
+    api.noteOpened(thingKey(x), query);
     if (x.type === "course") {
       const c = courseById(x.course);
       if (c) openCourse(c);
@@ -312,20 +316,20 @@ export function MainWindow() {
   };
   const overview = useOverview(cv ? cv.id : null, version, seenTick);
 
-  // The search window asks us to show an announcement / assignment / page, or a file in its folder.
+  // The search window asks us to open something (a course's view, an announcement…), to show a
+  // file in its folder, or to do something (sync, settings).
   const openLater = useRef(open);
   openLater.current = open;
   const goPathLater = useRef(goPath);
   goPathLater.current = goPath;
+  const runLater = useRef<(id: string) => void>(() => {});
   useEffect(() => {
-    const off = listen<{ course_id: number; kind: api.DocKind; doc_id: string }>("open-doc", ({ payload }) =>
-      openLater.current(payload.kind === "syllabus" ? viewOf(payload.course_id, "syllabus") : { type: "doc", course: payload.course_id, kind: payload.kind, id: payload.doc_id }),
-    );
-    const off2 = listen<{ path: string }>("show-path", ({ payload }) => goPathLater.current(parentOf(payload.path), payload.path));
-    return () => {
-      void off.then((f) => f());
-      void off2.then((f) => f());
-    };
+    const offs = [
+      listen<{ thing: Thing; query: string }>("open-thing", ({ payload }) => openLater.current(payload.thing, payload.query)),
+      listen<{ path: string }>("show-path", ({ payload }) => goPathLater.current(parentOf(payload.path), payload.path)),
+      listen<{ id: string }>("run-action", ({ payload }) => runLater.current(payload.id)),
+    ];
+    return () => offs.forEach((off) => void off.then((f) => f()));
   }, []);
   // A saved search: shown as a smart folder, or as a course's tab.
   const searched = view.kind === "search" ? view.search : tab?.type === "search" ? tab : null;
@@ -390,6 +394,36 @@ export function MainWindow() {
 
   // -- actions --------------------------------------------------------------------------
   const signedOut = account !== null && !account.signed_in;
+  /** What search can do (see Found.tsx): sync everything or a course, settings, a smart folder. */
+  const runAction = (id: string) => {
+    const c = id.startsWith("sync:") ? courseById(Number(id.slice(5))) : null;
+    if (id === "sync") void startSync({}, t("全部课程"));
+    else if (c) void startSync({ paths: [c.dir] }, c.label);
+    else if (id === "settings") go({ kind: "settings" });
+    else if (id === "smart-folder") setEditing({ folder: null });
+  };
+  runLater.current = runAction;
+  /** Something search found: opened (↵), shown in its folder (⌘↵), or on Canvas (⌘⇧↵). */
+  const openFound = (f: Found | undefined, how: How) => {
+    if (!f) return;
+    if (f.type === "action") {
+      api.noteOpened(f.key, query);
+      return runAction(f.action.id);
+    }
+    const path = f.type === "hit" ? f.hit.path : f.entry.type === "file" ? f.entry.path : null;
+    if (how === "reveal" && path) return goPath(parentOf(path), path);
+    if (f.type === "hit") {
+      if (how === "canvas") return void api.openCanvas(f.hit);
+      const x = thingOfHit(f.hit);
+      return x ? open(x, query) : void api.openHit(f.hit);
+    }
+    if (how === "canvas") {
+      const url = canvasUrl(f.entry);
+      if (url) void api.openUrl(url).then(() => api.noteOpened(f.key, query));
+      return;
+    }
+    open(thingOf(f.entry), query);
+  };
   const startSync = async (scope: Scope, label: string) => {
     if (signedOut) return go({ kind: "settings" }); // sign in first
     setSyncLabel(label);
@@ -1039,12 +1073,6 @@ export function MainWindow() {
           )}
         </header>
 
-        {view.kind === "home" && (
-          <div className="border-b border-line px-6 py-3">
-            <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />
-          </div>
-        )}
-
         {cv && course && tab && (
           <CourseTabs
             course={course}
@@ -1061,7 +1089,17 @@ export function MainWindow() {
           />
         )}
 
-        {view.kind === "settings" ? (
+        {view.kind === "home" ? (
+          <SearchHome
+            input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />}
+            query={query}
+            hits={results.hits}
+            version={version}
+            courses={courseList}
+            onOpen={openFound}
+            props={(f) => (f.type === "hit" ? { onContextMenu: (ev: React.MouseEvent) => (ev.preventDefault(), openMenu(hitsMenu([f.hit]), ev.clientX, ev.clientY)) } : {})}
+          />
+        ) : view.kind === "settings" ? (
           <Settings
             sync={sync}
             onSync={() => void startSync({}, t("全部课程"))}
@@ -1095,7 +1133,7 @@ export function MainWindow() {
         ) : (
           <Results
             view={view}
-            mode={view.kind === "home" ? "list" : mode}
+            mode={mode}
             query={query}
             results={results}
             asked={!!searched || query.trim() !== ""}
@@ -1377,11 +1415,29 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
         </div>
       )}
       {error && <p className="px-2 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
-      {!error && !asked && view.kind === "home" && <Welcome />}
       {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
     </>
   );
   return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} />;
+}
+
+/** 搜索 in the main window: everything by name, and what the index finds (see Found.tsx). What
+ * search knows is loaded again each time it's shown (what you opened since counts). */
+function SearchHome({ input, query, hits, version, courses, onOpen, props }: {
+  input: React.ReactNode;
+  query: string;
+  hits: Hit[];
+  version: number;
+  courses: Course[];
+  onOpen: (f: Found | undefined, how: How) => void;
+  props: (f: Found) => object;
+}) {
+  const { catalog, usage, names } = useCatalog([version], courses);
+  const actions = useMemo(() => actionsFor(names), [names]);
+  return (
+    <FoundSearch input={input} query={query} hits={hits} catalog={catalog} usage={usage} names={names} courses={courses}
+      actions={actions} onOpen={onOpen} props={props} welcome={<Welcome />} />
+  );
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {

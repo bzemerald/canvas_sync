@@ -275,6 +275,31 @@ export function search(
   return api(`/search?${params}`);
 }
 
+/** Something search can go to by name (src/canvas_sync/catalog.py): a thing, what Canvas or the
+ * sync folder calls it (`name`; null: what the app names), a name you gave it (`title`), the
+ * other names it answers to, the course it's in; when it's from, and for an assignment when it's
+ * due and where you are with it. `canvas_url`: where it is on Canvas. */
+export type CatalogEntry = Shown & {
+  name: string | null;
+  title: string;
+  aliases: string[];
+  in_course: number | null;
+  term?: string; // a course's
+  date?: string | null;
+  due?: string | null;
+  status?: SubmissionStatus;
+  text?: string; // a note's first line
+  canvas_url?: string;
+};
+/** What you open: how often and when last, by thingKey; and what you'd typed in search for what. */
+export interface Usage {
+  opened: Record<string, { count: number; last: string }>;
+  picks: { query: string; key: string; count: number; last: string }[];
+}
+export const catalog = () => api<{ things: CatalogEntry[] } & Usage>("/catalog");
+/** It was opened (having typed `query` in search): what you open most, and lately, comes first. */
+export const noteOpened = (key: string, query = "") => void post("/opened", { key, query }).catch(() => {});
+
 export const courses = () => api<Course[]>("/courses");
 export const overview = (course: number) => api<Overview>(`/courses/${course}/overview`);
 export const modules = (course: number) => api<Module[]>(`/courses/${course}/modules`);

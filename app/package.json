@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check:i18n": "node scripts/check-i18n.mjs"
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -17,6 +18,7 @@
     "cmdk": "^1.1.1",
     "dompurify": "^3.4.17",
     "lucide-react": "^1.57.0",
+    "match-sorter": "8.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -29,6 +31,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "5.0.3"
   }
 }
