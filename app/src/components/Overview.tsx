@@ -12,7 +12,8 @@ import type { Course, DocKind, Hit, Module, Overview } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
-import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
+import { useFlip } from "../lib/flip";
+import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
 import {
   type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, slotIndex, thingKey, thingOfHit, view,
@@ -30,6 +31,56 @@ import { Thumb } from "./Thumb";
 import { ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 
 const GAP = 16; // px between cards
+
+/** Which column each of a course's cards is in, as you put them (on this device, like other view
+ * preferences: the order is the course's, in config.toml). */
+const columnsPref = (course: number) => `pref:overview-columns:${course}`;
+function loadColumns(course: number): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(columnsPref(course)) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+function saveColumns(course: number, columns: Record<string, number>) {
+  try {
+    localStorage.setItem(columnsPref(course), JSON.stringify(columns));
+  } catch {
+    /* not remembered */
+  }
+}
+const DROP = "drop"; // the slot that opens for something dropped from elsewhere (as a card key)
+const DROP_HEIGHT = 96;
+
+/** Cards in order, each down the column it's in (`was`: where you put it), so that a card put in
+ * or taken out moves only the ones below it in its column; a card new here down the shortest (so
+ * the columns come out about even). `put`: cards that go in a given column (what's dragged: where
+ * the pointer is). Each one's column and top, by key; where each column ends; how tall it all is. */
+function stack(keys: string[], heights: Record<string, number>, columns: number, was: Record<string, number> = {}, put: Record<string, number> = {}) {
+  const tops = Array.from({ length: columns }, () => 0);
+  const spots: Record<string, { col: number; top: number }> = {};
+  for (const k of keys) {
+    const want = put[k] ?? was[k];
+    const col = want !== undefined && want < columns ? want : tops.indexOf(Math.min(...tops));
+    spots[k] = { col, top: tops[col] };
+    tops[col] += (k === DROP ? DROP_HEIGHT : heights[k] ?? 0) + GAP;
+  }
+  return { spots, ends: tops, height: Math.max(0, Math.max(...tops) - GAP) };
+}
+
+/** Of boxes, the one (x, y) is in, or nearest; between two it's in (a short card's spot above
+ * a tall one's), the one whose middle is nearest. */
+function nearest(boxes: { left: number; top: number; width: number; height: number }[], x: number, y: number): number {
+  let best = -1;
+  let score = [Infinity, Infinity];
+  boxes.forEach((b, i) => {
+    const dx = Math.max(b.left - x, 0, x - b.left - b.width);
+    const dy = Math.max(b.top - y, 0, y - b.top - b.height);
+    const s = [dx * dx + dy * dy, Math.abs(y - b.top - b.height / 2) + Math.abs(x - b.left - b.width / 2)];
+    if (s[0] < score[0] || (s[0] === score[0] && s[1] < score[1])) [best, score] = [i, s];
+  });
+  return best;
+}
 const LOADING = "px-2 py-3 text-sm"; // (as Empty)
 type Kinds = ("announcement" | "assignment" | "file")[];
 
@@ -122,25 +173,54 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     onArrange("overview", putAt(all, { ...entry, hidden: false }, index));
   };
   const linkTo = (entry: Shown, index = links.length) => onArrange("links", putAt(links, { ...entry, hidden: false }, index));
-  // Dropped on the overview: a card where it was let go (a tool or a link: into 工具与链接).
-  const slotAt = (x: number, y: number) => {
-    const els = Array.from(grid?.querySelectorAll<HTMLElement>(":scope > [data-card]") ?? []);
-    const i = els.findIndex((el) => {
-      const r = el.getBoundingClientRect();
-      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  const keys = shown.map(thingKey);
+  // Each card's column, as last drawn (not while dragging), remembered for the course.
+  const was = useRef({ course: course.id, cols: loadColumns(course.id) });
+  if (was.current.course !== course.id) was.current = { course: course.id, cols: loadColumns(course.id) };
+  const dropColumn = useRef(0); // the column what's dragged goes in: the pointer's
+  /** Where in `rest` (the cards without it) something dragged goes, with the pointer at (x, y):
+   * in the pointer's column, before the last card of it that starts above the pointer, or after
+   * its last card once the pointer is past that. There it takes just that card's spot: the cards
+   * before it, and the other column, stay put. So the answer comes from `rest` as it was, not from
+   * what's drawn (the cards making room would change it, and that the cards, and so on); and it
+   * changes only as the pointer passes the top of a card, as in a list. */
+  const slotFor = (rest: string[], x: number, y: number) => {
+    if (!grid) return rest.length;
+    const r = grid.getBoundingClientRect();
+    const col = columns === 1 || x < r.left + r.width / 2 ? 0 : 1;
+    dropColumn.current = col;
+    const { spots, ends } = stack(rest, heights, columns, was.current.cols);
+    let at = -1;
+    let last = -1;
+    rest.forEach((k, i) => {
+      if (spots[k].col !== col) return;
+      last = i;
+      if (at < 0 || r.top + spots[k].top <= y) at = i; // (down a column, in order)
     });
-    if (i >= 0) return shown.findIndex((e) => thingKey(e) === els[i].dataset.card);
-    return shown.length;
+    if (last < 0) return rest.length; // (nothing in that column)
+    return at === last && y >= r.top + ends[col] - GAP - (heights[rest[last]] ?? 0) / 2 ? last + 1 : at; // (past its middle: after it)
   };
+  // Dragged in from elsewhere: the cards make room where it'd go (a tool or a link: 工具与链接).
+  const slotAt = (x: number, y: number) => slotFor(keys, x, y);
   const zone = useDropZone(
-    (entry, slot) => (hasCard(entry) ? add(entry, slotIndex(all, shown, slot)) : linkTo(entry)),
+    (entry, slot) => {
+      if (!hasCard(entry)) return linkTo(entry);
+      was.current.cols[thingKey(entry)] = dropColumn.current; // (it stays where it was shown going)
+      add(entry, slotIndex(all, shown, slot));
+    },
     slotAt,
     (e) => ofCourse(e, course) && !isView(e, "overview"),
   );
-  const drag = useReorder(shown.length, (from, to) => onArrange("overview", refill(all, shown, moved(shown, from, to))), "cards", {
+  const making = zone.state === "over" && !!zone.entry && hasCard(zone.entry); // room for what's dragged in
+  const drag = useReorder(shown.length, (from, to) => {
+    was.current.cols[keys[from]] = dropColumn.current; // (maybe just to the other column)
+    if (from !== to) onArrange("overview", refill(all, shown, moved(shown, from, to)));
+  }, "cards", {
     zone: zone.id,
     thing: (i) => shown[i],
+    slotAt: (x, y, from) => slotFor(keys.filter((_, i) => i !== from), x, y),
   });
+  useFlip(grid, placed);
 
   if (!overview || !cards) return <Loading />;
   const { upcoming, announcements, new_files, counts, grades, tools, current_modules } = overview;
@@ -206,20 +286,20 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     </>
   );
 
-  // Where each card goes: down the shorter column.
-  const tops = Array.from({ length: columns }, () => 0);
-  const spots = shown.map((c) => {
-    const col = tops.indexOf(Math.min(...tops));
-    const top = tops[col];
-    tops[col] += (heights[thingKey(c)] ?? 0) + GAP;
-    return { col, top };
-  });
-  const spot = (i: number): React.CSSProperties => ({
+  // Where each card goes, as it would be if what's dragged were let go now.
+  const order = [...drag.preview(keys)]; // (a copy: `keys` is what each card is)
+  if (making) order.splice(Math.min(zone.slot, order.length), 0, DROP);
+  const dragged = making ? DROP : drag.dragging !== null ? keys[drag.dragging] : null;
+  const { spots, height } = stack(order, heights, columns, was.current.cols, dragged ? { [dragged]: dropColumn.current } : {});
+  if (!dragged && columns > 1) { // (held while dragging; one column, when narrow, isn't where you put them)
+    const cols = Object.fromEntries(Object.entries(spots).map(([k, s]) => [k, s.col]));
+    if (JSON.stringify(cols) !== JSON.stringify(was.current.cols)) saveColumns(course.id, (was.current.cols = cols));
+  }
+  const spot = (key: string): React.CSSProperties => ({
     position: "absolute",
-    top: spots[i].top,
-    left: columns === 1 ? 0 : `calc(${spots[i].col} * (50% + ${GAP / 2}px))`,
+    top: spots[key].top,
+    left: columns === 1 ? 0 : `calc(${spots[key].col} * (50% + ${GAP / 2}px))`,
     width: columns === 1 ? "100%" : `calc(50% - ${GAP / 2}px)`,
-    transition: placed ? "top 200ms ease, left 200ms ease" : "none",
   });
 
   // Each card: its header links, and what's in it.
@@ -315,7 +395,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
+    <div ref={zone.ref} className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
         <div className="mb-2 flex items-center justify-end gap-2">
           {own && <span className="text-xs text-muted">{t("这门课单独排过")}</span>}
@@ -326,24 +406,21 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
         </div>
         {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点右上角的“添加卡片”加几张。")}</p>}
         <div
-          ref={(el) => {
-            setGrid(el);
-            zone.ref(el);
-          }}
-          className={`relative rounded-xl ${zone.state === "over" && zone.slot >= shown.length ? "ring-2 ring-accent/60" : zone.state !== "idle" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
-          style={{ height: Math.max(48, Math.max(...tops) - GAP) }}
+          ref={setGrid}
+          className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
+          style={{ height: Math.max(48, height), transition: "height 220ms cubic-bezier(0.2, 0, 0, 1)" }}
         >
+          {making && <div aria-hidden data-placeholder data-flip={DROP} className="rounded-xl" style={{ ...spot(DROP), height: DROP_HEIGHT }} />}
           {shown.map((e, i) => {
             const s = spec(e);
             return (
               <Card
-                key={thingKey(e)}
-                cardKey={thingKey(e)}
-                style={spot(i)}
-                flash={fresh === thingKey(e)}
+                key={keys[i]}
+                cardKey={keys[i]}
+                style={spot(keys[i])}
+                flash={fresh === keys[i]}
                 cardRef={drag.ref(i)}
                 grab={drag.handle(i)}
-                mark={zone.state === "over" && zone.slot === i ? "onto" : drag.mark(i)}
                 title={titleOf(e)}
                 icon={<ThingIcon thing={e} courses={things.courses} />}
                 more={s.more}
@@ -388,7 +465,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   );
 }
 
-function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab, mark, onMenu, children }: {
+function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab, onMenu, children }: {
   cardKey: string;
   style: React.CSSProperties;
   flash: boolean; // just added: outlined for a moment
@@ -398,13 +475,12 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
   action?: { label: string; onClick: () => void };
   cardRef: (el: HTMLElement | null) => void;
   grab: { onPointerDown: (e: React.PointerEvent) => void };
-  mark: Mark;
   onMenu: (x: number, y: number) => void;
   children: React.ReactNode;
 }) {
   return (
     <section
-      ref={cardRef} data-card={cardKey} data-home style={style} className="rounded-xl border border-line bg-panel"
+      ref={cardRef} data-card={cardKey} data-flip={cardKey} data-home style={style} className="rounded-xl border border-line bg-panel"
       onContextMenu={(e) => {
         e.stopPropagation(); // (not the overview's menu)
         if (keepsOwnMenu(e)) return;
@@ -412,7 +488,6 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
         onMenu(e.clientX, e.clientY);
       }}
     >
-      <DropMark at={mark} />
       {flash && <span aria-hidden className="pointer-events-none absolute -inset-px z-10 animate-[fade-out_2s_ease-in_forwards] rounded-[inherit] ring-2 ring-accent" />}
       <header
         {...grab}
@@ -445,45 +520,60 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
   onAdd: () => void;
 }) {
   const things = useThings();
-  const box = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
   const own = (e: Thing) => ownIn("links", e, course.id);
+  // Dragged in from elsewhere: it goes where the link it's over (or nearest) was when it came
+  // over the list; judged by what's drawn, the links making room would change the answer.
+  const before = useRef<{ left: number; top: number; width: number; height: number }[] | null>(null);
   const slotAt = (x: number, y: number) => {
-    const rows = Array.from(box.current?.querySelectorAll<HTMLElement>(":scope > [data-link]") ?? []);
-    const i = rows.findIndex((el) => {
-      const r = el.getBoundingClientRect();
-      return y <= r.bottom && (y < r.top || x < r.left + r.width / 2);
-    });
-    return i < 0 ? shown.length : i;
+    if (!box) return shown.length;
+    before.current ??= Array.from(box.querySelectorAll<HTMLElement>(":scope > [data-link]"))
+      .map((el) => ({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }));
+    const r = box.getBoundingClientRect();
+    const i = nearest(before.current.map((b) => ({ ...b, left: r.left + b.left, top: r.top + b.top })), x, y);
+    if (i < 0) return shown.length;
+    const b = before.current[i]; // (past the middle of the last one: after it)
+    return i === before.current.length - 1 && x > r.left + b.left + b.width / 2 ? shown.length : i;
   };
   const zone = useDropZone((entry, slot) => onArrange(putAt(links, { ...entry, hidden: false }, slotIndex(links, shown, slot))), slotAt,
     (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"));
-  const drag = useReorder(shown.length, (from, to) => onArrange(refill(links, shown, moved(shown, from, to))), "cards", {
+  useEffect(() => {
+    if (zone.state !== "over") before.current = null;
+  }, [zone.state]);
+  const drag = useReorder(shown.length, (from, to) => from !== to && onArrange(refill(links, shown, moved(shown, from, to))), "cards", {
     zone: zone.id,
     thing: (i) => shown[i],
     remove: (i) => (own(shown[i]) ? null : () => onTakeAway(shown[i])),
   });
+  useFlip(box, true);
+  // Drawn as they'd be if what's dragged were let go now: moved among them, or a slot for it.
+  const order: (number | null)[] = drag.preview(shown.map((_, i) => i));
+  if (zone.state === "over") order.splice(Math.min(zone.slot, order.length), 0, null);
   return (
     <div ref={(el) => {
-      box.current = el;
+      setBox(el);
       zone.ref(el);
-    }} className={`relative flex flex-wrap rounded-md ${zone.state === "over" ? "bg-accent/10" : ""}`}
+    }} className="relative flex flex-wrap rounded-md"
       onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(listMenu(), ev.clientX, ev.clientY))}>
-      {shown.map((e, i) => (
-        <div key={thingKey(e)} data-link className="relative rounded-md" {...drag.item(i)}
-          onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(menu(e), ev.clientX, ev.clientY))}>
-          <DropMark at={zone.state === "over" && zone.slot === i ? "onto" : drag.mark(i)} />
-          <Row onClick={() => things.open(e)}>
+      {order.map((i) => i === null ? (
+        <div key={DROP} aria-hidden data-link data-placeholder data-flip={DROP} className="h-8 w-28 rounded-md" />
+      ) : (
+        <div key={thingKey(shown[i])} data-link data-flip={thingKey(shown[i])} className="relative rounded-md" {...drag.item(i)}
+          onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(menu(shown[i]), ev.clientX, ev.clientY))}>
+          <Row onClick={() => things.open(shown[i])}>
             <span className="flex items-center gap-2">
-              <span className="text-muted"><ThingIcon thing={e} courses={things.courses} /></span>
-              {thingName(e, things.courses)}
-              {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+              <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
+              {thingName(shown[i], things.courses)}
+              {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
             </span>
           </Row>
         </div>
       ))}
-      <Row onClick={onAdd}>
-        <span className="flex items-center gap-2 text-muted"><Plus className="size-4" />{t("添加链接")}</span>
-      </Row>
+      <div data-flip="add">
+        <Row onClick={onAdd}>
+          <span className="flex items-center gap-2 text-muted"><Plus className="size-4" />{t("添加链接")}</span>
+        </Row>
+      </div>
     </div>
   );
 }

@@ -13,11 +13,16 @@ import { Window } from "@tauri-apps/api/window";
  * with a minus. */
 export type DragOver = "zone" | "remove" | void;
 
+/** Where the copy goes when it's let go: into this element (it lands there, then the element
+ * shows instead), or nowhere (it fades out: put in another place, taken away). */
+export type Landing = HTMLElement | null | void;
+
 export interface DragHandlers {
   onStart?: () => void;
   onMove?: (x: number, y: number) => DragOver;
-  onDrop?: (x: number, y: number) => void; // released after a drag
-  onCancel?: () => void; // Escape, or the window lost focus
+  onDrop?: (x: number, y: number) => Landing; // released after a drag
+  onCancel?: () => Landing; // Escape, or the window lost focus
+  onSettled?: () => void; // the copy has landed (or faded): show what it stood in for
 }
 
 const THRESHOLD = 5; // px before a press is a drag
@@ -37,9 +42,9 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     window.removeEventListener("pointercancel", cancel);
     window.removeEventListener("keydown", key);
     window.removeEventListener("blur", cancel);
-    ghost?.remove();
     scroller?.stop();
     document.body.style.cursor = "";
+    document.documentElement.classList.remove("dragging");
   };
   const move = (ev: PointerEvent) => {
     last = { x: ev.clientX, y: ev.clientY };
@@ -48,6 +53,9 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       ghost = new Ghost(source, startX, startY);
       scroller = new AutoScroll(source, () => h.onMove?.(last.x, last.y));
       document.body.style.cursor = "grabbing";
+      // Not selecting text on the way (the press was the start of a selection too).
+      document.documentElement.classList.add("dragging");
+      window.getSelection()?.removeAllRanges();
       h.onStart?.();
     }
     scroller?.update(ev.clientX, ev.clientY);
@@ -56,17 +64,20 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     ghost.removing(over === "remove");
     ghost.move(ev.clientX, ev.clientY, ev.screenX, ev.screenY);
   };
+  const land = (to: Landing) => {
+    const g = ghost!;
+    ghost = null;
+    void g.land(to).then(() => h.onSettled?.());
+  };
   const up = (ev: PointerEvent) => {
-    const dragged = !!ghost;
     finish();
-    if (!dragged) return;
-    h.onDrop?.(ev.clientX, ev.clientY);
+    if (!ghost) return;
+    land(h.onDrop?.(ev.clientX, ev.clientY));
     swallowNextClick();
   };
   const cancel = () => {
-    const dragged = !!ghost;
     finish();
-    if (dragged) h.onCancel?.();
+    if (ghost) land(h.onCancel?.());
   };
   const key = (ev: KeyboardEvent) => {
     if (ev.key === "Escape" && ghost) {
@@ -203,11 +214,36 @@ class Ghost {
     this.sync();
   }
 
+  /** Let go: it glides into `to` and settles there (or fades out where it is); then it's gone.
+   * (Carried by the follower, past the window's edge: back in the page for that, gliding in.) */
+  async land(to: Landing) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return this.remove();
+    if (this.following) {
+      if (!to?.isConnected) return this.remove(); // (let go outside the window: nothing to glide into)
+      this.following = false;
+      this.el.style.visibility = "";
+      this.follower.hide();
+    }
+    await new Promise(requestAnimationFrame); // (the page has its new order by now)
+    const r = to?.isConnected ? to.getBoundingClientRect() : null;
+    const s = this.el.style;
+    s.transition = `transform ${LAND}ms cubic-bezier(0.2, 0, 0, 1), width ${LAND}ms, height ${LAND}ms, box-shadow ${LAND}ms, opacity ${LAND}ms`;
+    if (r) {
+      Object.assign(s, { transform: `translate(${r.left}px, ${r.top}px)`, width: `${r.width}px`, height: `${Math.min(r.height, GHOST_MAX)}px`, boxShadow: "0 0 0 1px var(--line)", opacity: "1" });
+    } else {
+      Object.assign(s, { transform: `${s.transform.replace(/ scale\([^)]*\)/, "")} scale(0.92)`, opacity: "0" });
+    }
+    await new Promise((done) => setTimeout(done, LAND));
+    this.remove();
+  }
+
   remove() {
     this.follower.hide();
     this.el.remove();
   }
 }
+
+const LAND = 200; // ms: the copy gliding into place when let go
 
 /** Images the follower window can't load (blob: links belong to this page), as data. */
 function inlineImages(from: HTMLElement, to: HTMLElement) {

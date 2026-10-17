@@ -1,25 +1,27 @@
 // Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards, the
 // rows of 工具与链接. What's dragged follows the pointer (see drag.ts); in a row or a column the
-// others slide aside to open a gap where it will land; among cards, the one it will take the
-// place of is outlined. What's in a list is a thing, so it can be dropped in another place too
-// (see dropZones.ts); what you put in a list (not the list's own) can be dragged off it to take
-// it away.
+// others slide aside to open a gap where it will land; among cards, the list is drawn as it
+// would be if let go now (`preview`), the dragged card's place a slot, and the cards glide to make
+// room (flip.ts). Let go, the copy lands in its place. What's in a list is a thing, so it can be
+// dropped in another place too (see dropZones.ts); what you put in a list (not the list's own)
+// can be dragged off it to take it away.
 import { useRef, useState } from "react";
 import { trackDrag, type DragOver } from "./drag";
 import { dropZones, type ZoneId } from "./dropZones";
 import type { Shown } from "./things";
 
-/** "y": a column; "x": a row; "cards": anything (columns of cards): dropped on a card, an item
- * takes its place. */
+/** "y": a column; "x": a row; "cards": anything (columns of cards, wrapping rows): the list
+ * reflows around the dragged item as it goes. */
 export type Axis = "x" | "y" | "cards";
-
-/** Where a dragged item would land, relative to one item (only "onto", for cards). */
-export type Mark = "onto" | null;
 
 export interface ReorderOptions {
   thing?: (index: number) => Shown | null; // what it is, to drop in another place
   zone?: ZoneId; // the place this list is: its own items moving in it aren't drops on it
   remove?: (index: number) => (() => void) | null; // dragged well off the list and let go: this takes it away
+  /** Cards: where in the list it goes (as `to`), with the pointer at (x, y). It mustn't depend on
+   * where things are drawn while dragging (they move to make room: that would feed back). Without
+   * it: the card it's over, or nearest, where they were when the drag began. */
+  slotAt?: (x: number, y: number, from: number) => number;
 }
 
 const OFF = 28; // px past the list's edges: dragged off it
@@ -44,7 +46,6 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
       const shifts = new Map<number, number>(); // px each item is moved aside, now
       let size = 0; // the gap to open: the dragged item's length, with the space after it
       let at = index; // insertion point (0..count) for rows/columns; the card to take for cards
-      let before = ""; // the item's own transition (cards slide to new places), put back after
 
       // Where the items were when the drag began (sliding them aside doesn't move their landing
       // spots, and they're mid-animation half the time), kept in step with scrolling.
@@ -60,6 +61,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         return base.map((r) => r && new DOMRect(r.x - dx, r.y - dy, r.width, r.height));
       };
       const landing = (x: number, y: number): number => {
+        if (axis === "cards" && opts.current.slotAt) return opts.current.slotAt(x, y, index);
         const rs = rects();
         if (axis === "cards") {
           const hit = rs.findIndex((r) => r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
@@ -93,21 +95,23 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         }
       };
       const reset = () => {
-        if (axis === "cards") {
-          // It lands where it was dropped, not sliding over from where it was; then it's as before.
-          source.style.opacity = "";
-          source.style.transition = "none";
-          requestAnimationFrame(() => requestAnimationFrame(() => (source.style.transition = before)));
-        } else {
+        if (axis !== "cards") {
           // Straight back to no shift: the list is about to be drawn in its new order.
           elements.current.forEach((el) => {
+            if (el === source) return; // (shown when the copy has landed in its place)
             el.style.transition = "none";
             el.style.transform = "";
-            el.style.opacity = "";
           });
         }
         shifts.clear();
         setDrag(null);
+      };
+      // The copy has landed: it's the item again.
+      const settled = () => {
+        delete source.dataset.placeholder;
+        source.style.transition = "none";
+        source.style.transform = "";
+        source.style.opacity = "";
       };
 
       trackDrag(e, source, {
@@ -122,10 +126,12 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
             const gap = next ? (axis === "x" ? Math.abs(next.left - me.left) - me.width : Math.abs(next.top - me.top) - me.height) : 0;
             size = (axis === "x" ? me.width : me.height) + Math.max(0, gap);
           }
-          // The copy under the pointer stands in for it; its place shows as a gap.
-          before = source.style.transition;
-          source.style.transition = axis === "cards" && before && before !== "none" ? `${before}, opacity 120ms ease` : "opacity 120ms ease";
-          source.style.opacity = axis === "cards" ? "0.35" : "0";
+          // The copy under the pointer stands in for it; its place shows as a gap (cards: a slot).
+          if (axis === "cards") source.dataset.placeholder = "";
+          else {
+            source.style.transition = "opacity 120ms ease";
+            source.style.opacity = "0";
+          }
           setDrag({ from: index, target: index });
         },
         onMove: (x, y): DragOver => {
@@ -150,15 +156,18 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         },
         onDrop: (x, y) => {
           reset();
-          if (dropZones.drop(x, y, target, zone)) return;
+          if (dropZones.drop(x, y, target, zone)) return settled(); // (it stays here too)
           if (removing && remove) return remove();
           const to = axis === "cards" ? at : at > index ? at - 1 : at;
-          if (to !== index) moveRef.current(index, to);
+          if (to !== index || axis === "cards") moveRef.current(index, to); // (cards: maybe to another column, in the same place)
+          return source; // (the same element, in its new place once the list is drawn again)
         },
         onCancel: () => {
           reset();
           dropZones.end();
+          return source;
         },
+        onSettled: settled,
       });
     },
   });
@@ -174,8 +183,8 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
     /** On what you grab it by: the item itself, or a header in it. */
     handle,
     item: (index: number) => ({ ref: ref(index), ...handle(index) }),
-    /** For cards: outline the one a dragged card would take the place of. */
-    mark: (index: number): Mark => (axis === "cards" && drag && drag.target === index && index !== drag.from ? "onto" : null),
+    /** For cards: `list` as it would be if the dragged one were let go now. */
+    preview: <T,>(list: T[]): T[] => (axis === "cards" && drag ? moved(list, drag.from, drag.target) : list),
   };
 }
 
@@ -185,12 +194,6 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
     if (/(auto|scroll)/.test(style.overflowY + style.overflowX)) return p;
   }
   return null;
-}
-
-/** The outline around the card a dragged one will take the place of (in a `relative` item). */
-export function DropMark({ at }: { at: Mark }) {
-  if (!at) return null;
-  return <span aria-hidden className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] ring-2 ring-accent" />;
 }
 
 /** `list` with the item at `from` moved to `to` (as the hook reports it). */

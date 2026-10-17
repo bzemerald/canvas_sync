@@ -104,6 +104,24 @@
   100% { opacity: 0; }
 }
 
+/* While something is dragged, the text it passes over isn't selected (lib/drag.ts). */
+html.dragging,
+html.dragging * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Where a dragged card or link will land (lib/reorder.tsx), or something dropped from elsewhere:
+   a slot its size, empty. */
+[data-placeholder] {
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 6%, transparent) !important;
+  box-shadow: none !important;
+}
+[data-placeholder] > * {
+  visibility: hidden;
+}
+
 /* The window itself never scrolls or bounces: only lists and pages inside it do, and scrolling
    past their ends stays in them (macOS would otherwise rubber-band the whole window). */
 html,
