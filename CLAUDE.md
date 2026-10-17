@@ -38,7 +38,9 @@ without the Canvas website or Finder.
   - `engine.py`, `plan.py`, `execute.py`: sync.
   - `discover.py`: finding files through modules and pages.
   - `state.py`: `.canvas/state.db` (SQLite).
-  - `search.py`: `.canvas/index.db` (FTS5).
+  - `search.py`: `.canvas/index.db` (FTS5): the text inside.
+  - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
+    you open (`POST /opened`).
   - `content.py`: what the app shows (overview, items, modules, tools).
   - `server.py`: the app's HTTP API (`canvas serve`).
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.
@@ -47,7 +49,9 @@ without the Canvas website or Finder.
   - `src/components/CourseView.tsx`: tabs, readers, modules, grades.
   - `src/components/Overview.tsx`: the overview's cards.
   - `src/components/FileBrowser.tsx`, `HitBrowser.tsx` (search results).
-  - `src/Launcher.tsx`: the search window.
+  - `src/Launcher.tsx`: the search window (⌘⇧Space).
+  - `src/lib/find.ts`: what search finds as you type, by name (match-sorter) and from the index;
+    `src/components/Found.tsx`: how it's shown, in the search window and on 搜索.
   - `src/lib/api.ts`: every backend call and its types.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
@@ -57,8 +61,8 @@ without the Canvas website or Finder.
 ## Commands
 
 - Python tests: `.venv/bin/python -m pytest -q tests`
-- Frontend checks, in `app/`: `npx tsc --noEmit -p .`, `npm run build`, `npm run check:i18n`
-  (it must report nothing missing and nothing unused).
+- Frontend checks, in `app/`: `npx tsc --noEmit -p .`, `npm test` (vitest), `npm run build`,
+  `npm run check:i18n` (it must report nothing missing and nothing unused).
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
   terminal (check `ps`). Frontend edits hot-reload. The Python server keeps running old code
   until the app restarts: `touch app/src-tauri/src/lib.rs`, and tauri dev rebuilds and
@@ -141,6 +145,13 @@ Rules, learned the hard way:
 - **Let the sidebar settle.** Its sync status changes height while syncing, which shifts
   everything below it.
 - **Don't type Latin text with synthetic keystrokes.** The Chinese input method garbles it.
+  Paste instead: save the clipboard (`pbpaste`), `pbcopy` the text, ⌘V with `osascript -e 'tell
+  application "System Events" to keystroke "v" using command down'`, restore it after. Keys
+  (`key code 36` enter, `53` esc, ⌘⇧Space for the search window) are fine.
+- **The search window is a window of its own.** `shot.sh` and `bin/mouse` work on the main one;
+  capture it with `screencapture -x -o -l <id>` (its id: `bin/winid canvas-desktop`, "Canvas
+  Search"). Opening things from search records them in state.db (`opened`, `picks`): clear what
+  testing added.
 - **Ask before any Canvas calls of your own** (API scripts, opening tools). The app's own
   syncing is fine.
 - **Leave the user's own customizations alone.** An odd setting the user made isn't a test
