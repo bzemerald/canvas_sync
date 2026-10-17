@@ -1241,7 +1241,14 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin,
       className={`-mx-1 rounded-lg px-1 pb-1 ${zone.state === "over" ? "bg-accent/10 ring-1 ring-accent" : zone.state === "ready" ? "outline-1 outline-dashed outline-accent/60" : ""}`}
     >
       {header}
-      {!collapsed && items.length === 0 && (zone.state === "idle" ? empty : <p className="px-2 py-2 text-xs text-muted">{t("放在这里置顶")}</p>)}
+      {!collapsed && items.length === 0 && (
+        // Both in one spot, one shown: the sidebar below doesn't move as a drag starts (it'd be off
+        // from where the pointer is, for dragging there).
+        <div className="grid">
+          <div className={`[grid-area:1/1] ${zone.state === "idle" ? "" : "invisible"}`}>{empty}</div>
+          <p className={`[grid-area:1/1] self-center px-2 py-2 text-xs text-muted ${zone.state === "idle" ? "invisible" : ""}`}>{t("放在这里置顶")}</p>
+        </div>
+      )}
       {!collapsed && (
         <div ref={list}>
           {items.map((item, i) => (
