@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
+from .catalog import catalog
 from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
@@ -142,6 +143,12 @@ class PlaceRequest(BaseModel):
 
 class NoteRequest(BaseModel):
     text: str
+
+
+class OpenedRequest(BaseModel):
+    """Something was opened: the app's key for it, and what had been typed in search (if anything)."""
+    key: str
+    query: str = ""
 
 
 class IconRequest(BaseModel):
@@ -400,6 +407,21 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 if not course:
                     return []
             return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only, under or None)]
+
+    @api.get("/catalog")
+    def catalog_() -> dict[str, Any]:
+        """Everything search can go to by name (see catalog.py), and what you open: how often and
+        lately, and what you'd typed for what."""
+        with engine() as e:
+            return {"things": catalog(e), **e.state.usage()}
+
+    @api.post("/opened")
+    def opened(req: OpenedRequest) -> dict[str, bool]:
+        if not req.key.strip() or len(req.key) > 1000:
+            raise HTTPException(400, "say what was opened")
+        with engine() as e:
+            e.state.record_opened(req.key, " ".join(req.query.lower().split())[:80])
+        return {"recorded": True}
 
     # -- a course's page ------------------------------------------------------------------
 

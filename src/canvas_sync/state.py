@@ -65,7 +65,16 @@ CREATE TABLE IF NOT EXISTS arrivals (
 );
 -- Courses whose arrivals are recorded, since when. What a course had before that isn't news.
 CREATE TABLE IF NOT EXISTS tracked (course_id INTEGER PRIMARY KEY, since TEXT);
+-- What you open in the app, by the app's key for it: how often, and when last. And what you'd
+-- typed in search when you opened it. What you go to most, and lately, comes first.
+CREATE TABLE IF NOT EXISTS opened (key TEXT PRIMARY KEY, count INTEGER NOT NULL, last TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS picks (
+    query TEXT, key TEXT, count INTEGER NOT NULL, last TEXT NOT NULL,
+    PRIMARY KEY (query, key)
+);
 """
+
+KEEP_OPENED = 2000  # rows of `opened` (and of `picks`) kept: the oldest go
 
 LOCAL_COLUMNS = (
     "path", "pinned_path", "ignored", "base_hash", "base_version", "base_size",
@@ -285,3 +294,29 @@ class State:
         self.db.execute(
             f"UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND seen_at IS NULL{only}", (now, course_id, *kinds)
         )
+
+    # -- what you open ------------------------------------------------------------------
+
+    def record_opened(self, key: str, query: str = "") -> None:
+        """You opened `key` (having typed `query` in search, if any)."""
+        now = _now()
+        self.db.execute(
+            """INSERT INTO opened VALUES (?, 1, ?)
+               ON CONFLICT(key) DO UPDATE SET count = count + 1, last = excluded.last""", (key, now))
+        if query:
+            self.db.execute(
+                """INSERT INTO picks VALUES (?, ?, 1, ?)
+                   ON CONFLICT(query, key) DO UPDATE SET count = count + 1, last = excluded.last""", (query, key, now))
+        for table in ("opened", "picks"):
+            self.db.execute(
+                f"DELETE FROM {table} WHERE rowid NOT IN (SELECT rowid FROM {table} ORDER BY last DESC LIMIT ?)",
+                (KEEP_OPENED,))
+
+    def usage(self, limit: int = 500) -> dict[str, object]:
+        """What you opened lately: key -> {count, last}; and what you'd typed for what: [{query, key,
+        count, last}], latest first."""
+        opened = {r[0]: {"count": r[1], "last": r[2]}
+                  for r in self.db.execute("SELECT key, count, last FROM opened ORDER BY last DESC LIMIT ?", (limit,))}
+        picks = [{"query": r[0], "key": r[1], "count": r[2], "last": r[3]}
+                 for r in self.db.execute("SELECT query, key, count, last FROM picks ORDER BY last DESC LIMIT ?", (limit,))]
+        return {"opened": opened, "picks": picks}
