@@ -11,10 +11,14 @@ export const en: Record<string, string | [string, string]> = {
   "关闭": "Close",
   "MATH 221 里和 midterm 有关的一切": "Everything about the midterm in MATH 221",
   "CS 70 第 3 次作业的答案": "Solutions to CS 70 homework 3",
-  "期中": "final",
-  "所有课程的期中相关内容": "Everything about finals, in every course",
-  "Data 100 的迟交政策": "Data 100's late policy",
-  "课程名 + 关键词，缩写也行：": "A course name plus keywords; abbreviations work too:",
+  "期中": "midterm",
+  "所有课程的期中相关内容": "Everything about midterms, in every course",
+  "课程名、类型、时间或提交状态，加上关键词；缩写和拼错也行：": "A course, a kind, a time or a status, plus keywords; abbreviations and typos are fine:",
+  "MATH 53 的第 3 次作业，叫 HW 3 还是 Problem Set 3 都行": "MATH 53's third homework, whether it's called HW 3 or Problem Set 3",
+  "cs70 本周截止": "cs70 due this week",
+  "CS 70 这周要交的作业": "What's due in CS 70 this week",
+  "未交": "todo",
+  "所有还没交的作业": "Every assignment you haven't handed in",
 
   // -- the main window: sidebar, menus, notices
   "无学期": "No term",
@@ -138,8 +142,8 @@ export const en: Record<string, string | [string, string]> = {
   "没有新内容": "Nothing new",
   "Canvas 令牌可能过期了，到设置里更换": "Your Canvas token may have expired; replace it in Settings",
   "在任何地方按 {key} 快速搜索。": "Press {key} anywhere to search.",
-  "输入课程名加关键词，例如 {a}、{b}、{c}。缩写会自动展开：mt = midterm，hw = homework，sol = solution。":
-    "Type a course name plus keywords, like {a}, {b} or {c}. Abbreviations expand by themselves: mt = midterm, hw = homework, sol = solution.",
+  "输入课程名加关键词，例如 {a}、{b}、{c}。也可以按类型、时间、提交状态找，例如 {d}、{e}。缩写会自动展开（mt = midterm，hw3 = Homework 3 = Problem Set 3），拼错也能找到。":
+    "Type a course and keywords, like {a}, {b} or {c}. Kinds of things, times and where you are with an assignment work too, like {d} or {e}. Abbreviations expand (mt = midterm, hw3 = Homework 3 = Problem Set 3), and misspellings are caught.",
   "左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。":
     "Pick a course on the left to see what's in it; right-click a course, folder or file to sync or restore just that.",
   "后台服务没有启动": "The background service didn't start",

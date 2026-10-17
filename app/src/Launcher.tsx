@@ -163,12 +163,14 @@ function Tips() {
   const examples: [string, string][] = [
     ["221 mt", t("MATH 221 里和 midterm 有关的一切")],
     ["cs70 hw3 sol", t("CS 70 第 3 次作业的答案")],
+    ["53 ps 3", t("MATH 53 的第 3 次作业，叫 HW 3 还是 Problem Set 3 都行")],
+    [t("cs70 本周截止"), t("CS 70 这周要交的作业")],
+    [t("未交"), t("所有还没交的作业")],
     [t("期中"), t("所有课程的期中相关内容")],
-    ["data100 late", t("Data 100 的迟交政策")],
   ];
   return (
     <div className="px-3 py-4 text-sm text-muted">
-      <p className="mb-3">{t("课程名 + 关键词，缩写也行：")}</p>
+      <p className="mb-3">{t("课程名、类型、时间或提交状态，加上关键词；缩写和拼错也行：")}</p>
       <ul className="space-y-1.5">
         {examples.map(([q, what]) => (
           <li key={q} className="flex gap-3">

@@ -1696,10 +1696,12 @@ function Welcome() {
         {tx("在任何地方按 {key} 快速搜索。", { key: <kbd className="rounded border border-line bg-chip px-1.5">{shortcut.launcher}</kbd> })}
       </p>
       <p>
-        {tx("输入课程名加关键词，例如 {a}、{b}、{c}。缩写会自动展开：mt = midterm，hw = homework，sol = solution。", {
+        {tx("输入课程名加关键词，例如 {a}、{b}、{c}。也可以按类型、时间、提交状态找，例如 {d}、{e}。缩写会自动展开（mt = midterm，hw3 = Homework 3 = Problem Set 3），拼错也能找到。", {
           a: <code className="text-fg-soft">221 mt</code>,
           b: <code className="text-fg-soft">cs70 hw3 sol</code>,
           c: <code className="text-fg-soft">{t("期中")}</code>,
+          d: <code className="text-fg-soft">{t("cs70 本周截止")}</code>,
+          e: <code className="text-fg-soft">{t("未交")}</code>,
         })}
       </p>
       <p className="mt-3">{t("左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。")}</p>
