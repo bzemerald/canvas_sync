@@ -285,6 +285,7 @@ export type CatalogEntry = Shown & {
   aliases: string[];
   in_course: number | null;
   term?: string; // a course's
+  keys?: string[]; // a course's words: what it is as one word in a query ("cs70", "53"; see query.ts)
   date?: string | null;
   due?: string | null;
   status?: SubmissionStatus;
@@ -296,7 +297,19 @@ export interface Usage {
   opened: Record<string, { count: number; last: string }>;
   picks: { query: string; key: string; count: number; last: string }[];
 }
-export const catalog = () => api<{ things: CatalogEntry[] } & Usage>("/catalog");
+/** Everything search can go to by name, what words stand for ("mt": midterm; the index's, and
+ * yours), and what you open. */
+export const catalog = () => api<{ things: CatalogEntry[]; abbreviations: Record<string, string[]> } & Usage>("/catalog");
+/** Search as you type, in the index: `q` only words to find (the app read the courses, kinds and
+ * times out of what was typed: lib/query.ts), narrowed to `courses`, `kinds`, `since` up to `until`. */
+export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; since?: string; until?: string; limit?: number } = {}): Promise<Hit[]> {
+  const params = new URLSearchParams({ q, limit: String(opts.limit ?? 40) });
+  for (const c of opts.courses ?? []) params.append("course", String(c));
+  for (const k of opts.kinds ?? []) params.append("kind", k);
+  if (opts.since) params.set("since", opts.since);
+  if (opts.until) params.set("until", opts.until);
+  return api<{ hits: Hit[] }>(`/find?${params}`).then((r) => r.hits);
+}
 /** It was opened (having typed `query` in search): what you open most, and lately, comes first. */
 export const noteOpened = (key: string, query = "") => void post("/opened", { key, query }).catch(() => {});
 

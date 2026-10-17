@@ -7,13 +7,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FoundList, type How, actionsFor, canvasUrl, moreKeys, useCatalog, useChosen, useFound } from "./components/Found";
+import { FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding } from "./components/Found";
 import { isMac } from "./components/Result";
 import * as api from "./lib/api";
 import type { Hit } from "./lib/api";
 import type { Found } from "./lib/find";
 import { useLoaded } from "./lib/useLoaded";
-import { useSearch } from "./lib/useSearch";
 import { friendly } from "./lib/errors";
 import { t } from "./lib/i18n";
 import { type Thing, isView, thingKey, thingOf, thingOfHit } from "./lib/things";
@@ -25,11 +24,10 @@ export function Launcher() {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(0); // times it came forward: what it knows is loaded again
   const input = useRef<HTMLInputElement>(null);
-  const { hits, error, loading } = useSearch(query, (q) => api.search(q, { limit: 40 }));
   const courses = useLoaded("courses", api.courses, [shown]).value ?? NO_COURSES; // (their icons)
-  const { catalog, usage, names } = useCatalog([shown], courses);
+  const { catalog, vocab, usage, names } = useCatalog([shown], courses);
   const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
-  const { results, lately, due, listed, first, nothing } = useFound(query, catalog, usage, hits, actions);
+  const { reading, results, lately, due, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
 
@@ -96,7 +94,7 @@ export function Launcher() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const primary = isMac ? e.metaKey : e.ctrlKey;
-    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how))) return;
+    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how), () => completion(reading, listed.get(value)), setQuery)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       if (query) setQuery("");
@@ -117,20 +115,23 @@ export function Launcher() {
         onKeyDown={onKeyDown}
         className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl"
       >
-        <div className="flex items-center gap-3 border-b border-line px-4" data-tauri-drag-region>
-          <Search className="size-5 shrink-0 text-muted" aria-hidden />
-          <Command.Input
-            ref={input}
-            autoFocus
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={query}
-            onValueChange={setQuery}
-            placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
-            className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
-          />
-          {loading && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
+        <div className="border-b border-line" data-tauri-drag-region>
+          <div className="flex items-center gap-3 px-4" data-tauri-drag-region>
+            <Search className="size-5 shrink-0 text-muted" aria-hidden />
+            <Command.Input
+              ref={input}
+              autoFocus
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={query}
+              onValueChange={setQuery}
+              placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
+              className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
+            />
+            {loading && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
+          </div>
+          <ReadingBar reading={reading} names={names} courses={courses} onQuery={setQuery} className="-mt-1 px-4 pb-2.5 pl-12" />
         </div>
 
         <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto p-2">

@@ -367,7 +367,7 @@ export function MainWindow() {
       if (!query.trim() && searched) {
         return api.search(searched.query, { courses: searched.courses, kinds: searched.kinds, namesOnly: !searched.content, limit: 500 });
       }
-      if (!query.trim() || filtering) return Promise.resolve([]);
+      if (!query.trim() || filtering || view.kind === "home") return Promise.resolve([]); // (搜索 finds its own: SearchHome)
       if (folderScope !== null) return api.search(query, { limit: 300, under: folderScope });
       if (browsing !== null && browsing !== "" && scopeCourses.length === 0) return Promise.resolve([]);
       return api.search(query, { limit: 300, courses: browsing ? scopeCourses : [] });
@@ -1093,7 +1093,7 @@ export function MainWindow() {
           <SearchHome
             input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />}
             query={query}
-            hits={results.hits}
+            onQuery={setQuery}
             version={version}
             courses={courseList}
             onOpen={openFound}
@@ -1423,19 +1423,19 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
 
 /** 搜索 in the main window: everything by name, and what the index finds (see Found.tsx). What
  * search knows is loaded again each time it's shown (what you opened since counts). */
-function SearchHome({ input, query, hits, version, courses, onOpen, props }: {
+function SearchHome({ input, query, onQuery, version, courses, onOpen, props }: {
   input: React.ReactNode;
   query: string;
-  hits: Hit[];
+  onQuery: (q: string) => void;
   version: number;
   courses: Course[];
   onOpen: (f: Found | undefined, how: How) => void;
   props: (f: Found) => object;
 }) {
-  const { catalog, usage, names } = useCatalog([version], courses);
+  const { catalog, vocab, usage, names } = useCatalog([version], courses);
   const actions = useMemo(() => actionsFor(names), [names]);
   return (
-    <FoundSearch input={input} query={query} hits={hits} catalog={catalog} usage={usage} names={names} courses={courses}
+    <FoundSearch input={input} query={query} onQuery={onQuery} catalog={catalog} vocab={vocab} usage={usage} names={names} courses={courses}
       actions={actions} onOpen={onOpen} props={props} welcome={<Welcome />} />
   );
 }

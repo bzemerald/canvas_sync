@@ -3,15 +3,21 @@
 // by the text inside. What it finds comes in groups, the best of all on top. What you open most,
 // and lately, comes first; what you opened after typing the same, on top.
 //
-// Matching is match-sorter's, word by word: each word of the query has to match what a thing is
-// called (its own names) or what it's in (its course, its kind, its folders), and at least one
-// word its own names. "cs70 grades" is CS 70's 成绩; "cs70" alone, the course.
+// What's typed is read first (query.ts): a course, a time, where you are with an assignment narrow
+// it down; the rest is matched against names, match-sorter's way, part by part: each has to match
+// what a thing is called (its own names) or what it's in (its course, its kind, its folders), and
+// at least one its own names. A kind word names what's of that kind ("cs70 公告": CS 70's
+// announcements); one of a series, what's numbered so in that series by any of its names ("hw3":
+// Homework 3, HW03.pdf, Problem Set 3); a word, also what it's an abbreviation of ("mt": midterm).
 //
 // Nothing here draws or says anything (no i18n): what things are called comes from `describe`.
 import { matchSorterWithRankInfo, rankings } from "match-sorter";
 import type { CatalogEntry, Hit, Usage } from "./api";
+import { CJK, type KindId, type Part, type PartOf, type Reading, type Status, type Vocabulary, seriesIn, seriesNear, singular, spaced } from "./query";
 import { termRank } from "./terms";
 import { thingKey, thingOfHit } from "./things";
+
+export { spaced } from "./query";
 
 /** Something to do (sync, settings…), found the way things are. */
 export interface Action {
@@ -47,6 +53,11 @@ interface Prepared {
   names: string[]; // each also with its parts spaced out ("HW3_sol.pdf": "HW 3 sol pdf")
   aliases: string[];
   context: string[]; // its kind, its folders
+  words: string; // its names and aliases, spaced and lower-cased, a space around each word: for whole words
+  starts: string[]; // its names, spaced and lower-cased: for what one starts with
+  series: { name: string; n: number }[]; // what it's numbered in its names ("Homework 3": homework 3)
+  kind: KindId | "view";
+  course: number | null; // the course it's in (a course: itself)
   term: number; // its course's term (termRank)
 }
 
@@ -56,33 +67,41 @@ export interface Catalog {
   byKey: Map<string, Prepared>;
   courses: Map<number, Prepared>;
   latestTerm: number;
+  series: Map<string, Set<number>>; // every series in names, with the numbers there are of it
+  abbreviations: Record<string, string[]>; // "mt" -> midterm... (the index's: built in, and yours)
 }
 
 const CAP: Record<GroupId, number> = { courses: 3, places: 5, assignments: 4, announcements: 4, files: 5, actions: 3, inside: 5 };
 const MOST = 50; // shown in a group asked for all
 const DAY = 24 * 3600 * 1000;
 
-// Separators people don't type, where letters meet digits or a capital starts a word, and leading
-// zeros: "lec-02_v2.pdf" is "lec 2 v 2 pdf"; "midtermReview" is "midterm Review".
-const SEP = /[\s_\-./\\()[\]{},:;#+~]+/g;
-const WORD_BREAK = /(?<=\p{L})(?=\d)|(?<=\d)(?=\p{L})|(?<=\p{Ll})(?=\p{Lu})/gu;
-export const spaced = (s: string) => s.replace(SEP, " ").replace(WORD_BREAK, " ").replace(/\b0+(?=\d)/g, "").trim();
 const variants = (s: string) => [...new Set([s, spaced(s)].filter(Boolean))];
+const kindOf = (e: CatalogEntry): Prepared["kind"] => (e.type === "doc" ? e.kind : e.type);
 
-export function prepare(things: CatalogEntry[], describe: Describe): Catalog {
+export function prepare(things: CatalogEntry[], describe: Describe, abbreviations: Record<string, string[]> = {}): Catalog {
   const terms = new Map<number, number>();
   for (const e of things) if (e.type === "course") terms.set(e.course, termRank(e.term ?? null));
+  const series = new Map<string, Set<number>>();
   const entries = things.map((entry): Prepared => {
     const { names, aliases, kind } = describe(entry);
     const folders = entry.type === "file" || entry.type === "folder" ? entry.path.split("/").slice(-3, -1) : [];
     const own = [...new Set(names.filter(Boolean).flatMap(variants))];
+    const others = [...new Set(aliases.filter(Boolean).flatMap(variants))].filter((a) => !own.includes(a));
+    const numbered = [...names, ...aliases].filter(Boolean).flatMap(seriesIn);
+    for (const s of numbered) series.set(s.name, (series.get(s.name) ?? new Set()).add(s.n));
+    const course = entry.type === "course" ? entry.course : entry.in_course;
     return {
       entry,
       key: thingKey(entry),
       names: own,
-      aliases: [...new Set(aliases.filter(Boolean).flatMap(variants))].filter((a) => !own.includes(a)),
+      aliases: others,
       context: [...new Set([...kind, ...folders].filter(Boolean).flatMap(variants))],
-      term: entry.in_course !== null ? terms.get(entry.in_course) ?? 0 : 0,
+      words: ` ${[...names, ...aliases].filter(Boolean).map((s) => spaced(s).toLowerCase()).join(" | ")} `,
+      starts: names.filter(Boolean).map((s) => spaced(s).toLowerCase()),
+      series: numbered,
+      kind: kindOf(entry),
+      course,
+      term: course !== null ? terms.get(course) ?? 0 : 0,
     };
   });
   return {
@@ -90,14 +109,21 @@ export function prepare(things: CatalogEntry[], describe: Describe): Catalog {
     byKey: new Map(entries.map((p) => [p.key, p])),
     courses: new Map(entries.flatMap((p) => (p.entry.type === "course" ? [[p.entry.course, p] as const] : []))),
     latestTerm: Math.max(0, ...terms.values()),
+    series,
+    abbreviations,
   };
+}
+
+/** What reading a query needs to know of what's there (query.ts): the courses' words, the series
+ * in names; and `kinds`, the words for kinds of things (the app's, in both languages). */
+export function vocabulary(catalog: Catalog, kinds: Record<string, KindId>): Vocabulary {
+  const courses = [...catalog.courses.values()].map((p) => ({ id: p.course!, keys: p.entry.keys ?? [] }));
+  return { courses, kinds, series: catalog.series, abbreviations: catalog.abbreviations };
 }
 
 /** The words of a query (lower-cased, as typed: "cs70 hw3"). */
 export const words = (query: string) => query.toLowerCase().split(/\s+/).filter((w) => spaced(w));
 const normal = (query: string) => words(query).join(" ");
-
-const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
 
 /** A word's match good enough to count: it starts a word (or is a word's initials), as in
  * Spotlight: "sync" isn't "asynchronous". Chinese has no spaces between words: anywhere in it. */
@@ -108,6 +134,9 @@ function counts(rank: number, word: string): boolean {
 }
 
 const ALIAS = 0.25; // less for matching only what else a thing answers to, not what it's shown as
+const EXPANDED = 0.3; // less for matching what a word is an abbreviation of ("mt": midterm)
+const SERIES = rankings.STARTS_WITH; // one of a series, by any of its names: as good as a name starting so
+const KIND = rankings.WORD_STARTS_WITH + 0.5; // of the kind a word says
 
 /** How well `word` matches each item's values (`values`, then `others`: a little less), by item;
  * the best of the word as typed and spaced out. */
@@ -122,6 +151,30 @@ function ranks<T>(items: T[], word: string, values: (item: T) => string[], other
     }
   }
   return out;
+}
+
+/** What else a word stands for: what it's an abbreviation of, what's an abbreviation of it
+ * ("midterm": mt), and itself without its plural. */
+function alternatives(word: string, abbr: Record<string, string[]>): string[] {
+  const out = new Set<string>([...(abbr[word] ?? [])]);
+  for (const [k, v] of Object.entries(abbr)) if (!CJK.test(k) && v.includes(word)) out.add(k);
+  if (singular(word) !== word) out.add(singular(word));
+  out.delete(word);
+  return [...out];
+}
+
+/** How well a word matches each thing's names as a whole word, by what it stands for. */
+function wholeWords(entries: Prepared[], alts: string[], into: Map<Prepared, number>) {
+  if (!alts.length) return;
+  for (const p of entries) {
+    for (const alt of alts) {
+      const latin = !CJK.test(alt);
+      if (!(latin ? p.words.includes(` ${alt} `) || p.words.includes(` ${alt}s `) : p.words.includes(alt))) continue;
+      const first = p.starts.some((s) => s === alt || s.startsWith(alt + " "));
+      const rank = (first ? rankings.STARTS_WITH : rankings.WORD_STARTS_WITH) - EXPANDED;
+      if (rank > (into.get(p) ?? 0)) into.set(p, rank);
+    }
+  }
 }
 
 /** How much you go to it: more often, and lately, more. */
@@ -145,6 +198,18 @@ function picked(query: string, usage: Usage, now: number): Map<string, number> {
 }
 
 const handedIn = (status: CatalogEntry["status"]) => status === "submitted" || status === "graded" || status === "excused";
+
+/** Where you are with it, as a reading says it. */
+function isStatus(e: CatalogEntry, s: Status, now: number): boolean {
+  if (e.type !== "doc" || e.kind !== "assignment") return false;
+  switch (s) {
+    case "todo": return e.status === "unsubmitted" || e.status === "missing";
+    case "missing": return e.status === "missing";
+    case "overdue": return (e.status === "unsubmitted" || e.status === "missing") && !!e.due && Date.parse(e.due) < now;
+    case "submitted": return e.status === "submitted" || e.status === "graded";
+    case "graded": return e.status === "graded";
+  }
+}
 
 /** What makes one thing better than another that matches as well. */
 function bonus(p: Prepared, catalog: Catalog, usage: Usage, picks: Map<string, number>, now: number): number {
@@ -177,27 +242,96 @@ function groupOf(f: Found): GroupId {
 
 const hitKeyOf = (h: Hit) => `hit:${h.kind}:${h.course_id}:${h.path ?? h.url ?? h.title}`;
 
-/** What `query` finds: by name in the catalog (and actions), and by the index (`hits`, as /search
- * returns them for the query: names first, then what's only inside). */
-export function find(query: string, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[] = [], now = Date.now()): Results {
-  const ws = words(query);
-  if (!ws.length) return { top: null, groups: [] };
+type Term = PartOf<"word"> | PartOf<"series"> | PartOf<"kind">;
+const isTerm = (p: Part): p is Term => p.role === "word" || p.role === "series" || p.role === "kind";
+
+/** What a reading finds: by name in the catalog (and actions), and by the index (`hits`, as it
+ * returns them for the reading's `indexQuery`: names first, then what's only inside). */
+export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[] = [], now = Date.now()): Results {
+  const { parts, query } = reading;
+  const abbr = catalog.abbreviations;
+  const courseParts = parts.filter((p): p is PartOf<"course"> => p.role === "course");
+  let only: Set<number> | null = courseParts.length ? new Set(courseParts.flatMap((p) => p.courses)) : null;
+  const when = parts.filter((p): p is PartOf<"when"> => p.role === "when").at(-1)?.when;
+  const statuses = parts.flatMap((p) => (p.role === "status" ? [p.status] : []));
+  const narrowed = !!when || statuses.length > 0;
+  let terms: Term[] = parts.filter(isTerm);
+  if (!terms.length && !narrowed) {
+    if (!courseParts.length) return { top: null, groups: [] };
+    // Only a course: the course, and what's called that ("cs70": CS 70).
+    terms = courseParts.map((p) => ({ role: "word", quoted: false, spans: p.spans, text: p.text.toLowerCase() }));
+    only = null;
+  }
   const picks = picked(query, usage, now);
   const found = new Map<string, Found>();
 
-  // By name: each word against what things are called, and what they're in.
-  const own = ws.map((w) => ranks(catalog.entries, w, (p) => p.names, (p) => p.aliases));
-  const context = ws.map((w) => ranks(catalog.entries, w, (p) => p.context));
-  const courseRank = (i: number, course: number | null) => {
-    const c = course === null ? undefined : catalog.courses.get(course);
-    return c ? own[i].get(c) ?? 0 : 0;
+  /** Whether it's in what the reading narrows things down to. */
+  const within = (p: Prepared) => {
+    if (only && (p.course === null || !only.has(p.course))) return false;
+    if (when) {
+      const date = when.due ? p.entry.due : p.entry.due ?? p.entry.date;
+      const t = date ? Date.parse(date) : NaN;
+      if (!(t >= when.from && t < when.to)) return false;
+    }
+    return statuses.every((s) => isStatus(p.entry, s, now));
   };
-  for (const p of catalog.entries) {
+  const entries = catalog.entries.filter(within);
+
+  // Each part, against what things are called (own) and what they're in (context).
+  const last = parts.at(-1);
+  const typing = (p: Part) => p === last && !/\s$/.test(query);
+  const own: Map<Prepared, number>[] = [];
+  const context: Map<Prepared, number>[] = [];
+  for (const term of terms) {
+    const text = term.text.toLowerCase();
+    const mine = term.role === "series" ? new Map<Prepared, number>() : ranks(entries, text, (p) => p.names, (p) => p.aliases);
+    if (term.role !== "series" && !(term.role === "word" && term.quoted)) wholeWords(entries, alternatives(text, abbr), mine);
+    if (term.role === "kind") for (const p of entries) if (p.kind === term.kind) mine.set(p, Math.max(mine.get(p) ?? 0, KIND));
+    if (term.role === "series") {
+      // By its number in any of the series' names (by its own a little more: "ps 3" is Problem Set
+      // 3 before Homework 3); things numbered otherwise in it don't count.
+      const near = new Map<string, number>();
+      for (const s of catalog.series.keys()) {
+        const by = seriesNear(term.name, s, abbr);
+        if (by !== null) near.set(s, by);
+      }
+      const loose = ranks(entries, text, (p) => p.names, (p) => p.aliases);
+      for (const p of entries) {
+        const of = p.series.filter((s) => near.has(s.name));
+        const best = (ok: (n: number) => boolean) => Math.max(...of.filter((s) => ok(s.n)).map((s) => near.get(s.name)!));
+        if (of.some((s) => s.n === term.n)) mine.set(p, SERIES + best((n) => n === term.n));
+        else if (typing(term) && of.some((s) => String(s.n).startsWith(String(term.n)))) mine.set(p, SERIES - 0.5 + best((n) => String(n).startsWith(String(term.n))));
+        else if (!of.length && loose.has(p)) mine.set(p, loose.get(p)!);
+      }
+    }
+    own.push(mine);
+    context.push(term.role === "series" ? new Map() : ranks(entries, text, (p) => p.context));
+  }
+  const courseRank = (i: number, course: number | null) => {
+    const c = course === null || terms[i].role === "series" ? undefined : catalog.courses.get(course);
+    return c ? ranks([c], terms[i].text.toLowerCase(), (p) => p.names, (p) => p.aliases).get(c) ?? 0 : 0;
+  };
+  const courseRanks = terms.map(() => new Map<number, number>());
+  const aroundOf = (i: number, p: Prepared) => {
+    if (p.entry.type === "course" || p.course === null) return context[i].get(p) ?? 0;
+    let c = courseRanks[i].get(p.course);
+    if (c === undefined) courseRanks[i].set(p.course, (c = courseRank(i, p.course)));
+    return Math.max(context[i].get(p) ?? 0, c);
+  };
+
+  for (const p of entries) {
+    if (!terms.length) {
+      // Narrowed down only (a time, a status): all of it, nearest in time first.
+      const date = p.entry.due ?? p.entry.date;
+      const days = date ? Math.abs(Date.parse(date) - now) / DAY : 30;
+      found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: 3 - Math.min(days, 30) / 15 + bonus(p, catalog, usage, picks, now) });
+      continue;
+    }
     let total = 0;
     let named = false;
-    for (let i = 0; i < ws.length && total >= 0; i++) {
+    for (let i = 0; i < terms.length && total >= 0; i++) {
       const mine = own[i].get(p) ?? 0;
-      const around = Math.max(context[i].get(p) ?? 0, courseRank(i, p.entry.in_course));
+      const around = aroundOf(i, p);
       if (!mine && !around) total = -1;
       named ||= mine > 0;
       total += Math.max(mine, 0.5 * around);
@@ -205,14 +339,15 @@ export function find(query: string, catalog: Catalog, usage: Usage, hits: Hit[],
     // (What you opened after typing more than this needn't be named by it: "53" finds what
     // "53 grades" did.)
     if (total < 0 || (!named && !picks.has(p.key))) continue;
-    found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: total / ws.length + bonus(p, catalog, usage, picks, now) });
+    found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: total / terms.length + bonus(p, catalog, usage, picks, now) });
   }
 
-  // By name, as the index has it (it knows "mt" is a midterm), as good as a word starting a name.
+  // By name, as the index has it, as good as a word starting a name; and what's only inside.
   const inside: Found[] = [];
   hits.forEach((h, i) => {
     const thing = thingOfHit(h);
     const p = thing ? catalog.byKey.get(thingKey(thing)) : undefined;
+    if (p ? !within(p) : statuses.length > 0) return;
     const key = p ? p.key : hitKeyOf(h);
     if (h.match !== "name") {
       if (!found.has(key)) inside.push(p ? { type: "thing", key, entry: p.entry, hit: h, score: 0 } : { type: "hit", key, hit: h, score: 0 });
@@ -227,23 +362,25 @@ export function find(query: string, catalog: Catalog, usage: Usage, hits: Hit[],
     else found.set(key, { type: "hit", key, hit: h, score: score - 0.2 });
   });
 
-  // Things to do.
-  const actionOwn = ws.map((w) => ranks(actions, w, (a) => a.names));
-  for (const a of actions) {
-    let total = 0;
-    let named = false;
-    let about = a.course === undefined;
-    for (let i = 0; i < ws.length && total >= 0; i++) {
-      const mine = actionOwn[i].get(a) ?? 0;
-      const around = courseRank(i, a.course ?? null);
-      if (!mine && !around) total = -1;
-      named ||= mine > 0;
-      about ||= around > 0;
-      total += Math.max(mine, 0.5 * around);
-    }
-    if (total >= 0 && named && about) {
-      const key = `action:${a.id}`;
-      found.set(key, { type: "action", key, action: a, score: total / ws.length + (picks.has(key) ? 3 : 0) });
+  // Things to do (about a course, when the reading has it; not when it's narrowed in time).
+  const words = terms.filter((t): t is PartOf<"word"> => t.role === "word");
+  if (!narrowed && words.length === terms.length) {
+    const actionOwn = words.map((w) => ranks(actions, w.text.toLowerCase(), (a) => a.names));
+    for (const a of actions) {
+      if (only ? a.course === undefined || !only.has(a.course) : a.course !== undefined && !words.some((_, i) => courseRank(i, a.course!) > 0)) continue;
+      let total = 0;
+      let named = false;
+      for (let i = 0; i < words.length && total >= 0; i++) {
+        const mine = actionOwn[i].get(a) ?? 0;
+        const around = a.course === undefined ? 0 : courseRank(i, a.course);
+        if (!mine && !around) total = -1;
+        named ||= mine > 0;
+        total += Math.max(mine, 0.5 * around);
+      }
+      if (total >= 0 && named) {
+        const key = `action:${a.id}`;
+        found.set(key, { type: "action", key, action: a, score: total / words.length + (picks.has(key) ? 3 : 0) });
+      }
     }
   }
 

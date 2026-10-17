@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from canvas_sync import Engine
 from canvas_sync.config import Account
 from canvas_sync.server import create_app
+from canvas_sync.search import code_keys
 from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull, set_config
 
 
@@ -88,6 +89,44 @@ def test_course_filter_and_aliases(root, course):
         assert len(e.search("", course_ids=[1])) == 8
     set_config(root, "[course_aliases]\n", "[course_aliases]\n1 = [\"线代\"]\n")
     assert search(root, "线代 eigen") == ["Lecture 3.pdf"]
+
+
+def test_series_by_what_the_course_calls_it(root, course):
+    """"ws5" is Worksheet 5 where there are worksheets, though no abbreviation says so; and the
+    numbers match as numbers ("hw03" is HW3)."""
+    course.put(208, "Worksheet 5.pdf", b"x")
+    course.put(209, "notes on sheets.pdf", make_pdf("Do worksheet 5 before section"))
+    pull(root, course)
+    reindex(root)
+    assert set(search(root, "ws5")) == {"Worksheet 5.pdf", "notes on sheets.pdf"}
+    assert search(root, "ws6") == []
+    assert search(root, "hw03") == ["HW3.pdf"]
+    assert "Lecture 3.pdf" in search(root, "lectures")  # (plurals)
+
+
+def test_api_find_takes_words_and_what_narrows_them(client):
+    """/find is the app's search as you type: it has read the query (courses, times) itself."""
+    def find(**params):
+        return [h["title"] for h in client.get("/api/find", params=params).json()["hits"]]
+
+    assert set(find(q="hw")) == {"HW3.pdf", "Problem Set 4"}
+    assert find(q="hw", since="2026-10-20T00:00:00Z", until="2026-10-21T00:00:00Z") == ["Problem Set 4"]  # (due then)
+    assert find(q="hw", since="2026-10-21T00:00:00Z") == []
+    assert find(q='"problem set"') == ["Problem Set 4"]
+    assert find(q='"set 4 late"') == []  # (as it is, not word by word)
+    # A word, found where it's written (the files' folder), not the course: the app read courses
+    # out of what was typed already.
+    assert "Problem Set 4" not in find(q="221") and "Lecture 3.pdf" in find(q="221")
+    assert find(q="eigen", course=[1]) == ["Lecture 3.pdf"] and find(q="eigen", course=[2]) == []
+    assert find(q="公告") == ["考试安排"]  # (a kind of thing, as the index has it)
+    assert find(q="late", kind=["assignment"]) == ["Problem Set 4"] and find(q="late", kind=["page"]) == []
+
+
+def test_a_courses_number_is_before_its_term():
+    assert code_keys("CS61B SP26") == {"cs", "61b", "cs61b"}
+    assert code_keys("DATA 100/200 (Spring 2026)") == {"data", "100", "data100"}
+    assert code_keys("BC INTEGBI (Spring 26)") == set()  # (26 is the term's, not a course number)
+    assert code_keys("Freshman/Transfer Edge 2025") == set()
 
 
 def test_custom_abbreviation(root, course):

@@ -1,20 +1,23 @@
 // What search finds (lib/find.ts), shown the Spotlight way: the best of all on top, then groups
 // (courses, pages and tools, assignments, announcements, files and folders, things to do, what's
 // only inside), a few of each until asked for all; before anything is typed, what you opened
-// lately and what's due soon. Shared by the search window and the main window's 搜索 page,
-// inside a cmdk <Command> (arrows move, enter opens).
+// lately and what's due soon. Above it, how what's typed was read (lib/query.ts): a chip for each
+// part that narrows it down. Shared by the search window and the main window's 搜索 page, inside a
+// cmdk <Command> (arrows move, enter opens).
 import { Command } from "cmdk";
-import { AppWindow, RefreshCw, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { AppWindow, CalendarDays, CircleCheck, RefreshCw, Settings as SettingsIcon, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { CatalogEntry, Course, Hit, Usage } from "../lib/api";
-import { untilDue } from "../lib/dates";
+import type { CatalogEntry, Course, Usage } from "../lib/api";
+import { shortDate, untilDue } from "../lib/dates";
 import { en } from "../lib/en";
-import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, dueSoon, find, prepare, recent } from "../lib/find";
-import { t } from "../lib/i18n";
+import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, dueSoon, find, prepare, recent, vocabulary } from "../lib/find";
+import { locale, t } from "../lib/i18n";
 import { isMac } from "../lib/keys";
-import type { ViewName } from "../lib/things";
+import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, indexQuery, key, read, singular, without } from "../lib/query";
+import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
+import { useSearch } from "../lib/useSearch";
 import { KIND, ResultBody, Snippet, formatDate } from "./Result";
 import { ThingIcon, thingName, useThing } from "./Things";
 
@@ -51,6 +54,15 @@ const KIND_WORDS: Record<string, string> = {
   file: "文件@@card", // i18n-ignore
   folder: "文件夹", // i18n-ignore
 };
+// The words a query says a kind of thing by (both languages, as the app says them; one word each).
+const KIND_SAID: Record<KindId, string[]> = {
+  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], module: ["模块", "模块@@card"], // i18n-ignore
+  tool: ["外部工具", "工具"], link: ["链接"], note: ["备忘录"], search: ["智能文件夹"], file: ["文件", "文件@@card"], folder: ["文件夹"], // i18n-ignore
+};
+const KINDS: Record<string, KindId> = Object.fromEntries(
+  (Object.entries(KIND_SAID) as [KindId, string[]][]).flatMap(([kind, zh]) =>
+    [...zh.flatMap(inBoth), kind].map((w) => w.toLowerCase()).filter((w) => !w.includes(" ")).map((w) => [singular(w), kind])),
+);
 
 /** What things are called, for finding them (see find.ts). `courses`: for their names as shown. */
 export const describeEntry = (courses: Course[]): Describe => (e) => {
@@ -79,15 +91,17 @@ export function canvasUrl(e: CatalogEntry): string | null {
 
 const NOTHING: Usage = { opened: {}, picks: [] };
 
-/** The catalog, made ready for finding, and what you open; loaded again when `again` changes. */
+/** The catalog, made ready for finding, what reading a query knows of it, and what you open;
+ * loaded again when `again` changes. */
 export function useCatalog(again: unknown[], courses: Course[] = []) {
   const data = useLoaded("catalog", api.catalog, again).value;
-  const catalog = useMemo(() => (data ? prepare(data.things, describeEntry(courses)) : null), [data, courses]);
+  const catalog = useMemo(() => (data ? prepare(data.things, describeEntry(courses), data.abbreviations) : null), [data, courses]);
+  const vocab = useMemo(() => (catalog ? vocabulary(catalog, KINDS) : NO_VOCABULARY), [catalog]);
   const names = useMemo(
     () => new Map((data?.things ?? []).flatMap((e) => (e.type === "course" ? [[e.course, e.name ?? ""] as const] : []))),
     [data],
   );
-  return { catalog, usage: data ?? NOTHING, names };
+  return { catalog, vocab, usage: data ?? NOTHING, names };
 }
 
 /** Things to do from search: sync everything or one course, settings, a new smart folder. */
@@ -103,18 +117,27 @@ export function actionsFor(names: Map<number, string>, extra: Action[] = []): Ac
 
 const EMPTY = prepare([], () => ({ names: [], aliases: [], kind: [] }));
 
-/** What's listed for `query` (or, with none, what you opened lately and what's due soon), each by
- * key, and which comes first. */
-export function useFound(query: string, catalog: Catalog | null, usage: Usage, hits: Hit[], actions: Action[]) {
-  const results = useMemo(() => (query.trim() ? find(query, catalog ?? EMPTY, usage, hits, actions) : null), [query, catalog, usage, hits, actions]);
+/** What's found for `query`, as you type: how it reads, what that finds by name and in the index
+ * (or, with nothing typed, what you opened lately and what's due soon), each by key, and which
+ * comes first. */
+export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[]) {
+  const reading = useMemo(() => read(query, vocab), [query, vocab]);
+  const asked = useMemo(() => indexQuery(reading, catalog?.abbreviations ?? {}), [reading, catalog]);
+  const { hits, error, loading } = useSearch(asked ? JSON.stringify(asked) : "", () =>
+    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve([]));
+  const results = useMemo(() => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions) : null), [query, reading, catalog, usage, hits, actions]);
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
-  const due = useMemo(() => (catalog ? dueSoon(catalog) : []), [catalog]);
+  const due = useMemo(() => {
+    const opened = new Set(lately.map((f) => f.key)); // (once: in 最近打开)
+    return catalog ? dueSoon(catalog).filter((f) => !opened.has(f.key)) : [];
+  }, [catalog, lately]);
   const listed = useMemo(() => {
     const all = results ? [...(results.top ? [results.top] : []), ...results.groups.flatMap((g) => g.items)] : [...lately, ...due];
     return new Map(all.map((f) => [f.key, f]));
   }, [results, lately, due]);
   const first = results ? results.top?.key ?? results.groups[0]?.items[0]?.key ?? "" : lately[0]?.key ?? due[0]?.key ?? "";
-  return { results, lately, due, listed, first, nothing: !!results && !results.top && !results.groups.length };
+  const nothing = !!results && !results.top && !results.groups.length;
+  return { reading, results, lately, due, listed, first, nothing, error, loading };
 }
 
 export type How = "open" | "reveal" | "canvas"; // ↵, ⌘↵ (in its folder), ⌘⇧↵ (on Canvas)
@@ -132,20 +155,48 @@ export function useChosen(query: string, listed: Map<string, Found>, first: stri
   return { value, choose: (key: string) => setChosen({ query, key }), list };
 }
 
-/** ⌘↵ and ⌘⇧↵ on the chosen one. */
-export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined, open: (f: Found | undefined, how: How) => void): boolean {
+/** ⌘↵ and ⌘⇧↵ on the chosen one; Tab finishes a course's name (`complete`). */
+export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined, open: (f: Found | undefined, how: How) => void,
+  complete?: () => string | null, setQuery?: (q: string) => void): boolean {
+  if (e.key === "Tab" && !e.shiftKey && complete && setQuery) {
+    const done = complete();
+    if (done === null) return false;
+    e.preventDefault();
+    setQuery(done);
+    return true;
+  }
   if (e.key !== "Enter" || !(isMac ? e.metaKey : e.ctrlKey)) return false;
   e.preventDefault();
   open(chosen(), e.shiftKey ? "canvas" : "reveal");
   return true;
 }
 
-/** The main window's 搜索 page: `input` above, what it finds below. */
-export function FoundSearch({ input, query, hits, catalog, usage, names, courses, actions, onOpen, props, welcome }: {
+/** The query with its last word finished as the name of the course `f` is (if it's one, and the
+ * word is on its way to it): "neur" ⇥ "neu100a ", which then narrows search to that course. */
+export function completion(reading: Reading, f: Found | undefined): string | null {
+  const last = reading.parts.at(-1);
+  if (!f || f.type !== "thing" || f.entry.type !== "course" || !last || /\s$/.test(reading.query)) return null;
+  if (last.role !== "word" && last.role !== "series") return null;
+  // What's typed finished, else what the app calls the course ("neu100a"), else its shortest code.
+  const keys = f.entry.keys ?? [];
+  const typed = key(last.text);
+  const own = key(f.entry.name ?? "");
+  const word = keys.find((k) => k.startsWith(typed) && k !== typed)
+    ?? (keys.includes(own) && own.length <= 10 ? own : undefined)
+    ?? keys.filter((k) => /^\p{L}/u.test(k) && /\d/.test(k)).sort((a, b) => a.length - b.length)[0]
+    ?? keys[0];
+  if (!word) return null;
+  const [start, end] = last.spans[0];
+  return `${reading.query.slice(0, start)}${word} ${reading.query.slice(end)}`.replace(/\s+$/, " ");
+}
+
+/** The main window's 搜索 page: `input` above (with how it reads below it), what it finds below. */
+export function FoundSearch({ input, query, onQuery, catalog, vocab, usage, names, courses, actions, onOpen, props, welcome }: {
   input: React.ReactNode;
   query: string;
-  hits: Hit[];
+  onQuery: (q: string) => void;
   catalog: Catalog | null;
+  vocab: Vocabulary;
   usage: Usage;
   names: Map<number, string>;
   courses: Course[];
@@ -154,20 +205,120 @@ export function FoundSearch({ input, query, hits, catalog, usage, names, courses
   props?: (f: Found) => object;
   welcome: React.ReactNode; // with nothing typed and nothing to show
 }) {
-  const { results, lately, due, listed, first, nothing } = useFound(query, catalog, usage, hits, actions);
+  const { reading, results, lately, due, listed, first, nothing, loading } = useFinding(query, catalog, vocab, usage, actions);
   const { value, choose, list } = useChosen(query, listed, first);
   return (
     <Command shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
-      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen)}>
-      <div className="border-b border-line px-6 py-3">{input}</div>
+      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => completion(reading, listed.get(value)), onQuery)}>
+      <div className="border-b border-line px-6 py-3">
+        {input}
+        <ReadingBar reading={reading} names={names} courses={courses} onQuery={onQuery} className="mt-2" />
+      </div>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-        {query.trim() && nothing && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
+        {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
         {!query.trim() && !lately.length && !due.length && welcome}
         <FoundList results={results} recent={lately} due={due} courses={courses} names={names} onOpen={(f) => onOpen(f, "open")} props={props} />
       </Command.List>
     </Command>
   );
 }
+
+// -- how a query reads ----------------------------------------------------------------------------
+
+const STATUS_LABEL = { todo: t("未提交"), missing: t("缺交"), overdue: t("逾期未交"), submitted: t("已提交"), graded: t("已评分") };
+const KIND_LABEL: Record<KindId, string> = {
+  course: t("课程"), announcement: t("公告"), assignment: t("作业"), page: t("页面"), module: t("模块"), tool: t("外部工具"),
+  link: t("链接"), note: t("备忘录"), search: t("智能文件夹"), file: t("文件"), folder: t("文件夹"),
+};
+const KIND_THING: Record<KindId, Thing> = {
+  course: { type: "course", course: -1 }, announcement: { type: "view", course: -1, view: "announcements" },
+  assignment: { type: "view", course: -1, view: "assignments" }, page: { type: "view", course: -1, view: "pages" },
+  module: { type: "module", course: -1, module: -1 }, tool: { type: "tool", course: -1, tool: -1 }, link: { type: "link", url: "" },
+  note: { type: "note", course: -1, id: "" }, search: { type: "search", query: "", courses: [], kinds: [], content: false },
+  file: { type: "view", course: -1, view: "files" }, folder: { type: "folder", path: "" },
+};
+
+/** When, in a few words: 今天, 本周, 10月, 截止 · 本周. */
+function whenLabel(p: PartOf<"when">): string {
+  const l = p.when.label;
+  if ("later" in l) return p.when.due ? t("还没到截止时间") : t("从现在起");
+  const said =
+    "day" in l ? shortDate(new Date(l.day).toISOString(), false)
+    : "week" in l ? [t("上周"), t("本周"), t("下周")][l.week + 1] ?? ""
+    : "month" in l ? [t("上个月"), t("本月"), t("下个月")][l.month + 1] ?? ""
+    : "monthOf" in l ? new Date(l.monthOf).toLocaleDateString(locale, { month: "long" })
+    : "weekend" in l ? t("周末")
+    : "soon" in l ? t("未来 7 天")
+    : t("最近 14 天");
+  return p.when.due ? `${t("截止")} · ${said}` : said;
+}
+
+/** What a part was read as, in a few words. */
+function partLabel(p: Part, names: Map<number, string>): string {
+  switch (p.role) {
+    case "course": {
+      const all = p.courses.map((c) => names.get(c) ?? `#${c}`);
+      return !all.length ? t("没有这门课") : all.length <= 2 ? all.join(" / ") : `${all[0]} +${all.length - 1}`;
+    }
+    case "kind": return KIND_LABEL[p.kind];
+    case "when": return whenLabel(p);
+    case "status": return STATUS_LABEL[p.status];
+    default: return p.text;
+  }
+}
+
+/** How what's typed was read: a chip for each part that narrows it down (a course, a kind, a time,
+ * where you are with it). Clicking one takes what was typed as text instead; × takes it back. */
+export function ReadingBar({ reading, names, courses, onQuery, className = "" }: {
+  reading: Reading;
+  names: Map<number, string>;
+  courses: Course[];
+  onQuery: (q: string) => void;
+  className?: string;
+}) {
+  const shown = reading.parts.filter((p) => p.role === "course" || p.role === "kind" || p.role === "when" || p.role === "status");
+  if (!shown.length) return null;
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 text-xs ${className}`} data-no-drag>
+      {shown.map((p) => (
+        <span key={`${p.role}:${p.spans[0][0]}`} className="inline-flex max-w-64 items-center rounded-md bg-chip text-fg-soft">
+          <button
+            title={t("按文字搜索“{text}”", { text: p.text })}
+            onMouseDown={(e) => e.preventDefault()} // (the input keeps the focus)
+            onClick={() => onQuery(asText(reading.query, p))}
+            className="flex min-w-0 items-center gap-1 rounded-l-md py-0.5 pr-1 pl-1.5 hover:bg-line"
+          >
+            <PartIcon part={p} courses={courses} />
+            <span className="truncate">{partLabel(p, names)}</span>
+          </button>
+          <button
+            aria-label={t("去掉")}
+            title={t("去掉")}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onQuery(without(reading.query, p))}
+            className="rounded-r-md p-1 text-muted hover:bg-line hover:text-fg"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PartIcon({ part, courses }: { part: Part; courses: Course[] }) {
+  const icon = "size-3.5 shrink-0 text-muted";
+  if (part.role === "course") {
+    return part.courses.length === 1
+      ? <span className="[&_svg]:size-3.5 [&>*]:shrink-0"><ThingIcon thing={{ type: "course", course: part.courses[0] }} courses={courses} className={icon} /></span>
+      : <ThingIcon thing={{ type: "course", course: -1 }} className={icon} />;
+  }
+  if (part.role === "kind") return <ThingIcon thing={KIND_THING[part.kind]} className={icon} />;
+  if (part.role === "when") return <CalendarDays className={icon} aria-hidden />;
+  return <CircleCheck className={icon} aria-hidden />;
+}
+
+// -- what's found -----------------------------------------------------------------------------------
 
 const ACTION_ICON = { sync: RefreshCw, settings: SettingsIcon, "smart-folder": Sparkles, main: AppWindow };
 

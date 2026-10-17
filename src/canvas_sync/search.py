@@ -14,7 +14,7 @@ import hashlib
 import json
 import re
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -51,6 +51,23 @@ DEFAULT_ABBREVIATIONS: dict[str, list[str]] = {
     "讲义": ["lecture", "notes"],
     "答案": ["solution", "answer"],
     "大纲": ["syllabus"],
+    # Series in Chinese ("第3讲", "实验2"), and kinds of things (the index has the kind as a word).
+    "讲": ["lecture"],
+    "课": ["lecture", "lesson"],
+    "周": ["week"],
+    "章": ["chapter"],
+    "单元": ["unit"],
+    "实验": ["lab"],
+    "测验": ["quiz"],
+    "小测": ["quiz"],
+    "讨论": ["discussion", "section"],
+    "讨论课": ["discussion", "section"],
+    "习题": ["problem set", "exercise", "homework"],
+    "项目": ["project"],
+    "论文": ["essay", "paper"],
+    "公告": ["announcement"],
+    "页面": ["page"],
+    "文件": ["file"],
 }
 
 # Department names as registrars write them -> what students type.
@@ -95,6 +112,9 @@ def _prep(text: str) -> str:
 
 def _norm(text: str) -> str:
     return _NORM.sub("", text.lower())
+
+
+normalized = _norm  # (letters and digits, lower-cased: how course words are compared)
 
 
 def _is_cjk(text: str) -> bool:
@@ -156,6 +176,10 @@ def course_label(c: Course, settings: Settings) -> str:
     return renamed or settings.course_names.get(c.id) or c.code
 
 
+# A term in a course's code: "Spring", "SP26", "FL25", "2026".
+_TERM = re.compile(r"(spring|summer|fall|autumn|winter|sp|su|sm|fa|fl|wi)\d{0,4}|(19|20)\d\d")
+
+
 def code_keys(code: str) -> set[str]:
     """The parts of a course code people type: "COMPSCI 70-LEC-001" -> compsci, 70;
     "CS61B SP26" -> cs, 61b, cs61b; "DATA C8" -> data, c8, 8. Only up to the course
@@ -163,6 +187,8 @@ def code_keys(code: str) -> set[str]:
     keys: set[str] = set()
     depts: list[str] = []
     for chunk in re.split(r"[\W_]+", code.lower()):
+        if _TERM.fullmatch(chunk):  # "BC INTEGBI (Spring 26)": no course number before the term
+            break
         parts = re.findall(r"[^\W\d_]+|\d+[^\W\d_]*", chunk)
         number = next((p for p in parts if p[0].isdigit()), None)
         words = [p for p in parts[: parts.index(number) if number else None] if len(p) > 1]
@@ -202,6 +228,71 @@ class CourseMatcher:
         return set()
 
 
+def singular(word: str) -> str:
+    """A word without its plural ending ("labs": lab, "quizzes": quiz; "class" stays)."""
+    if len(word) <= 3 or not word.endswith("s") or re.search(r"(ss|us|is)$", word):
+        return word
+    if word.endswith("zzes"):
+        return word[:-3]
+    if re.search(r"(ch|sh|x|ss)es$", word):
+        return word[:-2]
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    return word[:-1]
+
+
+_ROMAN = {"ii": 2, "iii": 3, "iv": 4, "vi": 6, "vii": 7, "viii": 8, "ix": 9}  # ("V" alone: RISC-V)
+
+
+def series_in(title: str) -> list[tuple[str, int]]:
+    """The numbered things a title is: "Homework 3: RISC-V" is homework 3, "EE64_HW6_Sol.pdf"
+    hw 6, "Problem Set #3" problem set 3 (and set 3). (As the app's query.ts has it.)"""
+    spaced = _LETTER_DIGIT.sub(" ", re.sub(r"[\s_\-./\\()\[\]{},:;#+~]+", " ", title))
+    spaced = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", spaced)
+    words = spaced.lower().split()
+    out: list[tuple[str, int]] = []
+    wordish = lambda w: bool(re.fullmatch(r"[^\W\d_]{2,}", w)) or _is_cjk(w)  # noqa: E731
+    said = spaced.split()
+    for i in range(1, len(words)):
+        n = int(words[i]) if re.fullmatch(r"\d{1,4}", words[i]) else 1 if said[i] == "I" else _ROMAN.get(words[i])
+        if n is None:
+            continue
+        before = words[i - 1]
+        if before == "第":
+            after = re.sub(r"^[次个]", "", words[i + 1]) if i + 1 < len(words) else ""
+            if after and _is_cjk(after):
+                out.append((after, n))
+        elif wordish(before):
+            out.append((before, n))
+            if i > 1 and wordish(words[i - 2]) and not _is_cjk(before):
+                out.append((f"{words[i - 2]} {before}", n))
+    return out
+
+
+def same_series(a: str, b: str, abbreviations: dict[str, list[str]]) -> bool:
+    """Whether a series as typed (`a`) is one a title has (`b`): the same word, the start of it
+    ("lec", "lecture"), its initials ("ps", "problem set"), one of its abbreviations either way or
+    both of the same ("hw" and "homework", "mt" and "prelim"); or, for a word without any, letters
+    of it in order ("ws", "worksheet"). (As the app's query.ts has it.)"""
+    a, b = " ".join(map(singular, a.split(" "))), " ".join(map(singular, b.split(" ")))
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) >= 3 and long.startswith(short):
+        return True
+    if " " in long and " " not in short and short == "".join(w[0] for w in long.split()):
+        return True
+    of_a = [singular(x) for x in abbreviations.get(a, [])]
+    of_b = [singular(x) for x in abbreviations.get(b, [])]
+    if b in of_a or a in of_b or set(of_a) & set(of_b):
+        return True
+    flat = long.replace(" ", "")
+    if short in abbreviations or len(short) < 2 or _is_cjk(short) or len(short) * 2 > len(flat) or flat[0] != short[0]:
+        return False
+    rest = iter(flat[1:])
+    return all(ch in rest for ch in short[1:])
+
+
 def _and_plural(term: str) -> list[str]:
     """An expansion and its plural, so "midterm" also matches "Midterms"."""
     last = term.rsplit(" ", 1)[-1]
@@ -210,14 +301,21 @@ def _and_plural(term: str) -> list[str]:
     return [term, term + ("es" if re.search(r"(x|ch|sh)$", last) else "s")]
 
 
-def expand(token: str, abbreviations: dict[str, list[str]]) -> list[tuple[str, bool]]:
+def expand(token: str, abbreviations: dict[str, list[str]], series: Iterable[str] = ()) -> list[tuple[str, bool]]:
     """Alternatives for one query token, as (term, exact) pairs. What you typed may be the
     start of a word ("lec" finds "lecture"); what we expand it to must be a whole word, or
-    "mt" -> "prelim" would find "Preliminary Exercises"."""
+    "mt" -> "prelim" would find "Preliminary Exercises". `series`: what the courses searched
+    number things in ("worksheet": "ws3" is worksheet 3 there)."""
     t = token.lower()
     alts = [(t, False), *((p, True) for a in abbreviations.get(t, []) for p in _and_plural(a))]
-    if m := re.fullmatch(r"(\D+?)[\s_-]*(\d+)", t):  # mt1 -> midterm 1, hw3 -> homework 3
-        alts += [(f"{a} {m[2]}", True) for a in abbreviations.get(m[1], [])]
+    if singular(t) != t:  # "lectures" finds "Lecture 3"
+        alts.append((singular(t), False))
+    if m := re.fullmatch(r"(\D+?)[\s_#-]*(\d+)", t):  # mt1 -> midterm 1, hw3 -> homework 3
+        numbers = dict.fromkeys([m[2], str(int(m[2]))])
+        if len(numbers) > 1:  # hw03 is hw3
+            alts.append((f"{m[1]}{int(m[2])}", False))
+        alts += [(f"{a} {n}", True) for a in abbreviations.get(m[1], []) for n in numbers]
+        alts += [(f"{s} {n}", True) for s in series if s != m[1] and same_series(m[1], s, abbreviations) for n in numbers]
     # And the other way round: "midterm" also finds "MT1.pdf" (whole word only, so
     # "announcement" -> "ann" doesn't find "annual").
     alts += [(k, True) for k, v in abbreviations.items() if t in v and not _is_cjk(k)]
@@ -227,7 +325,20 @@ def expand(token: str, abbreviations: dict[str, list[str]]) -> list[tuple[str, b
     return list(seen.items())
 
 
-def parse(query: str, matcher: CourseMatcher, abbreviations: dict[str, list[str]]) -> Query:
+def parse_words(query: str, abbreviations: dict[str, list[str]], series: Iterable[str] = ()) -> Query:
+    """The words of a query the app has read (its query.ts took the courses, times and the like
+    out): each to be found, "quoted" ones only as they are."""
+    groups = []
+    for m in re.finditer(r'"([^"]*)"?|(\S+)', query):
+        if m[1] is not None:
+            if m[1].strip():
+                groups.append([(m[1].strip().lower(), True)])
+        elif re.search(r"\w", m[2]):
+            groups.append(expand(m[2], abbreviations, series))
+    return Query([], groups)
+
+
+def parse(query: str, matcher: CourseMatcher, abbreviations: dict[str, list[str]], series: Iterable[str] = ()) -> Query:
     """Course tokens may come anywhere, but loose (prefix) course matching only applies to
     the first token, so "221 data" searches MATH 221 for "data" instead of also pulling
     in "Data Structures"."""
@@ -240,7 +351,7 @@ def parse(query: str, matcher: CourseMatcher, abbreviations: dict[str, list[str]
         if hit and not is_abbr:
             course_ids |= hit
         else:
-            groups.append(expand(tok, abbreviations))
+            groups.append(expand(tok, abbreviations, series))
     return Query(sorted(course_ids), groups)
 
 
@@ -379,15 +490,27 @@ class Index:
             on_progress(len(todo), len(todo), "")
         return stats
 
+    def series(self, course_ids: list[int] | None) -> set[str]:
+        """What the courses number things in, by their titles ("Worksheet 5": worksheet)."""
+        where = f"WHERE course_id IN ({','.join('?' * len(course_ids))})" if course_ids else ""
+        titles = self.db.execute(f"SELECT DISTINCT title FROM items {where}", course_ids or []).fetchall()
+        return {name for (title,) in titles for name, _ in series_in(title)}
+
     def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50,
                course_ids: list[int] | None = None, kinds: list[str] | None = None,
-               names_only: bool = False, under: str | None = None, also: list[str] = ()) -> list[Hit]:
+               names_only: bool = False, under: str | None = None, also: list[str] = (),
+               literal: bool = False, since: str | None = None, until: str | None = None) -> list[Hit]:
         """`course_ids` restricts the search to those courses, whatever the query says;
         `kinds` to those kinds of item. With either, an empty query lists everything in them.
         `names_only` skips items where only the text inside matches. `under`: only files in
-        that folder (or at the paths in `also`: files a view link in it points to)."""
+        that folder (or at the paths in `also`: files a view link in it points to). `literal`:
+        the query is only words (no courses in it: see parse_words). `since`/`until`: only
+        items from then (ISO times; an assignment's is when it's due)."""
         abbreviations = {**DEFAULT_ABBREVIATIONS, **settings.abbreviations}
-        q = parse(query, CourseMatcher(courses, settings), abbreviations)
+        numbered = re.search(r"[^\W\d_][\s_#-]*\d", query)
+        series = self.series(course_ids) if numbered else set()
+        q = (parse_words(query, abbreviations, series) if literal
+             else parse(query, CourseMatcher(courses, settings), abbreviations, series))
         if course_ids:
             q.course_ids = sorted(set(course_ids) & set(q.course_ids)) if q.course_ids else list(course_ids)
             if not q.course_ids:
@@ -400,6 +523,12 @@ class Index:
         if kinds:
             where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
             args += kinds
+        if since:
+            where.append("i.date >= ?")
+            args.append(since)
+        if until:
+            where.append("i.date < ?")
+            args.append(until)
         if under is not None:
             like = under.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
             others = f" OR i.path IN ({','.join('?' * len(also))})" if also else ""

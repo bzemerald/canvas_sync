@@ -50,8 +50,11 @@ without the Canvas website or Finder.
   - `src/components/Overview.tsx`: the overview's cards.
   - `src/components/FileBrowser.tsx`, `HitBrowser.tsx` (search results).
   - `src/Launcher.tsx`: the search window (⌘⇧Space).
-  - `src/lib/find.ts`: what search finds as you type, by name (match-sorter) and from the index;
-    `src/components/Found.tsx`: how it's shown, in the search window and on 搜索.
+  - `src/lib/query.ts`: what a query says: a course, a kind, a time, a status ("cs70 作业 本周
+    未交"), numbered things ("hw3" = Homework 3 = Problem Set 3), words; `src/lib/find.ts`: what
+    that finds as you type, by name (match-sorter) and from the index (`GET /find`);
+    `src/components/Found.tsx`: how it's shown (the query's parts as chips), in the search
+    window and on 搜索.
   - `src/lib/api.ts`: every backend call and its types.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).

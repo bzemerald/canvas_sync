@@ -7,16 +7,19 @@ aren't in it, nor anything of theirs.
 Names are what Canvas or the sync folder calls things (`name`), or None for what the app names
 (a view, a link, a note); `title` is a name you gave it in a place (置顶, a course's page), and
 `aliases` are the other names it answers to. `canvas_url`: where it is on Canvas (relative).
+A course's `keys` are what it is as one word of a query ("cs70", "53", a name you gave it: what
+the app's query.ts reads as narrowing search to it).
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from . import content
-from .search import code_keys, course_label, relative_url
+from .search import DEFAULT_ABBREVIATIONS, code_keys, course_label, normalized, relative_url
 from .state import META_DIR
 from .things import Entry, Thing, course_thing, view
 
@@ -54,8 +57,11 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         names = [c.code, c.name, e.settings.course_names.get(c.id), e.settings.folder_names.get(canonical),
                  *e.settings.course_aliases.get(c.id, []), *sorted(code_keys(c.code))]
         label = course_label(c, e.settings)
+        yours = [label, c.code, e.settings.course_names.get(c.id), e.settings.folder_names.get(canonical),
+                 *e.settings.course_aliases.get(c.id, [])]
+        keys = {normalized(n) for n in yours if n} | {k for k in code_keys(c.code) if re.search(r"\d", k)}
         add(course_thing(c.id), name=label, term=c.term, canvas_url=f"/courses/{c.id}",
-            aliases=list(dict.fromkeys(n for n in names if n and n != label)))
+            aliases=list(dict.fromkeys(n for n in names if n and n != label)), keys=sorted(keys - {""}))
         if (g := e.state.grades(c.id)) and g.get("current_score") is not None:
             has[c.id].add("grades")
 
@@ -147,6 +153,11 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if t.type == "note" and t.course is not None and "text" not in d:
             d["text"] = _note_start(e.root / META_DIR / "notes" / str(t.course) / f"{t.id}.md")
     return list(out.values())
+
+
+def abbreviations(e: Engine) -> dict[str, list[str]]:
+    """What words stand for in search: the built-in abbreviations, and yours (config.toml)."""
+    return {**DEFAULT_ABBREVIATIONS, **e.settings.abbreviations}
 
 
 def _note_start(path: Path) -> str:

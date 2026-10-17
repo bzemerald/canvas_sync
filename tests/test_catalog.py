@@ -38,6 +38,7 @@ def test_catalog_names_everything_of_the_courses(root, course):
     [c] = by_type(things, "course")
     assert c["course"] == 1 and c["name"] == "MATH 221" and c["term"] == "Fall 2026"
     assert {"Linear Algebra", "221", "math221"} <= set(c["aliases"])  # (its code as people type it)
+    assert c["keys"] == ["221", "math221"]  # what it is as one word of a query ("math" alone is a word)
     # Its views with something in them: no grades yet, no syllabus.
     assert {v["view"] for v in by_type(things, "view")} == {
         "overview", "modules", "announcements", "assignments", "files", "pages", "tools", "canvas"}
@@ -93,6 +94,7 @@ def test_api_catalog_and_what_you_open(root, course, monkeypatch):
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:
         got = api.get("/api/catalog").json()
         assert any(t["type"] == "course" for t in got["things"]) and got["opened"] == {} and got["picks"] == []
+        assert "midterm" in got["abbreviations"]["mt"]  # (what the app's search matches names by, too)
         assert api.post("/api/opened", json={"key": "course:1", "query": "  Math   221 "}).status_code == 200
         assert api.post("/api/opened", json={"key": "course:1"}).status_code == 200
         assert api.post("/api/opened", json={"key": " "}).status_code == 400

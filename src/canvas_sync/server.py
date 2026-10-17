@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from .catalog import catalog
+from .catalog import abbreviations, catalog
 from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
@@ -408,12 +408,27 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     return []
             return [h.to_dict() for h in e.search(q, min(limit, 500), course or None, kind or None, names_only, under or None)]
 
+    @api.get("/find")
+    def find(q: str = "", limit: int = 40, course: list[int] = Query(default=[]), kind: list[str] = Query(default=[]),
+             since: str = "", until: str = "") -> dict[str, Any]:
+        """The app's search as you type (its find.ts), in the index: `q` is only words to find
+        (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind` and
+        `since`/`until`: what the app read as narrowing it down."""
+        with engine() as e:
+            if not course and e.settings.hidden:  # (as /search)
+                course = [c.id for c in e.state.courses() if c.id not in e.settings.hidden]
+                if not course:
+                    return {"hits": []}
+            hits = e.index.search(q, e.state.courses(), e.settings, min(limit, 500), course or None, kind or None,
+                                  literal=True, since=since or None, until=until or None)
+            return {"hits": [h.to_dict() for h in hits]}
+
     @api.get("/catalog")
     def catalog_() -> dict[str, Any]:
-        """Everything search can go to by name (see catalog.py), and what you open: how often and
-        lately, and what you'd typed for what."""
+        """Everything search can go to by name (see catalog.py), what words stand for, and what
+        you open: how often and lately, and what you'd typed for what."""
         with engine() as e:
-            return {"things": catalog(e), **e.state.usage()}
+            return {"things": catalog(e), "abbreviations": abbreviations(e), **e.state.usage()}
 
     @api.post("/opened")
     def opened(req: OpenedRequest) -> dict[str, bool]:
