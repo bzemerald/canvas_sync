@@ -10,6 +10,7 @@ its expansions ("mt1" -> "mt 1" | "midterm 1" | "mid term 1" | ...).
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import re
@@ -19,6 +20,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
+
+from rapidfuzz import process
+from rapidfuzz.distance import DamerauLevenshtein
 
 from .config import Settings
 from .layout import Layout
@@ -93,6 +97,7 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
     title, folder, body, tokenize = 'unicode61 remove_diacritics 2'
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_words USING fts5vocab(fts, 'row');  -- every word, and in how many items
 """
 
 # Index-time and query-time splitting the default tokenizer doesn't do. U+200B is a
@@ -385,8 +390,14 @@ def relative_url(url: str | None) -> str | None:
 DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body"}
 
 
+# The words of each index, kept until it changes: (what it was then, the words sorted, how many
+# items each is in).
+_WORDS: dict[str, tuple[tuple[int, int], list[str], dict[str, int]]] = {}
+
+
 class Index:
     def __init__(self, db_path: Path):
+        self.path = str(db_path)
         self.db = sqlite3.connect(db_path)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode = WAL")
@@ -489,6 +500,43 @@ class Index:
         if on_progress:
             on_progress(len(todo), len(todo), "")
         return stats
+
+    def words(self) -> tuple[list[str], dict[str, int]]:
+        """The words in the index (of letters only, 3 or more), sorted, and how many items each is in."""
+        version = tuple(self.db.execute("SELECT count(*), coalesce(max(id), 0) FROM items").fetchone())
+        kept = _WORDS.get(self.path)
+        if kept and kept[0] == version:
+            return kept[1], kept[2]
+        docs = {t: n for t, n in self.db.execute("SELECT term, doc FROM fts_words") if len(t) >= 3 and t.isascii() and t.isalpha()}
+        _WORDS[self.path] = (version, sorted(docs), docs)
+        return _WORDS[self.path][1], docs
+
+    def corrections(self, query: str, abbreviations: dict[str, list[str]]) -> dict[str, str]:
+        """Words of a query (as parse_words reads it) that nothing in the index has or starts with,
+        and for each, the word it has that's a letter or two off ("midtrem": midterm), the more
+        common if there are a few. Not "quoted" ones, abbreviations, short ones, or Chinese."""
+        words, docs = self.words()
+        out: dict[str, str] = {}
+        for m in re.finditer(r'"[^"]*"?|(\S+)', query):
+            w = re.sub(r"\d+$", "", (m[1] or "").lower())  # (of one of a series, its name: "lectrue9")
+            if len(w) < 4 or not (w.isascii() and w.isalpha()) or w in abbreviations or w in out:
+                continue
+            if any((i := bisect.bisect_left(words, x)) < len(words) and words[i].startswith(x) for x in {w, singular(w)}):
+                continue  # (there, or the start of what is)
+            near = process.extract(w, words, scorer=DamerauLevenshtein.distance, score_cutoff=1 if len(w) <= 5 else 2, limit=20)
+            if near:
+                out[w] = min(near, key=lambda n: (n[1], -docs[n[0]], n[0]))[0]
+        return out
+
+    @staticmethod
+    def corrected(query: str, fixes: dict[str, str]) -> str:
+        """The query with misspelled words (`fixes`, from `corrections`) taken for those meant."""
+        def fix(m: re.Match[str]) -> str:
+            if not m[1]:
+                return m[0]
+            word, number = re.fullmatch(r"(.*?)(\d*)", m[1]).groups()  # type: ignore[union-attr]
+            return fixes.get(word.lower(), word) + number
+        return re.sub(r'"[^"]*"?|(\S+)', fix, query)
 
     def series(self, course_ids: list[int] | None) -> set[str]:
         """What the courses number things in, by their titles ("Worksheet 5": worksheet)."""

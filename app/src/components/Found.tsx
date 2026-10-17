@@ -12,12 +12,12 @@ import type { CatalogEntry, Course, Usage } from "../lib/api";
 import { shortDate, untilDue } from "../lib/dates";
 import { en } from "../lib/en";
 import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, dueSoon, find, prepare, recent, vocabulary } from "../lib/find";
-import { locale, t } from "../lib/i18n";
+import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
-import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, indexQuery, key, read, singular, without } from "../lib/query";
+import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, singular, without } from "../lib/query";
 import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
-import { useSearch } from "../lib/useSearch";
+import { useAnswer } from "../lib/useSearch";
 import { KIND, ResultBody, Snippet, formatDate } from "./Result";
 import { ThingIcon, thingName, useThing } from "./Things";
 
@@ -116,15 +116,19 @@ export function actionsFor(names: Map<number, string>, extra: Action[] = []): Ac
 }
 
 const EMPTY = prepare([], () => ({ names: [], aliases: [], kind: [] }));
+const NO_ANSWER: api.FoundInText = { hits: [], corrected: {} };
 
 /** What's found for `query`, as you type: how it reads, what that finds by name and in the index
  * (or, with nothing typed, what you opened lately and what's due soon), each by key, and which
  * comes first. */
 export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[]) {
-  const reading = useMemo(() => read(query, vocab), [query, vocab]);
-  const asked = useMemo(() => indexQuery(reading, catalog?.abbreviations ?? {}), [reading, catalog]);
-  const { hits, error, loading } = useSearch(asked ? JSON.stringify(asked) : "", () =>
-    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve([]));
+  const typed = useMemo(() => read(query, vocab), [query, vocab]);
+  const asked = useMemo(() => indexQuery(typed, catalog?.abbreviations ?? {}), [typed, catalog]);
+  const { answer, error, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
+    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
+  // Misspelled words (the index has nothing they start) are taken for the nearest there are.
+  const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
+  const hits = answer.hits;
   const results = useMemo(() => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions) : null), [query, reading, catalog, usage, hits, actions]);
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
   const due = useMemo(() => {
@@ -268,7 +272,8 @@ function partLabel(p: Part, names: Map<number, string>): string {
 }
 
 /** How what's typed was read: a chip for each part that narrows it down (a course, a kind, a time,
- * where you are with it). Clicking one takes what was typed as text instead; × takes it back. */
+ * where you are with it). Clicking one takes what was typed as text instead; × takes it back.
+ * Then the words taken for others (misspelled), each with a way to search for it as typed. */
 export function ReadingBar({ reading, names, courses, onQuery, className = "" }: {
   reading: Reading;
   names: Map<number, string>;
@@ -277,7 +282,8 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
   className?: string;
 }) {
   const shown = reading.parts.filter((p) => p.role === "course" || p.role === "kind" || p.role === "when" || p.role === "status");
-  if (!shown.length) return null;
+  const fixed = reading.parts.filter((p): p is PartOf<"word" | "series"> => (p.role === "word" || p.role === "series") && !!p.was);
+  if (!shown.length && !fixed.length) return null;
   return (
     <div className={`flex flex-wrap items-center gap-1.5 text-xs ${className}`} data-no-drag>
       {shown.map((p) => (
@@ -299,6 +305,14 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
             className="rounded-r-md p-1 text-muted hover:bg-line hover:text-fg"
           >
             <X className="size-3" />
+          </button>
+        </span>
+      ))}
+      {fixed.map((p) => (
+        <span key={`fix:${p.spans[0][0]}`} className="text-muted">
+          {tx("按 {word} 搜索", { word: <span className="font-medium text-fg-soft">{p.text}</span> })}
+          <button onMouseDown={(e) => e.preventDefault()} onClick={() => onQuery(asText(reading.query, p))} className="ml-1.5 text-accent hover:underline">
+            {t("仍搜索“{word}”", { word: p.was! })}
           </button>
         </span>
       ))}

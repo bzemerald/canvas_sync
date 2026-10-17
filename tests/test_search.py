@@ -129,6 +129,16 @@ def test_a_courses_number_is_before_its_term():
     assert code_keys("Freshman/Transfer Edge 2025") == set()
 
 
+def test_misspelled_words_are_taken_for_the_nearest_there_are(client):
+    got = client.get("/api/find", params={"q": "eigenvalu decompositon"}).json()
+    # "eigenvalu" is the start of a word there: as typed. "decompositon" isn't: decomposition.
+    assert got["corrected"] == {"decompositon": "decomposition"}
+    assert [h["title"] for h in got["hits"]] == ["Lecture 3.pdf"]
+    assert client.get("/api/find", params={"q": '"decompositon"'}).json() == {"hits": [], "corrected": {}}  # (as it is)
+    got = client.get("/api/find", params={"q": "lectrue3"}).json()  # (one of a series: its name)
+    assert got["corrected"] == {"lectrue": "lecture"} and [h["title"] for h in got["hits"]][:1] == ["Lecture 3.pdf"]
+
+
 def test_custom_abbreviation(root, course):
     pull(root, course)
     reindex(root)

@@ -1,6 +1,6 @@
 // How queries are read (query.ts). Times are local: now is Friday, October 16, 2026, 10 pm.
 import { describe, expect, it } from "vitest";
-import { type KindId, type Part, type Vocabulary, asText, indexQuery, read, sameSeries, seriesIn, singular, without } from "./query";
+import { type KindId, type Part, type Vocabulary, asText, corrected, indexQuery, read, sameSeries, seriesIn, singular, without } from "./query";
 
 const NOW = new Date(2026, 9, 16, 22, 0).getTime();
 const at = (m: number, d: number, y = 2026) => new Date(y, m - 1, d).getTime();
@@ -200,6 +200,14 @@ describe("what's done with a reading", () => {
     expect(indexQuery(read("lecture notes", { ...vocab, kinds: { ...KINDS, note: "note" } }, NOW), ABBR)?.q).toBe("lecture notes"); // (no notes in the index: a word)
     expect(indexQuery(read("cs70 公告", vocab, NOW), ABBR)).toBeNull(); // i18n-ignore
     expect(indexQuery(read("cs70 本周", vocab, NOW), ABBR)).toBeNull(); // i18n-ignore
+  });
+
+  it("takes misspelled words for those meant, as the index says, but not quoted ones", () => {
+    const r = corrected(read('midtrem "lectrue" sol', vocab, NOW), { midtrem: "midterm", lectrue: "lecture" });
+    expect(r.parts.map((p) => (p.role === "word" ? [p.text, p.was ?? null] : null))).toEqual([["midterm", "midtrem"], ["lectrue", null], ["sol", null]]);
+    expect(asText(r.query, r.parts[0])).toBe('"midtrem" "lectrue" sol'); // (searched for as typed)
+    const s = corrected(read("lectrue 9", vocab, NOW), { lectrue: "lecture" }).parts[0];
+    expect(s.role === "series" && [s.name, s.n, s.text, s.was]).toEqual(["lecture", 9, "lecture 9", "lectrue 9"]);
   });
 
   it("takes a part back, or as text", () => {

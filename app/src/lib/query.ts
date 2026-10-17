@@ -38,8 +38,8 @@ interface Said {
   text: string; // what was typed (the first span's)
 }
 export type Part = Said & (
-  | { role: "word"; quoted: boolean }
-  | { role: "series"; name: string; n: number }
+  | { role: "word"; quoted: boolean; was?: string } // was: what was typed, taken for this (misspelled)
+  | { role: "series"; name: string; n: number; was?: string }
   | { role: "course"; courses: number[] }
   | { role: "kind"; kind: KindId }
   | { role: "when"; when: When }
@@ -644,6 +644,20 @@ export function indexQuery(r: Reading, abbr: Record<string, string[]>): IndexQue
 const INDEXED: KindId[] = ["announcement", "assignment", "page", "file"]; // (what the index has)
 type IndexedKind = "announcement" | "assignment" | "page" | "file";
 export interface IndexQuery { q: string; courses: number[]; kinds?: IndexedKind[]; since?: string; until?: string }
+
+/** The reading with misspelled words taken for those meant (`fixes`, from the index: "midtrem":
+ * midterm). Not words in quotes: those are as they are. */
+export function corrected(r: Reading, fixes: Record<string, string>): Reading {
+  const fixOf = (p: Part) => (p.role === "word" && !p.quoted ? fixes[p.text.toLowerCase()] : p.role === "series" ? fixes[p.name] : undefined);
+  if (!r.parts.some(fixOf)) return r;
+  const parts = r.parts.map((p): Part => {
+    const fix = fixOf(p);
+    if (!fix) return p;
+    if (p.role === "series") return { ...p, name: fix, text: p.text.replace(new RegExp(p.name, "i"), fix), was: p.text };
+    return p.role === "word" ? { ...p, text: fix, was: p.text } : p;
+  });
+  return { ...r, parts };
+}
 
 /** The query without what `part` says. */
 export function without(query: string, part: Part): string {

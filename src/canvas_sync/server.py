@@ -413,15 +413,19 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
              since: str = "", until: str = "") -> dict[str, Any]:
         """The app's search as you type (its find.ts), in the index: `q` is only words to find
         (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind` and
-        `since`/`until`: what the app read as narrowing it down."""
+        `since`/`until`: what the app read as narrowing it down. `corrected`: words taken for
+        others, misspelled ("midtrem": midterm)."""
         with engine() as e:
             if not course and e.settings.hidden:  # (as /search)
                 course = [c.id for c in e.state.courses() if c.id not in e.settings.hidden]
                 if not course:
-                    return {"hits": []}
+                    return {"hits": [], "corrected": {}}
+            # Words nothing has (misspelled, likely) are taken for the nearest words there are.
+            corrected = e.index.corrections(q, abbreviations(e))
+            q = e.index.corrected(q, corrected)
             hits = e.index.search(q, e.state.courses(), e.settings, min(limit, 500), course or None, kind or None,
                                   literal=True, since=since or None, until=until or None)
-            return {"hits": [h.to_dict() for h in hits]}
+            return {"hits": [h.to_dict() for h in hits], "corrected": corrected}
 
     @api.get("/catalog")
     def catalog_() -> dict[str, Any]:

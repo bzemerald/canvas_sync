@@ -302,13 +302,17 @@ export interface Usage {
 export const catalog = () => api<{ things: CatalogEntry[]; abbreviations: Record<string, string[]> } & Usage>("/catalog");
 /** Search as you type, in the index: `q` only words to find (the app read the courses, kinds and
  * times out of what was typed: lib/query.ts), narrowed to `courses`, `kinds`, `since` up to `until`. */
-export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; since?: string; until?: string; limit?: number } = {}): Promise<Hit[]> {
+export interface FoundInText {
+  hits: Hit[];
+  corrected: Record<string, string>; // words taken for others, misspelled ("midtrem": midterm)
+}
+export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; since?: string; until?: string; limit?: number } = {}): Promise<FoundInText> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 40) });
   for (const c of opts.courses ?? []) params.append("course", String(c));
   for (const k of opts.kinds ?? []) params.append("kind", k);
   if (opts.since) params.set("since", opts.since);
   if (opts.until) params.set("until", opts.until);
-  return api<{ hits: Hit[] }>(`/find?${params}`).then((r) => r.hits);
+  return api<FoundInText>(`/find?${params}`);
 }
 /** It was opened (having typed `query` in search): what you open most, and lately, comes first. */
 export const noteOpened = (key: string, query = "") => void post("/opened", { key, query }).catch(() => {});

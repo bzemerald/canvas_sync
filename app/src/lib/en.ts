@@ -307,6 +307,8 @@ export const en: Record<string, string | [string, string]> = {
   "最近 14 天": "Last 14 days",
   "没有这门课": "No such course",
   "按文字搜索“{text}”": "Search for “{text}” as text",
+  "按 {word} 搜索": "Showing results for {word}.",
+  "仍搜索“{word}”": "Search for “{word}” instead",
   "▶ 嵌入的内容（在浏览器中打开）": "▶ Embedded content (opens in your browser)",
   "（图片无法加载）": "(the image couldn't load)",
 
