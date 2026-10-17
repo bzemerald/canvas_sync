@@ -411,7 +411,9 @@ class Index:
             # then files that only mention it inside.
             expr = q.fts()
             names = f"{{title folder}} : ({expr})"
-            sql = f"""SELECT i.*, snippet(fts, -1, '{_HIT_START}', '{_HIT_END}', '…', 14) AS snip,
+            # The snippet is the text inside around what matched (the title shows already; the
+            # folder column is for matching, not reading).
+            sql = f"""SELECT i.*, snippet(fts, 2, '{_HIT_START}', '{_HIT_END}', '…', 14) AS snip,
                              fts.rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?) AS in_title,
                              fts.rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?) AS in_name
                       FROM fts JOIN items i ON i.id = fts.rowid
@@ -428,7 +430,7 @@ class Index:
         return [
             Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
                 title=r["title"], path=r["path"], url=r["url"], date=r["date"],
-                snippet=_segments(r["snip"]) if r["snip"] else [],
+                snippet=_segments(r["snip"]) if r["snip"] and _HIT_START in r["snip"] else [],
                 match="name" if r["in_name"] else "content",
                 doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None)
             for r in self.db.execute(sql, args)
