@@ -963,6 +963,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         if not req.on:
             meaning.forget(home)
         elif meaning_job.phase not in ("downloading", "indexing"):
+            # Said before it starts: the answer says it's being done (the app polls while it is).
+            mj = meaning_job
+            mj.phase, mj.done, mj.total, mj.error = "indexing" if meaning.downloaded(home) else "downloading", 0, 0, ""
             task = asyncio.create_task(asyncio.to_thread(prepare_meaning))
             tasks.add(task)
             task.add_done_callback(tasks.discard)

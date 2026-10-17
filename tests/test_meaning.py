@@ -100,3 +100,13 @@ def test_api_find_has_what_meaning_finds_when_its_on(root, course, monkeypatch):
         assert state["on"] and state["model"] and state["items"] == state["covered"]
     finally:
         AppPrefs().save()
+
+
+def test_turning_it_on_answers_with_what_its_doing(root, course, monkeypatch):
+    """The app polls only while something's being done: the answer to turning it on says so."""
+    monkeypatch.setattr(meaning, "download", lambda home, on_progress=None: None)
+    client = TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"})
+    try:
+        assert client.post("/api/meaning", json={"on": True}).json()["phase"] == "downloading"
+    finally:
+        AppPrefs().save()
