@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Entry } from "../lib/api";
 import { t } from "../lib/i18n";
 
@@ -73,4 +74,15 @@ export function Count({ n, label }: { n: number; label: string }) {
 /** Marks one new thing: arrived since you last looked, and you haven't opened it. */
 export function NewDot({ label = t("新的") }: { label?: string }) {
   return <span title={label} aria-label={label} className="size-1.5 shrink-0 rounded-full bg-accent" />;
+}
+
+/** 正在加载…, said only if it takes a while: usually the answer is in before anyone could read it,
+ * and a flash of text would just make the page jump. It takes its place from the start. */
+export function Loading({ className = "px-6 py-8 text-sm" }: { className?: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(timer);
+  }, []);
+  return <p className={`${className} text-muted transition-opacity duration-200 ${slow ? "opacity-100" : "opacity-0"}`}>{t("正在加载…")}</p>;
 }

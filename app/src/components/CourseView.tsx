@@ -7,9 +7,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
+import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
+import { useLoaded } from "../lib/useLoaded";
 import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
@@ -20,7 +21,7 @@ import {
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 import { RenameDialog } from "./RenameDialog";
-import { Count, NewDot } from "./Status";
+import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
 import { ThingIcon, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
@@ -36,16 +37,7 @@ export const VIEW_KIND: Partial<Record<ViewName, DocKind>> = {
 /** The overview, loaded once per course and version (it also says which tabs to show).
  * `seen` changes when you open something, so the counts of what's new follow. */
 export function useOverview(courseId: number | null, version: number, seen: number) {
-  const [data, setData] = useState<{ id: number; overview: Overview } | null>(null);
-  useEffect(() => {
-    if (courseId === null) return;
-    let live = true;
-    api.overview(courseId).then((o) => live && setData({ id: courseId, overview: o }), () => {});
-    return () => {
-      live = false;
-    };
-  }, [courseId, version, seen]);
-  return data && data.id === courseId ? data.overview : null;
+  return useLoaded(courseId === null ? null : `overview:${courseId}`, () => api.overview(courseId!), [version, seen]).value ?? null;
 }
 
 /** Open external tools; `pending` is the one on its way (asking Canvas for a link takes a moment). */
@@ -363,14 +355,11 @@ export function CourseModules({ course, version, focus, only, query, onWiden }: 
   query: string; // the search box: only items (or modules) with these words in their titles
   onWiden: () => void;
 }) {
-  const [list, setList] = useState<Module[] | null>(null);
+  const list = useLoaded(`modules:${course.id}`, () => api.modules(course.id).catch(() => []), [version]).value ?? null;
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
   const { activate, pending } = useItemOpener(course.id);
   const things = useThings();
   const thing = useThing();
-  useEffect(() => {
-    api.modules(course.id).then(setList, () => setList([]));
-  }, [course.id, version]);
 
   const expanded = new Set(open ?? (list ?? []).filter((m) => m.current).map((m) => m.id));
   const loaded = list !== null;
@@ -385,7 +374,7 @@ export function CourseModules({ course, version, focus, only, query, onWiden }: 
     setOpen([...next]);
   };
 
-  if (list === null) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
+  if (list === null) return <Loading />;
   if (list.length === 0) {
     return <p className="px-6 py-8 text-sm text-muted">{t("还没有模块。（新加的课程同步一次后就会显示。）")}</p>;
   }
@@ -520,13 +509,9 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
   query: string; // the search box: the list shows what matches, best first (titles and text)
   onWiden: () => void;
 }) {
-  const [items, setItems] = useState<ItemSummary[] | null>(null);
+  const items = useLoaded(`items:${course.id}:${kind}`, () => api.items(course.id, kind).catch(() => []), [version]).value ?? null;
   // Opened here: no dot, even if the list was fetched before opening it marked it seen.
   const [opened, setOpened] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    setItems(null);
-    api.items(course.id, kind).then(setItems, () => setItems([]));
-  }, [course.id, kind, version]);
   const all = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
   const searching = query.trim() !== "" && kind !== "syllabus";
   const found = useSearch(
@@ -558,7 +543,7 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
     <div className="flex min-h-0 flex-1">
       <ul className="w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("列表")}>
         {searching && !found.loading && <li><FilterNote n={list?.length ?? 0} onWiden={onWiden} /></li>}
-        {list === null && <li className="px-2 py-3 text-sm text-muted">{t("正在加载…")}</li>}
+        {list === null && <li><Loading className="px-2 py-3 text-sm" /></li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
         {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
           <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
@@ -650,18 +635,11 @@ function ItemView({ course, kind, id, version, onLoaded }: {
   version: number;
   onLoaded?: (it: Item) => void; // (loading it marked it seen)
 }) {
-  const [it, setIt] = useState<Item | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { value: it, error } = useLoaded(`item:${course.id}:${kind}:${id}`, () => api.item(course.id, kind, id).then((x) => {
+    onLoaded?.(x);
+    return x;
+  }), [version]);
   const { launch, pending } = useLaunch(course.id);
-  useEffect(() => {
-    setIt(null);
-    setError(null);
-    api.item(course.id, kind, id).then((x) => {
-      setIt(x);
-      onLoaded?.(x);
-    }, (e) => setError(e.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course.id, kind, id, version]);
 
   if (error) {
     return (
@@ -671,7 +649,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
       </div>
     );
   }
-  if (!it) return <p className="p-8 text-sm text-muted">{t("正在加载…")}</p>;
+  if (!it) return <Loading className="p-8 text-sm" />;
   const submit = kind === "assignment" && it.submission_types?.some((t) => t.startsWith("online") || t === "external_tool");
   return (
     <article className="mx-auto max-w-3xl px-8 py-6">
@@ -746,11 +724,8 @@ export function CourseGrades({ course, version, query, onWiden }: {
 }) {
   const thing = useThing();
   const things = useThings();
-  const [g, setG] = useState<Grades | null>(null);
-  useEffect(() => {
-    api.grades(course.id).then(setG, () => setG({ total: null, assignments: [] }));
-  }, [course.id, version]);
-  if (!g) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
+  const g = useLoaded(`grades:${course.id}`, () => api.grades(course.id).catch((): Grades => ({ total: null, assignments: [] })), [version]).value;
+  if (!g) return <Loading />;
   const { total } = g;
   const match = matcher(query);
   const rows = match ? g.assignments.filter((a) => match(a.title)) : g.assignments;

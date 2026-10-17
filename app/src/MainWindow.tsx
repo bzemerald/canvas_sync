@@ -56,6 +56,7 @@ type View =
 
 /** The open course's page: its places, each with all they hold (as last loaded, or as just changed). */
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
+const layouts = new Map<number, Layout>(); // each course's, as last loaded: drawn at once when it's opened again
 
 function groupByTerm(list: Course[]): [string, Course[]][] {
   const groups = new Map<string, Course[]>();
@@ -110,6 +111,10 @@ export function MainWindow() {
   const [hiding, setHiding] = useState<{ courses: Course[]; term?: string } | null>(null);
   const [choosingIcon, setChoosingIcon] = useState<Course | null>(null);
   const [layout, setLayout] = useState<{ id: number; layout: Layout } | null>(null); // the open course's page
+  const keepLayout = (id: number, l: Layout) => {
+    layouts.set(id, l);
+    setLayout({ id, layout: l });
+  };
   const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
@@ -221,12 +226,12 @@ export function MainWindow() {
   useEffect(() => {
     if (layoutId === null) return;
     let live = true;
-    api.courseLayout(layoutId).then((l) => live && setLayout({ id: layoutId, layout: l }), () => {});
+    api.courseLayout(layoutId).then((l) => live && keepLayout(layoutId, l), () => {});
     return () => {
       live = false;
     };
   }, [layoutId, version]);
-  const courseLayout = layout && layout.id === layoutId ? layout.layout : null;
+  const courseLayout = layout && layout.id === layoutId ? layout.layout : layoutId !== null ? layouts.get(layoutId) ?? null : null;
   const tabs = courseLayout?.tabs ?? [];
   /** Going to one of the course's tabs (or showing something there). */
   const toTab = (v: CourseView, x: Thing): CourseView => {
@@ -429,13 +434,13 @@ export function MainWindow() {
   const arrangeLayout = (place: Place, next: Shown[]) => {
     if (!courseLayout || layoutId === null) return;
     const id = layoutId;
-    setLayout({ id, layout: { ...courseLayout, [place]: next } });
-    api.arrangeCourse(id, place, next).then((l) => setLayout({ id, layout: l }), fail(t("操作失败")));
+    keepLayout(id, { ...courseLayout, [place]: next });
+    api.arrangeCourse(id, place, next).then((l) => keepLayout(id, l), fail(t("操作失败")));
     // The tab you're on, just hidden or taken away: to the first one.
     if (place === "tabs" && cv && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
   };
   const layoutDone = (id: number, message: string) => (l: CourseLayout) => {
-    setLayout({ id, layout: l });
+    keepLayout(id, l);
     say(message);
   };
   /** Back to the default, one place after another (each writes config.toml). */

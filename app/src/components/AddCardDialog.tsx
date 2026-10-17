@@ -11,6 +11,7 @@ import { t } from "../lib/i18n";
 import type { Shown, ViewName } from "../lib/things";
 import { Button, Dialog } from "./Dialog";
 import { FileIcon } from "./FileIcon";
+import { Loading } from "./Status";
 
 type Kind = "note" | "folder" | "file" | "page" | "module" | "search";
 type Look = Kind | "assignments" | "announcements" | "modules" | "files" | "grades" | "tools" | "syllabus";
@@ -284,7 +285,7 @@ function PathPicker({ root, files, onPick }: { root: string; files: boolean; onP
         ))}
       </nav>
       <ul className="h-64 overflow-y-auto rounded-md border border-line p-1">
-        {entries === null && <li className="px-2 py-2 text-xs text-muted">{t("正在加载…")}</li>}
+        {entries === null && <li><Loading className="px-2 py-2 text-xs" /></li>}
         {entries !== null && shown.length === 0 && <li className="px-2 py-2 text-xs text-muted">{files ? t("这个文件夹是空的") : t("没有子文件夹")}</li>}
         {shown.map((e) => (
           <li key={e.path}>
@@ -324,7 +325,7 @@ function Filterable<T>({ items, label, onPick, empty }: {
       <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("筛选…")} autoCorrect="off" spellCheck={false}
         className="mb-2 w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
       <ul className="h-64 overflow-y-auto rounded-md border border-line p-1">
-        {items === null && <li className="px-2 py-2 text-xs text-muted">{t("正在加载…")}</li>}
+        {items === null && <li><Loading className="px-2 py-2 text-xs" /></li>}
         {items !== null && shown.length === 0 && <li className="px-2 py-2 text-xs text-muted">{empty}</li>}
         {shown.map((x, i) => (
           <li key={i}>

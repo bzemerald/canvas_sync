@@ -8,11 +8,12 @@
 import { FolderOpen, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Entry as FileEntry, Hit, Item, Module, Overview } from "../lib/api";
+import type { Course, DocKind, Hit, Module, Overview } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
+import { remember, useLoaded } from "../lib/useLoaded";
 import {
   type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, slotIndex, thingKey, thingOfHit, view,
   without,
@@ -24,11 +25,12 @@ import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 import { RenameDialog } from "./RenameDialog";
 import { RichText } from "./RichText";
-import { NewDot } from "./Status";
+import { Loading, NewDot } from "./Status";
 import { Thumb } from "./Thumb";
 import { ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 
 const GAP = 16; // px between cards
+const LOADING = "px-2 py-3 text-sm"; // (as Empty)
 type Kinds = ("announcement" | "assignment" | "file")[];
 
 /** Things with a card of their own; the rest (a tool, a link, a course...) go into 工具与链接. */
@@ -140,7 +142,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     thing: (i) => shown[i],
   });
 
-  if (!overview || !cards) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
+  if (!overview || !cards) return <Loading />;
   const { upcoming, announcements, new_files, counts, grades, tools, current_modules } = overview;
   const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus;
   if (empty && all.every((e) => e.hidden || isOwn(e))) {
@@ -570,11 +572,9 @@ function FileRow({ path, name, date, isNew, updated }: { path: string; name: str
 /** What's in a folder: its files (newest first) and folders. */
 function FolderCard({ path }: { path: string }) {
   const things = useThings();
-  const [entries, setEntries] = useState<FileEntry[] | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => void api.tree(path).then(setEntries, () => setError(true)), [path]);
+  const { value: entries, error } = useLoaded(`tree:${path}`, () => api.tree(path));
   if (error) return <Empty>{t("找不到这个文件夹了")}</Empty>;
-  if (!entries) return <Empty>{t("正在加载…")}</Empty>;
+  if (!entries) return <Loading className={LOADING} />;
   const live = entries.filter((e) => !e.deleted);
   if (!live.length) return <Empty>{t("这个文件夹是空的")}</Empty>;
   const sorted = [...live].sort((a, b) => (a.type === b.type ? (b.mtime ?? 0) - (a.mtime ?? 0) : a.type === "dir" ? 1 : -1));
@@ -619,11 +619,13 @@ function FileCard({ file }: { file: ThingOf<"file"> }) {
 /** A note: typed here, saved as you go (in the sync folder, .canvas/notes). On a card, or as a
  * tab of its own (`page`). */
 export function NoteEditor({ course, id, page = false }: { course: number; id: string; page?: boolean }) {
-  const [text, setText] = useState<string | null>(null);
+  const key = `note:${course}:${id}`;
+  const loaded = useLoaded(key, () => api.note(course, id).then((n) => n.text, () => "")).value;
+  const [typed, setTyped] = useState<string | null>(null); // (once typed in, what's typed counts)
+  const text = typed ?? loaded ?? null;
   const [state, setState] = useState<"saved" | "saving" | "failed">("saved");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef("");
-  useEffect(() => void api.note(course, id).then((n) => setText(n.text), () => setText("")), [course, id]);
   // Saves what's pending when it goes away (another tab, another course).
   useEffect(() => () => {
     if (timer.current) {
@@ -632,7 +634,8 @@ export function NoteEditor({ course, id, page = false }: { course: number; id: s
     }
   }, [course, id]);
   const change = (v: string) => {
-    setText(v);
+    setTyped(v);
+    remember(key, v);
     latest.current = v;
     setState("saving");
     if (timer.current) clearTimeout(timer.current);
@@ -641,7 +644,7 @@ export function NoteEditor({ course, id, page = false }: { course: number; id: s
       api.saveNote(course, id, v).then(() => setState("saved"), () => setState("failed"));
     }, 500);
   };
-  if (text === null) return <Empty>{t("正在加载…")}</Empty>;
+  if (text === null) return <Loading className={LOADING} />;
   return (
     <div className={page ? "flex min-h-0 flex-1 flex-col px-6 py-4" : "px-2 pb-1"} data-no-drag>
       <textarea
@@ -661,11 +664,9 @@ export function NoteEditor({ course, id, page = false }: { course: number; id: s
 /** A page (or an announcement, an assignment, the syllabus), right on the overview: where some
  * instructors keep the schedule. */
 function DocCard({ course, kind, id }: { course: Course; kind: DocKind; id: string }) {
-  const [item, setItem] = useState<Item | null>(null);
-  const [missing, setMissing] = useState(false);
-  useEffect(() => void api.item(course.id, kind, id).then(setItem, () => setMissing(true)), [course.id, kind, id]);
-  if (missing) return <Empty>{t("找不到这个页面了（可能被删了，或者还没同步）")}</Empty>;
-  if (!item) return <Empty>{t("正在加载…")}</Empty>;
+  const { value: item, error } = useLoaded(`item:${course.id}:${kind}:${id}`, () => api.item(course.id, kind, id));
+  if (error) return <Empty>{t("找不到这个页面了（可能被删了，或者还没同步）")}</Empty>;
+  if (!item) return <Loading className={LOADING} />;
   return (
     <div className="max-h-96 overflow-y-auto px-2 pb-1" data-no-drag>
       {item.html.trim() ? <RichText html={item.html} files={item.files} /> : <Empty>{t("没有正文。")}</Empty>}
@@ -675,23 +676,20 @@ function DocCard({ course, kind, id }: { course: Course; kind: DocKind; id: stri
 
 /** One module, always: "Exam review", "Course resources". */
 function ModuleCard({ course, id, render }: { course: number; id: number; render: (m: Module, limit?: number) => React.ReactNode }) {
-  const [module, setModule] = useState<Module | null | undefined>(undefined);
-  useEffect(() => void api.modules(course).then((ms) => setModule(ms.find((m) => m.id === id) ?? null), () => setModule(null)), [course, id]);
-  if (module === undefined) return <Empty>{t("正在加载…")}</Empty>;
-  if (module === null) return <Empty>{t("找不到这个模块了")}</Empty>;
+  const modules = useLoaded(`modules:${course}`, () => api.modules(course).catch((): Module[] => [])).value;
+  if (modules === undefined) return <Loading className={LOADING} />;
+  const module = modules.find((m) => m.id === id);
+  if (!module) return <Empty>{t("找不到这个模块了")}</Empty>;
   return <>{render(module, 12)}</>;
 }
 
 /** A saved search: everything with "mt" in its name, say. */
 function SearchCard({ search }: { search: ThingOf<"search"> }) {
   const things = useThings();
-  const [hits, setHits] = useState<Hit[] | null>(null);
   const { query, courses, kinds, content } = search;
-  useEffect(
-    () => void api.search(query, { courses, kinds, namesOnly: !content, limit: 12 }).then(setHits, () => setHits([])),
-    [query, courses.join(","), kinds.join(","), content], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  if (!hits) return <Empty>{t("正在加载…")}</Empty>;
+  const hits = useLoaded(`search:${JSON.stringify([query, courses, kinds, content])}`,
+    () => api.search(query, { courses, kinds, namesOnly: !content, limit: 12 }).catch((): Hit[] => [])).value;
+  if (!hits) return <Loading className={LOADING} />;
   if (!hits.length) return <Empty>{t("没有结果")}</Empty>;
   return (
     <>
