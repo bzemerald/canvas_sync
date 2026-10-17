@@ -14,7 +14,7 @@ export interface Hit {
   url: string | null;
   date: string | null;
   snippet: { text: string; match: boolean }[];
-  match: "name" | "content"; // name: title or folder matched; content: only the text inside
+  match: "name" | "content" | "meaning"; // name: title or folder matched; content: only the text inside; meaning: what it means (meaning.py)
   doc_id: string | null; // pages, assignments, announcements, syllabus: which one
 }
 
@@ -421,6 +421,20 @@ let canvasBase: Promise<string | null> | null = null;
 /** The Canvas site's address, e.g. https://bcourses.berkeley.edu */
 export const canvasSite = () => (canvasBase ??= health().then((h) => h.canvas));
 
+/** Searching by meaning (src/canvas_sync/meaning.py): on or not, its model downloaded or not, what's
+ * being done to get it ready, and how much of the index it has (items, covered). */
+export interface MeaningState {
+  on: boolean;
+  model: boolean;
+  phase: "idle" | "downloading" | "indexing" | "failed";
+  done: number; // bytes downloaded, or items done
+  total: number;
+  error: string;
+  items?: number;
+  covered?: number;
+}
+export const meaning = () => api<MeaningState>("/meaning");
+export const setMeaning = (on: boolean) => post<MeaningState>("/meaning", { on });
 export const prefs = () => api<Prefs>("/prefs");
 export const setPrefs = (changes: Partial<Prefs>) => post<Prefs>("/prefs", changes);
 export const account = () => api<AccountInfo>("/account");

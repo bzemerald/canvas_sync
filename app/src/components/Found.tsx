@@ -359,7 +359,7 @@ const ACTION_ICON = { sync: RefreshCw, settings: SettingsIcon, "smart-folder": S
 
 const GROUP: Record<GroupId, string> = {
   courses: t("课程@@group"), places: t("页面与工具"), assignments: t("作业"), announcements: t("公告"), files: t("文件与文件夹"),
-  actions: t("操作"), inside: t("正文中提到"),
+  actions: t("操作"), inside: t("正文中提到"), related: t("意思相近"),
 };
 const MOST = 50;
 

@@ -213,6 +213,13 @@ describe("with what the index finds", () => {
     expect(keyOf(only.top)).toBe("file:Spring 2026/MATH 221/Files/math_notes.pdf"); // nothing by name: the best inside
   });
 
+  it("lists what's like it in meaning (not in its words) after what mentions it", () => {
+    const notes = hit({ course_id: 221, path: "Spring 2026/MATH 221/Files/math_notes.pdf", match: "meaning", title: "math_notes.pdf" });
+    const r = run("lec", none, [hit({ course_id: 221, path: "Spring 2026/MATH 221/Files/MT 2.pdf", match: "content", title: "MT 2.pdf" }), notes]);
+    expect(r.groups.map((g) => g.id).slice(-2)).toEqual(["inside", "related"]);
+    expect(group(r, "related")).toEqual(["math_notes.pdf"]);
+  });
+
   it("keeps what the index has that isn't synced, to open on Canvas", () => {
     const r = run("syllabus", none, [hit({ kind: "file", title: "syllabus.pdf", url: "/courses/70/files/9" })]);
     expect(r.top?.type).toBe("hit");

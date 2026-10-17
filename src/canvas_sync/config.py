@@ -543,6 +543,7 @@ class AppPrefs:
     language: str = "system"     # system | zh | en
     auto_sync: int = 60          # minutes between syncs while the app runs; 0: off
     sync_on_launch: bool = True  # sync when the app starts (unless it just did)
+    meaning: bool = False        # search by meaning, too (meaning.py: an English model, downloaded)
     # The default arrangement of a course's tabs and overview, for courses not arranged for
     # themselves: their views (of no course in particular). []: the usual.
     tabs: list[Entry] = field(default_factory=list)
@@ -568,6 +569,7 @@ class AppPrefs:
             language=language if language in LANGUAGES else d.language,
             auto_sync=auto_sync if auto_sync in AUTO_SYNC_MINUTES else d.auto_sync,
             sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
+            meaning=bool(data.get("meaning", d.meaning)),
             tabs=default("tabs"),
             overview=default("overview"),
         )
@@ -598,6 +600,7 @@ class AppPrefs:
         doc["language"] = self.language
         doc["auto_sync"] = self.auto_sync
         doc["sync_on_launch"] = self.sync_on_launch
+        doc["meaning"] = self.meaning
         for place in ("tabs", "overview"):
             if getattr(self, place):
                 doc.add(tomlkit.nl())

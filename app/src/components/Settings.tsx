@@ -165,9 +165,13 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
           <Row label={t("语言")}>
             <LanguagePicker />
           </Row>
+        </Section>
+
+        <Section title={t("搜索")}>
           <Row label={t("快捷搜索")} hint={t("在任何应用里按这个组合键，打开搜索窗口。")}>
             <kbd className="rounded border border-line bg-chip px-1.5 py-0.5 text-xs">{shortcut.launcher}</kbd>
           </Row>
+          <MeaningRow />
         </Section>
 
         <Section title={t("高级")}>
@@ -232,7 +236,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -241,6 +245,48 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       <div className="flex min-w-0 shrink-0 justify-end">{children}</div>
     </div>
+  );
+}
+
+/** Searching by meaning (English, a model downloaded when it's turned on): on or off, and how
+ * getting it ready is going (shown as it goes). */
+function MeaningRow() {
+  const [state, setState] = useState<api.MeaningState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const busy = state?.phase === "downloading" || state?.phase === "indexing";
+  useEffect(() => {
+    let live = true;
+    const load = () => void api.meaning().then((s) => live && setState(s), () => {});
+    load();
+    const timer = busy ? setInterval(load, 1000) : undefined;
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [busy]);
+  if (!state) return null;
+  const turn = (on: boolean) => {
+    setError(null);
+    void api.setMeaning(on).then(setState, (e) => setError(friendly((e as Error).message)));
+  };
+  const pct = state.total ? Math.floor((100 * state.done) / state.total) : 0;
+  const status = error
+    ?? (state.phase === "downloading" ? t("正在下载模型… {pct}%", { pct })
+      : state.phase === "indexing" ? t("正在整理正文… {done}/{total}", { done: state.done, total: state.total })
+      : state.phase === "failed" ? t("没能准备好：{error}", { error: friendly(state.error) })
+      : state.on && state.model ? t("已开启") : null);
+  return (
+    <Row
+      label={t("按意思搜索英文内容")}
+      hint={
+        <>
+          {t("用一个英文小模型（约 125 MB，打开时下载）按意思找正文：比如“can I get an extension”能找到写着 Flextensions 的公告。中文照旧按字词找。")}
+          {status && <span className={`mt-1 block ${state.phase === "failed" || error ? "text-danger" : "text-fg-soft"}`}>{status}</span>}
+        </>
+      }
+    >
+      <Toggle on={state.on} onChange={turn} />
+    </Row>
   );
 }
 

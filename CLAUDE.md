@@ -41,6 +41,8 @@ without the Canvas website or Finder.
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
     you open (`POST /opened`).
+  - `meaning.py`: search by meaning (English; off unless turned on in 设置: a small model is
+    downloaded to the app's folder, `models/`; passages and their vectors go in index.db).
   - `content.py`: what the app shows (overview, items, modules, tools).
   - `server.py`: the app's HTTP API (`canvas serve`).
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.

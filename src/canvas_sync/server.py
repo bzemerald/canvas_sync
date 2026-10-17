@@ -18,7 +18,7 @@ import socket
 import sys
 import threading
 import webbrowser
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -34,7 +34,9 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
+from . import meaning
 from .catalog import abbreviations, catalog
+from .meaning import Meaning
 from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
@@ -116,6 +118,19 @@ class ScopeRequest(BaseModel):
 
     def scope(self) -> Scope | None:
         return Scope(self.paths, set(self.file_ids)) if self.paths or self.file_ids else None
+
+
+@dataclass
+class MeaningJob:
+    """Getting search by meaning ready: its model downloaded, the index's text cut into passages."""
+    phase: str = "idle"  # idle | downloading | indexing | failed
+    done: int = 0        # bytes downloaded, or items cut
+    total: int = 0
+    error: str = ""
+
+
+class MeaningRequest(BaseModel):
+    on: bool
 
 
 class PrefsRequest(BaseModel):
@@ -222,6 +237,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         CORSMiddleware, allow_origins=APP_ORIGINS, allow_methods=["*"], allow_headers=["*"],
     )
     job = SyncJob()
+    meaning_job = MeaningJob()
+    home = prefs_path.parent  # the app's own folder (models/ is in it)
     tasks: set[asyncio.Task[None]] = set()
 
     def authorized(authorization: str = Header(default="")) -> None:
@@ -425,6 +442,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             q = e.index.corrected(q, corrected)
             hits = e.index.search(q, e.state.courses(), e.settings, min(limit, 500), course or None, kind or None,
                                   literal=True, since=since or None, until=until or None)
+            # By meaning too (when it's on), for what's said in a few words: what the words alone
+            # didn't find.
+            if len(q.split()) >= 2 and prefs().meaning and meaning.downloaded(home):
+                codes = {c.id: course_label(c, e.settings) for c in e.state.courses()}
+                had = {(h.kind, h.course_id, h.path or h.url or h.title) for h in hits}
+                hits += [h for h in Meaning(e.index).search(q, meaning.embedder(home), codes, course or None, kind or None,
+                                                            since or None, until or None)
+                         if (h.kind, h.course_id, h.path or h.url or h.title) not in had]
             return {"hits": [h.to_dict() for h in hits], "corrected": corrected}
 
     @api.get("/catalog")
@@ -888,9 +913,57 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "not signed in to Canvas")
         scope_paths(req)
         job = SyncJob(phase="checking", started_at=_now(), scope=req.paths)
-        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job))
+        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job, after_index))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
+
+    def after_index(e: Engine, progress: meaning.ProgressHandler) -> None:
+        """After a sync's indexing: passages for what changed, when searching by meaning is on."""
+        if prefs().meaning and meaning.downloaded(home):
+            Meaning(e.index).sync(meaning.embedder(home), progress)
+
+    # -- searching by meaning (meaning.py) --------------------------------------------------------
+
+    def get_meaning() -> dict[str, Any]:
+        out: dict[str, Any] = {"on": prefs().meaning, "model": meaning.downloaded(home), **asdict(meaning_job)}
+        if account is not None:
+            with engine() as e:
+                out["items"], out["covered"] = Meaning(e.index).counts()
+        return out
+
+    @api.get("/meaning")
+    def meaning_state() -> dict[str, Any]:
+        """Searching by meaning: on or not, its model downloaded or not, what's being done to get
+        it ready (downloading the model, cutting the index's text into passages), and how much of
+        the index has passages (items, covered)."""
+        return get_meaning()
+
+    def prepare_meaning() -> None:
+        """The model downloaded if it isn't, then passages for what has none (in the background)."""
+        mj = meaning_job
+        try:
+            if not meaning.downloaded(home):
+                mj.phase, mj.done, mj.total, mj.error = "downloading", 0, 0, ""
+                meaning.download(home, lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
+            if account is not None and prefs().meaning:
+                mj.phase, mj.done, mj.total = "indexing", 0, 0
+                with Engine(account.root) as e:
+                    Meaning(e.index).sync(meaning.embedder(home), lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
+            mj.phase, mj.error = "idle", ""
+        except Exception as err:  # (offline, say: shown in 设置)
+            mj.phase, mj.error = "failed", f"{type(err).__name__}: {err}"
+
+    @api.post("/meaning")
+    async def set_meaning(req: MeaningRequest) -> dict[str, Any]:
+        """Turn searching by meaning on (getting it ready, if it isn't) or off."""
+        replace(prefs(), meaning=req.on).save(prefs_path)
+        if not req.on:
+            meaning.forget(home)
+        elif meaning_job.phase not in ("downloading", "indexing"):
+            task = asyncio.create_task(asyncio.to_thread(prepare_meaning))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+        return get_meaning()
 
     @api.post("/sync", status_code=202)
     async def sync(req: SyncRequest | None = None) -> dict[str, Any]:
@@ -972,7 +1045,7 @@ async def _who(url: str, token: str) -> dict[str, Any]:
 
 
 async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, scope: Scope | None,
-                    job: SyncJob) -> None:
+                    job: SyncJob, after_index: Callable[[Engine, meaning.ProgressHandler], None] | None = None) -> None:
     try:
         async with CanvasClient(account.base_url, canvas_token) as client:
             with Engine(account.root, client) as e:
@@ -1007,6 +1080,8 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
 
             with Engine(account.root) as e:
                 e.reindex(progress)
+                if after_index:
+                    after_index(e, lambda done, total: progress(done, total, ""))
 
         await asyncio.to_thread(index)
         job.phase = "done"

@@ -32,7 +32,7 @@ export type Found =
   | { type: "hit"; key: string; hit: Hit; score: number } // only the index has it (a file not downloaded)
   | { type: "action"; key: string; action: Action; score: number };
 
-export type GroupId = "courses" | "places" | "assignments" | "announcements" | "files" | "actions" | "inside";
+export type GroupId = "courses" | "places" | "assignments" | "announcements" | "files" | "actions" | "inside" | "related";
 export interface Group {
   id: GroupId;
   items: Found[]; // best first (all of them: `cap` is how many to show unless asked for all)
@@ -40,7 +40,7 @@ export interface Group {
 }
 export interface Results {
   top: Found | null;
-  groups: Group[]; // the best group first; what's only inside last
+  groups: Group[]; // the best group first; what's only inside, then what's only like it in meaning, last
 }
 
 /** What a thing is called (`names`: as it's shown; `aliases`: what else it answers to, in any
@@ -71,7 +71,7 @@ export interface Catalog {
   abbreviations: Record<string, string[]>; // "mt" -> midterm... (the index's: built in, and yours)
 }
 
-const CAP: Record<GroupId, number> = { courses: 3, places: 5, assignments: 4, announcements: 4, files: 5, actions: 3, inside: 5 };
+const CAP: Record<GroupId, number> = { courses: 3, places: 5, assignments: 4, announcements: 4, files: 5, actions: 3, inside: 5, related: 5 };
 const MOST = 50; // shown in a group asked for all
 const DAY = 24 * 3600 * 1000;
 
@@ -368,6 +368,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   // By name, as the index has it, as good as a word starting a name; and what's only inside, in
   // the index's order, with what makes things likelier counting there too.
   const inside: Found[] = [];
+  const related: Found[] = []; // (what the index found by meaning, not by words: meaning.py)
   hits.forEach((h, i) => {
     const thing = thingOfHit(h);
     const p = thing ? catalog.byKey.get(thingKey(thing)) : undefined;
@@ -375,7 +376,8 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     const key = p ? p.key : hitKeyOf(h);
     if (h.match !== "name") {
       const score = W.inside - Math.min(i, 40) * 0.02 + (p ? bonus(p, ctx) : 0);
-      if (!found.has(key)) inside.push(p ? { type: "thing", key, entry: p.entry, hit: h, score } : { type: "hit", key, hit: h, score });
+      const to = h.match === "meaning" ? related : inside;
+      if (!found.has(key)) to.push(p ? { type: "thing", key, entry: p.entry, hit: h, score } : { type: "hit", key, hit: h, score });
       return;
     }
     const score = W.indexName - Math.min(i, 30) * 0.03;
@@ -411,7 +413,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   }
 
   const named = [...found.values()].sort((a, b) => b.score - a.score);
-  const top = named[0] ?? inside.shift() ?? null;
+  const top = named[0] ?? inside.shift() ?? related.shift() ?? null;
   const groups = new Map<GroupId, Found[]>();
   for (const f of named) {
     if (f === top) continue;
@@ -421,6 +423,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   const out: Group[] = [...groups].map(([id, items]) => ({ id, items: items.slice(0, MOST), cap: CAP[id] }));
   out.sort((a, b) => b.items[0].score - a.items[0].score);
   if (inside.length) out.push({ id: "inside", items: inside.slice(0, MOST), cap: CAP.inside });
+  if (related.length) out.push({ id: "related", items: related.slice(0, MOST), cap: CAP.related });
   return { top, groups: out };
 }
 
