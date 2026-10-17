@@ -29,6 +29,7 @@ interface Props {
   onOpen: (e: Entry) => void;
   onPreview: (e: Entry) => void;
   onMenu: (entries: Entry[], x: number, y: number) => void; // the selection, right-clicked
+  onFolderMenu: (x: number, y: number) => void; // the folder itself: right-clicked where nothing is
   onDelete: (entries: Entry[]) => void;
   renaming: string | null; // path of the folder being renamed in place
   onStartRename: (e: Entry) => void;
@@ -67,7 +68,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onDelete,
+  path, root, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const dragThing = useDragThing(); // (置顶 is in their menus)
@@ -228,7 +229,17 @@ export function FileBrowser({
           <SortHeader label={t("大小")} k="size" sort={sort} setSort={setSort} right />
         </div>
       )}
-      <div ref={scroller} onMouseDown={marquee.onMouseDown} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-1 pb-10">
+      <div
+        ref={scroller}
+        onMouseDown={marquee.onMouseDown}
+        onContextMenu={(ev) => {
+          if ((ev.target as HTMLElement).closest("[data-key]")) return; // (an item: its own menu)
+          ev.preventDefault();
+          sel.clear();
+          onFolderMenu(ev.clientX, ev.clientY);
+        }}
+        className="relative min-h-0 flex-1 overflow-y-auto px-3 py-1 pb-10"
+      >
         <MarqueeBox box={marquee.box} />
         {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
         {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("这个文件夹是空的")}</p>}

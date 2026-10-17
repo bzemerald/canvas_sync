@@ -149,11 +149,10 @@ export function CourseTabs({
     return (zone.slot < tabs.length ? r.left - 2 : r.right + 2) - box.left + bar.current.scrollLeft;
   })();
 
-  const menu = (e: Shown | null): MenuItem[] => {
-    const showAgain: MenuItem[] = entries.filter((x) => x.hidden).map((x) => ({
-      label: t("显示“{name}”标签", { name: name(x) }), onSelect: () => onArrange(changed(entries, x, { hidden: false })),
-    }));
-    const mine: MenuItem[] = !e ? [] : e === extra
+  /** A tab, right-clicked: what's to do with it, and with it as a tab. */
+  const menu = (e: Shown): MenuItem[] => sections(
+    isOwn(e) ? [] : things.ways(e),
+    e === extra
       ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
       : [
           { label: t("重命名…"), onSelect: () => setRenaming(e) },
@@ -161,18 +160,19 @@ export function CourseTabs({
           isOwn(e)
             ? { label: t("隐藏“{name}”标签", { name: name(e) }), disabled: visible.length <= 1, onSelect: () => onArrange(changed(entries, e, { hidden: true })) }
             : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
-        ];
-    return sections(
-      e && !isOwn(e) ? things.ways(e) : [],
-      mine,
-      e ? [pinItem(things, e)] : [],
-      showAgain,
-      [
-        { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
-        { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
-      ],
-    );
-  };
+        ],
+    [pinItem(things, e)],
+  );
+  /** The bar, right-clicked where there's no tab: the tabs as a whole. */
+  const barMenu = (): MenuItem[] => sections(
+    entries.filter((x) => x.hidden).map((x) => ({
+      label: t("显示“{name}”标签", { name: name(x) }), onSelect: () => onArrange(changed(entries, x, { hidden: false })),
+    })),
+    [
+      { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
+      { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
+    ],
+  );
 
   const button = (e: Shown, props: object, i: number | null) => (
     <button
@@ -207,9 +207,8 @@ export function CourseTabs({
       }`}
       aria-label={t("课程")}
       onContextMenu={(e) => {
-        if (e.target !== e.currentTarget) return;
-        e.preventDefault();
-        things.menu(menu(null), e.clientX, e.clientY);
+        e.preventDefault(); // (a tab has its own menu)
+        things.menu(barMenu(), e.clientX, e.clientY);
       }}
     >
       {visible.map((e, i) => button(e, drag.item(i), i))}

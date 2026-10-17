@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Settings as SettingsIcon,
+  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Settings as SettingsIcon,
   Sparkles,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -585,6 +585,19 @@ export function MainWindow() {
   };
 
   /** Right-clicking a selection of several. */
+  /** The folder showing, right-clicked where nothing is: what's shown, and what to do with it. */
+  const folderMenu = (here: string): MenuItem[] => {
+    const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : t("全部文件");
+    return sections(
+      [{ label: t("显示你删除的文件"), checked: showDeleted, hint: shortcut.toggleDeleted || undefined, onSelect: () => setShowDeleted(!showDeleted) }],
+      [
+        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
+        { label: t("恢复此文件夹的原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
+        { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
+      ],
+      course ? [{ label: t("在 Canvas 中打开这门课"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : [],
+    );
+  };
   const entriesMenu = (es: Entry[]): MenuItem[] => {
     if (es.length === 1) return entryMenu(es[0]);
     const live = es.filter((e) => !e.deleted);
@@ -853,6 +866,7 @@ export function MainWindow() {
         onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
         onPreview={(e) => void api.openPath(e.path, { preview: true })}
         onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
+        onFolderMenu={(x, y) => openMenu(folderMenu(cv.path), x, y)}
         onDelete={(es) => {
           const live = es.filter((e) => !e.deleted);
           if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
@@ -1013,33 +1027,6 @@ export function MainWindow() {
                   <ToolButton title={t("图标")} pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
                 </div>
               )}
-              {filesTab && !searching && (
-                <>
-                  <ToolButton
-                    title={`${showDeleted ? t("隐藏你删除的文件") : t("显示你删除的文件")}${shortcut.toggleDeleted ? ` (${shortcut.toggleDeleted})` : ""}`}
-                    pressed={showDeleted}
-                    onClick={() => setShowDeleted(!showDeleted)}
-                  >
-                    {showDeleted ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                  </ToolButton>
-                  <ToolButton
-                    title={t("此文件夹的操作")}
-                    onClick={(ev) => {
-                      const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-                      const here = browsing ?? "";
-                      const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : t("全部文件");
-                      openMenu([
-                        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
-                        { label: t("恢复此文件夹的原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
-                        { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
-                        ...(course ? ["separator" as const, { label: t("在 Canvas 中打开这门课"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : []),
-                      ], r.right - 200, r.bottom + 4);
-                    }}
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </ToolButton>
-                </>
-              )}
               {view.kind === "search" && folderEntry && (
                 <Button onClick={() => setEditing({ folder: { ...view.search, title: folderEntry.title ?? "" } })} className="shrink-0 text-xs">{t("编辑")}</Button>
               )}
@@ -1090,6 +1077,7 @@ export function MainWindow() {
             onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}
             onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
+            onFolderMenu={(x, y) => openMenu(folderMenu(view.path), x, y)}
             onDelete={(es) => {
               const live = es.filter((e) => !e.deleted);
               if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));

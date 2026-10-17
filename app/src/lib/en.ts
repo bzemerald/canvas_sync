@@ -107,9 +107,7 @@ export const en: Record<string, string | [string, string]> = {
   "在 {label} 中搜索": "Search {label}",
   "列表": "List",
   "图标": "Icons",
-  "隐藏你删除的文件": "Hide files you deleted",
   "显示你删除的文件": "Show files you deleted",
-  "此文件夹的操作": "Folder actions",
   "在 Canvas 中打开这门课": "Open this course in Canvas",
   "编辑": "Edit",
   "搜索所有课程… 例如 221 mt": "Search all courses… e.g. 221 mt",
@@ -239,9 +237,9 @@ export const en: Record<string, string | [string, string]> = {
   "取消": "Cancel",
   "移到{trash}": "Move to {trash}",
   "正在检查…": "Checking…",
-  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时可以打开“显示已删除的文件”，右键恢复。": [
-    "1 of them is from Canvas: syncing won't download it again. To get it back, turn on “Show files you deleted” and right-click it.",
-    "{n} of them are from Canvas: syncing won't download them again. To get them back, turn on “Show files you deleted” and right-click them.",
+  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示你删除的文件”，再右键恢复。": [
+    "1 of them is from Canvas: syncing won't download it again. To get it back, right-click an empty spot in the folder, turn on “Show files you deleted”, then right-click it.",
+    "{n} of them are from Canvas: syncing won't download them again. To get them back, right-click an empty spot in the folder, turn on “Show files you deleted”, then right-click them.",
   ],
   "你自己的 {n} 个文件会在{trash}里。": ["1 file of your own goes to the {trash}.", "{n} files of your own go to the {trash}."],
   "这里面没有文件。": "There are no files in here.",

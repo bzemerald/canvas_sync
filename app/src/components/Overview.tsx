@@ -3,8 +3,8 @@
 // of the course you put there: a folder, a file, a note, a page, a module, a search... wherever
 // the instructor keeps what matters. Drag a card by its title to move it (or onto 置顶, or the
 // tabs); drag something of the course onto the overview and it's a card where you let go (a tool
-// or a link goes into 工具与链接). Right-click a title to rename the card, hide it or take it
-// away; 自定义概览 has the rest.
+// or a link goes into 工具与链接). Right-click a card to rename it, hide it or take it away;
+// right-click between the cards (or 自定义概览) for the overview as a whole.
 import { FolderOpen, Plus, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
@@ -187,21 +187,12 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
 
   // 工具与链接: the course's tools, its syllabus, Canvas; and what you put there. Each can be hidden.
   const linkShown = links.filter((e) => !e.hidden && (!isView(e, "syllabus") || counts.syllabus));
-  const hiddenLinks = links.filter((e) => e.hidden);
+  /** A card, right-clicked: what's to do with it, and with it as a card. */
   const cardMenu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? [] : things.ways(e),
     placing("overview", e, titleOf(e)),
     [pinItem(things, e)],
-    isView(e, "tools")
-      ? [
-          { label: t("添加链接…"), onSelect: () => setAddingLink(true) },
-          ...hiddenLinks.map((x) => ({
-            label: t("显示“{name}”", { name: thingName(x, things.courses) }),
-            onSelect: () => onArrange("links", changed(links, x, { hidden: false })),
-          })),
-        ]
-      : [],
-    customize(),
+    isView(e, "tools") ? [{ label: t("添加链接…"), onSelect: () => setAddingLink(true) }] : [],
   );
 
   const markRead = (n: number, kinds: Kinds) => (n > 0 ? { label: t("标为已读"), onClick: () => onMarkSeen(kinds) } : undefined);
@@ -302,6 +293,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
         case "tools":
           return {
             body: <LinksList course={course} links={links} shown={linkShown} menu={(x) => sections(things.ways(x), placing("links", x, thingName(x, things.courses)), [pinItem(things, x)])}
+              listMenu={() => linksMenu(links, (next) => onArrange("links", next), () => setAddingLink(true), things.courses)}
               onArrange={(next) => onArrange("links", next)} onTakeAway={(x) => takeAway("links", x, thingName(x, things.courses))} onAdd={() => setAddingLink(true)} />,
           };
         case "syllabus":
@@ -327,7 +319,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(customize(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
         <div className="mb-2 flex items-center justify-end gap-2">
           {own && <span className="text-xs text-muted">{t("这门课单独排过")}</span>}
@@ -420,12 +412,19 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
   children: React.ReactNode;
 }) {
   return (
-    <section ref={cardRef} data-card={cardKey} data-home style={style} className="rounded-xl border border-line bg-panel">
+    <section
+      ref={cardRef} data-card={cardKey} data-home style={style} className="rounded-xl border border-line bg-panel"
+      onContextMenu={(e) => {
+        e.stopPropagation(); // (not the overview's menu)
+        if (keepsOwnMenu(e)) return;
+        e.preventDefault();
+        onMenu(e.clientX, e.clientY);
+      }}
+    >
       <DropMark at={mark} />
       {flash && <span aria-hidden className="pointer-events-none absolute -inset-px z-10 animate-[fade-out_2s_ease-in_forwards] rounded-[inherit] ring-2 ring-accent" />}
       <header
         {...grab}
-        onContextMenu={(e) => (e.preventDefault(), onMenu(e.clientX, e.clientY))}
         title={t("拖动标题可以移动卡片，右键可以重命名或隐藏")}
         className="flex cursor-grab items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium active:cursor-grabbing"
       >
@@ -443,11 +442,13 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
 
 /** 工具与链接's rows: the course's tools, its syllabus, Canvas, and what you put there. Drag them
  * into your order, or anything in among them; drag one you put there off to take it away. */
-function LinksList({ course, links, shown, menu, onArrange, onTakeAway, onAdd }: {
+function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway, onAdd }: {
   course: Course;
   links: Shown[]; // all of them, hidden ones too
   shown: Shown[];
   menu: (e: Shown) => MenuItem[];
+  listMenu: () => MenuItem[]; // right-clicked where there's no link
+
   onArrange: (next: Shown[]) => void;
   onTakeAway: (e: Shown) => void;
   onAdd: () => void;
@@ -474,7 +475,8 @@ function LinksList({ course, links, shown, menu, onArrange, onTakeAway, onAdd }:
     <div ref={(el) => {
       box.current = el;
       zone.ref(el);
-    }} className={`relative flex flex-wrap rounded-md ${zone.state === "over" ? "bg-accent/10" : ""}`}>
+    }} className={`relative flex flex-wrap rounded-md ${zone.state === "over" ? "bg-accent/10" : ""}`}
+      onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(listMenu(), ev.clientX, ev.clientY))}>
       {shown.map((e, i) => (
         <div key={thingKey(e)} data-link className="relative rounded-md" {...drag.item(i)}
           onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(menu(e), ev.clientX, ev.clientY))}>
@@ -493,6 +495,23 @@ function LinksList({ course, links, shown, menu, onArrange, onTakeAway, onAdd }:
       </Row>
     </div>
   );
+}
+
+/** 工具与链接 right-clicked where there's no link: add one, show the hidden ones again. */
+function linksMenu(links: Shown[], onArrange: (next: Shown[]) => void, onAdd: () => void, courses: Course[]): MenuItem[] {
+  return sections(
+    [{ label: t("添加链接…"), onSelect: onAdd }],
+    links.filter((x) => x.hidden).map((x) => ({
+      label: t("显示“{name}”", { name: thingName(x, courses) }), onSelect: () => onArrange(changed(links, x, { hidden: false })),
+    })),
+  );
+}
+
+/** Right-clicked in text you type or select: the system's menu (copy, paste). */
+function keepsOwnMenu(e: React.MouseEvent) {
+  const el = e.target as HTMLElement;
+  const sel = window.getSelection();
+  return !!el.closest("input, textarea, [contenteditable]") || (!!sel?.toString() && sel.containsNode(el, true));
 }
 
 /** 工具与链接 as a tab of its own. */
@@ -517,13 +536,12 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
     ownIn("links", e, course.id)
       ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
       : { label: t("删除链接"), danger: true, onSelect: () => takeAway(e) },
-  ], [pinItem(things, e)], links.filter((x) => x.hidden).map((x) => ({
-    label: t("显示“{name}”", { name: thingName(x, things.courses) }), onSelect: () => onArrange(changed(links, x, { hidden: false })),
-  })));
+  ], [pinItem(things, e)]);
+  const listMenu = () => linksMenu(links, onArrange, () => setAdding(true), things.courses);
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(listMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-3xl px-6 py-6">
-        <LinksList course={course} links={links} shown={shown} menu={menu} onArrange={onArrange} onTakeAway={takeAway} onAdd={() => setAdding(true)} />
+        <LinksList course={course} links={links} shown={shown} menu={menu} listMenu={listMenu} onArrange={onArrange} onTakeAway={takeAway} onAdd={() => setAdding(true)} />
       </div>
       {adding && <LinkDialog onClose={() => setAdding(false)} onAdd={(link) => (setAdding(false), onArrange(putAt(links, { type: "link", url: link.url, title: link.title }, links.length)))} />}
       {renaming && (
