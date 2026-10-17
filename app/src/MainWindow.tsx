@@ -7,7 +7,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { FoundSearch, type How, actionsFor, canvasUrl, useCatalog } from "./components/Found";
+import { FoundSearch, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
 } from "./components/CourseView";
@@ -267,6 +267,10 @@ export function MainWindow() {
   };
   const view: View = raw.kind === "course" ? settle(raw) : raw;
   const cv = view.kind === "course" ? view : null;
+  // The course you were last in: search (here and in the search window) puts its things a little first.
+  useEffect(() => {
+    if (cv) rememberCourse(cv.id);
+  }, [cv?.id]);
   const course = cv ? courseById(cv.id) : null;
   const tab = cv?.tab ?? null;
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;

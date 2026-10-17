@@ -52,7 +52,9 @@ without the Canvas website or Finder.
   - `src/Launcher.tsx`: the search window (⌘⇧Space).
   - `src/lib/query.ts`: what a query says: a course, a kind, a time, a status ("cs70 作业 本周
     未交"), numbered things ("hw3" = Homework 3 = Problem Set 3), words; `src/lib/find.ts`: what
-    that finds as you type, by name (match-sorter) and from the index (`GET /find`);
+    that finds as you type, by name (match-sorter) and from the index (`GET /find`), weighted in
+    one place (`W`); `src/lib/queries.test.ts`: what should come first for what students type
+    (run it after changing a weight);
     `src/components/Found.tsx`: how it's shown (the query's parts as chips), in the search
     window and on 搜索.
   - `src/lib/api.ts`: every backend call and its types.

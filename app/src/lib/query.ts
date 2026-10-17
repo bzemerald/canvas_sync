@@ -128,7 +128,7 @@ export function sameSeries(a: string, b: string, abbr: Record<string, string[]>)
 export function seriesNear(a: string, b: string, abbr: Record<string, string[]>): number | null {
   a = singular(a);
   b = singular(b);
-  if (a === b) return 0;
+  if (a === b || a.replace(/ /g, "") === b.replace(/ /g, "")) return 0; // ("prelab", "PreLab": pre lab)
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
   if (short.length >= 3 && long.startsWith(short)) return 0;
   if (long.includes(" ") && !short.includes(" ") && short === long.split(" ").map((w) => w[0]).join("")) return 0;
@@ -136,7 +136,7 @@ export function seriesNear(a: string, b: string, abbr: Record<string, string[]>)
   const ofA = of(a);
   const ofB = of(b);
   if (ofA.includes(b) || ofB.includes(a)) return letters(short, long) ? 0 : -0.1; // ("hw": homework 0, problem set -0.1)
-  if (ofA.some((x) => ofB.includes(x))) return -0.2;
+  if (ofA.some((x) => ofB.includes(x))) return -0.5; // ("ps" and "hw": both homework, but "ps" says a problem set)
   if (abbr[short] || short.length * 2 > long.replace(/ /g, "").length) return null;
   return letters(short, long) ? 0 : null;
 }

@@ -280,7 +280,7 @@ def same_series(a: str, b: str, abbreviations: dict[str, list[str]]) -> bool:
     both of the same ("hw" and "homework", "mt" and "prelim"); or, for a word without any, letters
     of it in order ("ws", "worksheet"). (As the app's query.ts has it.)"""
     a, b = " ".join(map(singular, a.split(" "))), " ".join(map(singular, b.split(" ")))
-    if a == b:
+    if a == b or a.replace(" ", "") == b.replace(" ", ""):  # ("prelab", "PreLab": pre lab)
         return True
     short, long = (a, b) if len(a) <= len(b) else (b, a)
     if len(short) >= 3 and long.startswith(short):

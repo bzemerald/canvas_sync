@@ -133,10 +133,28 @@ function counts(rank: number, word: string): boolean {
   return rank === rankings.ACRONYM && word.replace(/\s/g, "").length >= 2;
 }
 
-const ALIAS = 0.25; // less for matching only what else a thing answers to, not what it's shown as
-const EXPANDED = 0.3; // less for matching what a word is an abbreviation of ("mt": midterm)
-const SERIES = rankings.STARTS_WITH; // one of a series, by any of its names: as good as a name starting so
-const KIND = rankings.WORD_STARTS_WITH + 0.5; // of the kind a word says
+/** What counts how much, in one place. A part's match is match-sorter's rank (EQUAL 6 … ACRONYM
+ * 2) or one of these; a thing's score, its parts' average, then what makes it likelier to be what
+ * you're after. What comes first for the queries in queries.test.ts depends on these. */
+const W = {
+  alias: 0.25, // less for matching only what else a thing answers to, not what it's shown as
+  expanded: 0.3, // less for matching what a word is an abbreviation of ("mt": midterm)
+  context: 0.5, // a part matching only what a thing is in (its course, kind, folders): this much of it
+  series: rankings.STARTS_WITH, // one of a series, by any of its names: as good as a name starting so
+  kind: rankings.WORD_STARTS_WITH + 0.5, // of the kind a word says
+  indexName: rankings.WORD_STARTS_WITH + 0.2, // what the index found by name (its first; then a little less each)
+  listed: 3, // all of what a time or a status narrows down to (nearer in time, more)
+  inside: 1, // what the index found only inside (its first; then a little less each)
+  // What makes a thing likelier to be what you're after:
+  opened: 0.5, // how much you go to it (frecency: often, and lately), up to 4 of this
+  picked: 3, // what you opened after typing the same (or more), and more the more you did
+  course: 0.6, // a course itself
+  view: 0.2, // one of a course's views
+  term: 1, // this term's
+  here: 0.4, // of the course you were last in
+  dueSoon: 0.3, // due within the week, and not handed in
+  fresh: 0.2, // new in the last two weeks (less as it ages)
+};
 
 /** How well `word` matches each item's values (`values`, then `others`: a little less), by item;
  * the best of the word as typed and spaced out. */
@@ -146,7 +164,7 @@ function ranks<T>(items: T[], word: string, values: (item: T) => string[], other
     const keys = others ? [values, others] : [values];
     for (const r of matchSorterWithRankInfo(items, alt, { keys, threshold: rankings.ACRONYM, sorter: (x) => x })) {
       if (!counts(r.rank, alt)) continue;
-      const rank = Math.min(r.rank, rankings.EQUAL) - (r.keyIndex > 0 ? ALIAS : 0);
+      const rank = Math.min(r.rank, rankings.EQUAL) - (r.keyIndex > 0 ? W.alias : 0);
       out.set(r.item, Math.max(out.get(r.item) ?? 0, rank));
     }
   }
@@ -171,7 +189,7 @@ function wholeWords(entries: Prepared[], alts: string[], into: Map<Prepared, num
       const latin = !CJK.test(alt);
       if (!(latin ? p.words.includes(` ${alt} `) || p.words.includes(` ${alt}s `) : p.words.includes(alt))) continue;
       const first = p.starts.some((s) => s === alt || s.startsWith(alt + " "));
-      const rank = (first ? rankings.STARTS_WITH : rankings.WORD_STARTS_WITH) - EXPANDED;
+      const rank = (first ? rankings.STARTS_WITH : rankings.WORD_STARTS_WITH) - W.expanded;
       if (rank > (into.get(p) ?? 0)) into.set(p, rank);
     }
   }
@@ -211,19 +229,21 @@ function isStatus(e: CatalogEntry, s: Status, now: number): boolean {
   }
 }
 
-/** What makes one thing better than another that matches as well. */
-function bonus(p: Prepared, catalog: Catalog, usage: Usage, picks: Map<string, number>, now: number): number {
+/** What makes one thing likelier than another that matches as well to be what you're after. */
+interface Context { catalog: Catalog; usage: Usage; picks: Map<string, number>; now: number; here: number | null }
+function bonus(p: Prepared, { catalog, usage, picks, now, here }: Context): number {
   const e = p.entry;
-  let b = 0.5 * Math.min(frecency(usage.opened[p.key], now), 4);
+  let b = W.opened * Math.min(frecency(usage.opened[p.key], now), 4);
   const pick = picks.get(p.key) ?? 0;
-  if (pick > 0) b += 3 + Math.min(pick, 3);
-  if (e.type === "course") b += 0.6;
-  else if (e.type === "view") b += 0.2;
-  if (p.term && p.term === catalog.latestTerm) b += 1; // (what was last term's is seldom what you're after)
+  if (pick > 0) b += W.picked + Math.min(pick, 3);
+  if (e.type === "course") b += W.course;
+  else if (e.type === "view") b += W.view;
+  if (p.term && p.term === catalog.latestTerm) b += W.term; // (what was last term's is seldom what you're after)
+  if (here !== null && p.course === here) b += W.here;
   const due = e.due ? Date.parse(e.due) - now : NaN;
-  if (due > 0 && due < 7 * DAY && !handedIn(e.status)) b += 0.3;
+  if (due > 0 && due < 7 * DAY && !handedIn(e.status)) b += W.dueSoon;
   const age = e.date ? (now - Date.parse(e.date)) / DAY : NaN;
-  if (age >= 0 && age < 14) b += 0.2 * (1 - age / 14);
+  if (age >= 0 && age < 14) b += W.fresh * (1 - age / 14);
   return b;
 }
 
@@ -246,8 +266,10 @@ type Term = PartOf<"word"> | PartOf<"series"> | PartOf<"kind">;
 const isTerm = (p: Part): p is Term => p.role === "word" || p.role === "series" || p.role === "kind";
 
 /** What a reading finds: by name in the catalog (and actions), and by the index (`hits`, as it
- * returns them for the reading's `indexQuery`: names first, then what's only inside). */
-export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[] = [], now = Date.now()): Results {
+ * returns them for the reading's `indexQuery`: names first, then what's only inside). `here`: the
+ * course you were last in, whose things come a little first. */
+export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[] = [], now = Date.now(),
+  here: number | null = null): Results {
   const { parts, query } = reading;
   const abbr = catalog.abbreviations;
   const courseParts = parts.filter((p): p is PartOf<"course"> => p.role === "course");
@@ -263,6 +285,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     only = null;
   }
   const picks = picked(query, usage, now);
+  const ctx: Context = { catalog, usage, picks, now, here };
   const found = new Map<string, Found>();
 
   /** Whether it's in what the reading narrows things down to. */
@@ -286,7 +309,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     const text = term.text.toLowerCase();
     const mine = term.role === "series" ? new Map<Prepared, number>() : ranks(entries, text, (p) => p.names, (p) => p.aliases);
     if (term.role !== "series" && !(term.role === "word" && term.quoted)) wholeWords(entries, alternatives(text, abbr), mine);
-    if (term.role === "kind") for (const p of entries) if (p.kind === term.kind) mine.set(p, Math.max(mine.get(p) ?? 0, KIND));
+    if (term.role === "kind") for (const p of entries) if (p.kind === term.kind) mine.set(p, Math.max(mine.get(p) ?? 0, W.kind));
     if (term.role === "series") {
       // By its number in any of the series' names (by its own a little more: "ps 3" is Problem Set
       // 3 before Homework 3); things numbered otherwise in it don't count.
@@ -299,8 +322,8 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
       for (const p of entries) {
         const of = p.series.filter((s) => near.has(s.name));
         const best = (ok: (n: number) => boolean) => Math.max(...of.filter((s) => ok(s.n)).map((s) => near.get(s.name)!));
-        if (of.some((s) => s.n === term.n)) mine.set(p, SERIES + best((n) => n === term.n));
-        else if (typing(term) && of.some((s) => String(s.n).startsWith(String(term.n)))) mine.set(p, SERIES - 0.5 + best((n) => String(n).startsWith(String(term.n))));
+        if (of.some((s) => s.n === term.n)) mine.set(p, W.series + best((n) => n === term.n));
+        else if (typing(term) && of.some((s) => String(s.n).startsWith(String(term.n)))) mine.set(p, W.series - 0.5 + best((n) => String(n).startsWith(String(term.n))));
         else if (!of.length && loose.has(p)) mine.set(p, loose.get(p)!);
       }
     }
@@ -324,7 +347,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
       // Narrowed down only (a time, a status): all of it, nearest in time first.
       const date = p.entry.due ?? p.entry.date;
       const days = date ? Math.abs(Date.parse(date) - now) / DAY : 30;
-      found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: 3 - Math.min(days, 30) / 15 + bonus(p, catalog, usage, picks, now) });
+      found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: W.listed - Math.min(days, 30) / 15 + bonus(p, ctx) });
       continue;
     }
     let total = 0;
@@ -334,15 +357,16 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
       const around = aroundOf(i, p);
       if (!mine && !around) total = -1;
       named ||= mine > 0;
-      total += Math.max(mine, 0.5 * around);
+      total += Math.max(mine, W.context * around);
     }
     // (What you opened after typing more than this needn't be named by it: "53" finds what
     // "53 grades" did.)
     if (total < 0 || (!named && !picks.has(p.key))) continue;
-    found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: total / terms.length + bonus(p, catalog, usage, picks, now) });
+    found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: total / terms.length + bonus(p, ctx) });
   }
 
-  // By name, as the index has it, as good as a word starting a name; and what's only inside.
+  // By name, as the index has it, as good as a word starting a name; and what's only inside, in
+  // the index's order, with what makes things likelier counting there too.
   const inside: Found[] = [];
   hits.forEach((h, i) => {
     const thing = thingOfHit(h);
@@ -350,17 +374,19 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     if (p ? !within(p) : statuses.length > 0) return;
     const key = p ? p.key : hitKeyOf(h);
     if (h.match !== "name") {
-      if (!found.has(key)) inside.push(p ? { type: "thing", key, entry: p.entry, hit: h, score: 0 } : { type: "hit", key, hit: h, score: 0 });
+      const score = W.inside - Math.min(i, 40) * 0.02 + (p ? bonus(p, ctx) : 0);
+      if (!found.has(key)) inside.push(p ? { type: "thing", key, entry: p.entry, hit: h, score } : { type: "hit", key, hit: h, score });
       return;
     }
-    const score = rankings.WORD_STARTS_WITH + 0.2 - Math.min(i, 30) * 0.03;
+    const score = W.indexName - Math.min(i, 30) * 0.03;
     const had = found.get(key);
     if (had?.type === "thing") {
       had.hit = h;
-      had.score = Math.max(had.score, score + (p ? bonus(p, catalog, usage, picks, now) : 0));
-    } else if (p) found.set(key, { type: "thing", key, entry: p.entry, hit: h, score: score + bonus(p, catalog, usage, picks, now) });
+      had.score = Math.max(had.score, score + (p ? bonus(p, ctx) : 0));
+    } else if (p) found.set(key, { type: "thing", key, entry: p.entry, hit: h, score: score + bonus(p, ctx) });
     else found.set(key, { type: "hit", key, hit: h, score: score - 0.2 });
   });
+  inside.sort((a, b) => b.score - a.score);
 
   // Things to do (about a course, when the reading has it; not when it's narrowed in time).
   const words = terms.filter((t): t is PartOf<"word"> => t.role === "word");
@@ -375,11 +401,11 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
         const around = a.course === undefined ? 0 : courseRank(i, a.course);
         if (!mine && !around) total = -1;
         named ||= mine > 0;
-        total += Math.max(mine, 0.5 * around);
+        total += Math.max(mine, W.context * around);
       }
       if (total >= 0 && named) {
         const key = `action:${a.id}`;
-        found.set(key, { type: "action", key, action: a, score: total / words.length + (picks.has(key) ? 3 : 0) });
+        found.set(key, { type: "action", key, action: a, score: total / words.length + (picks.has(key) ? W.picked : 0) });
       }
     }
   }

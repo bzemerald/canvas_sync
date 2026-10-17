@@ -115,6 +115,24 @@ export function actionsFor(names: Map<number, string>, extra: Action[] = []): Ac
   ];
 }
 
+// The course you were last in, in the main window (both windows see it: they share storage).
+const LAST_COURSE = "pref:last-course";
+export function rememberCourse(id: number) {
+  try {
+    localStorage.setItem(LAST_COURSE, String(id));
+  } catch {
+    /* not remembered: search just doesn't put it first */
+  }
+}
+function lastCourse(): number | null {
+  try {
+    const v = Number(localStorage.getItem(LAST_COURSE));
+    return Number.isInteger(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 const EMPTY = prepare([], () => ({ names: [], aliases: [], kind: [] }));
 const NO_ANSWER: api.FoundInText = { hits: [], corrected: {} };
 
@@ -129,7 +147,10 @@ export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabu
   // Misspelled words (the index has nothing they start) are taken for the nearest there are.
   const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
   const hits = answer.hits;
-  const results = useMemo(() => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions) : null), [query, reading, catalog, usage, hits, actions]);
+  const results = useMemo(
+    () => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions, Date.now(), lastCourse()) : null),
+    [query, reading, catalog, usage, hits, actions],
+  );
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
   const due = useMemo(() => {
     const opened = new Set(lately.map((f) => f.key)); // (once: in 最近打开)
