@@ -14,7 +14,8 @@ import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ViewName, changed, opensElsewhere, putAt, refill, same, slotIndex, thingKey, thingOfItem, without,
+  type Shown, type Thing, type ViewName, changed, ofCourse, opensElsewhere, putAt, refill, same, slotIndex, thingKey, thingOfItem,
+  without,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
@@ -82,17 +83,12 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }
 
-/** Whether a course's page can show something as a tab: anything but the course itself, or
- * another course's views. */
-export const tabbable = (e: Thing, course: Course) =>
-  !(e.type === "course" && e.course === course.id) && !(e.type === "view" && e.course !== course.id);
-
-/** A course's tabs: its views, and whatever you put there (a page, a folder, a module, a tool, a
- * link, a search, a note; of this course or another). Drag them into your order; drag anything
- * onto them and it's a tab where you let go; drag one you put there off, and it's gone. Right-
- * click to rename any of them, hide the course's own, take away what you put there. Views with
- * nothing in them aren't shown; 概览 and 文件 always are, unless you hid them. Something shown
- * that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end. */
+/** A course's tabs: its views, and whatever of the course you put there (a page, a folder, a
+ * module, a tool, a note, a search; or a web link). Drag them into your order; drag something of
+ * the course onto them and it's a tab where you let go; drag one you put there off, and it's
+ * gone. Right-click to rename any of them, hide the course's own, take away what you put there.
+ * Views with nothing in them aren't shown; 概览 and 文件 always are, unless you hid them.
+ * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end. */
 export function CourseTabs({
   course, tab, overview, entries: loaded, own, onTab, onArrange, onReset, onMakeDefault, onSay, onMarkAllSeen,
 }: {
@@ -136,7 +132,7 @@ export function CourseTabs({
     });
     return i < 0 ? visible.length : Math.min(i, visible.length);
   };
-  const zone = useDropZone(put, (x) => slotAt(x), (e) => tabbable(e, course));
+  const zone = useDropZone(put, (x) => slotAt(x), (e) => ofCourse(e, course));
   const drag = useReorder(visible.length, (from, to) => onArrange(refill(entries, visible, moved(visible, from, to))), "x", {
     zone: zone.id,
     thing: (i) => visible[i],

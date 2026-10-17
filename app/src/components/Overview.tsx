@@ -1,9 +1,10 @@
 // A course's overview: cards, arranged for the course. Its own: what's due, what was said, this
 // week's modules, new files, grades, its tools and links (工具与链接), its syllabus. And anything
-// you put there: a folder, a file, a note, a page, a module, a search... wherever the instructor
-// keeps what matters. Drag a card by its title to move it (or onto 置顶, or the tabs); drag
-// anything onto the overview and it's a card where you let go (a tool or a link goes into 工具与
-// 链接). Right-click a title to rename the card, hide it or take it away; 自定义概览 has the rest.
+// of the course you put there: a folder, a file, a note, a page, a module, a search... wherever
+// the instructor keeps what matters. Drag a card by its title to move it (or onto 置顶, or the
+// tabs); drag something of the course onto the overview and it's a card where you let go (a tool
+// or a link goes into 工具与链接). Right-click a title to rename the card, hide it or take it
+// away; 自定义概览 has the rest.
 import { FolderOpen, Plus, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
@@ -13,11 +14,12 @@ import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { DropMark, moved, useReorder, type Mark } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ThingOf, changed, courseOf, isView, putAt, refill, slotIndex, thingKey, thingOfHit, view, without,
+  type Shown, type Thing, type ThingOf, changed, courseOf, isView, ofCourse, putAt, refill, slotIndex, thingKey, thingOfHit, view,
+  without,
 } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
 import { Button, Dialog } from "./Dialog";
-import { AssignmentRow, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, tabbable, useItemOpener } from "./CourseView";
+import { AssignmentRow, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, useItemOpener } from "./CourseView";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 import { RenameDialog } from "./RenameDialog";
@@ -135,7 +137,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   const zone = useDropZone(
     (entry, slot) => (hasCard(entry) ? add(entry, slotIndex(all, shown, slot)) : linkTo(entry)),
     slotAt,
-    (e) => tabbable(e, course) && !isView(e, "overview"),
+    (e) => ofCourse(e, course) && !isView(e, "overview"),
   );
   const drag = useReorder(shown.length, (from, to) => onArrange("overview", refill(all, shown, moved(shown, from, to))), "cards", {
     zone: zone.id,
@@ -316,11 +318,11 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       case "file":
         return { more: () => things.showInFolder(e.path), body: <FileCard file={e} /> };
       case "note":
-        return { body: <NoteEditor course={e.course} id={e.id} /> };
+        return { body: <NoteEditor course={course.id} id={e.id} /> };
       case "doc":
-        return { more: () => things.open(e), body: <DocCard course={things.courses.find((c) => c.id === e.course) ?? course} kind={e.kind} id={e.id} /> };
+        return { more: () => things.open(e), body: <DocCard course={course} kind={e.kind} id={e.id} /> };
       case "module":
-        return { more: () => things.open(e), body: <ModuleCard course={e.course} id={e.module} render={moduleItems} /> };
+        return { more: () => things.open(e), body: <ModuleCard course={course.id} id={e.module} render={moduleItems} /> };
       case "search":
         return { more: () => things.open(e), body: <SearchCard search={e} /> };
       default: // (a view of no card of its own, a tool, a link...: put here by hand)
@@ -466,7 +468,7 @@ function LinksList({ course, links, shown, menu, onArrange, onTakeAway, onAdd }:
     return i < 0 ? shown.length : i;
   };
   const zone = useDropZone((entry, slot) => onArrange(putAt(links, { ...entry, hidden: false }, slotIndex(links, shown, slot))), slotAt,
-    (e) => tabbable(e, course) && !isView(e, "overview") && !isView(e, "tools"));
+    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"));
   const drag = useReorder(shown.length, (from, to) => onArrange(refill(links, shown, moved(shown, from, to))), "cards", {
     zone: zone.id,
     thing: (i) => shown[i],

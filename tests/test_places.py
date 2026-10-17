@@ -78,9 +78,22 @@ def test_links_are_the_courses_tools_then_what_you_added():
     # A tool the course takes away isn't there any more; a new one comes in after the one before it.
     assert [e.thing for e in Place("links", 1, [7, 9], []).arranged(stored)] == [
         tool(7), tool(9), view(1, "syllabus"), view(1, "canvas"), link.thing]
-    # Another course's tool is just something you added.
-    other = Entry(Thing("tool", course=2, tool=5))
-    assert links.settle([*links.arranged([]), other]) == [other]
+    # A web link is no course's, so any course's places take one; another course's things they don't.
+    assert links.holds(link.thing) and not links.holds(Thing("tool", course=2, tool=5))
+    assert links.arranged([Entry(Thing("tool", course=2, tool=5)), link]) == links.arranged([link])
+
+
+def test_a_course_holds_only_its_own_things():
+    """Within a course anything goes anywhere; between courses there's a border."""
+    tabs = Place("tabs", 1, [], usual("tabs"), "Fall 2026/MATH 221")
+    mine = [Thing("folder", path="Fall 2026/MATH 221/Files"), Thing("file", path="Fall 2026/MATH 221/Files/a.pdf"),
+            Thing("folder", path="Fall 2026/MATH 221"), PAGE, Thing("module", course=1, module=3), Thing("note", course=1, id="n1"),
+            Thing("search", query="mt", courses=(1,)), Thing("link", url="https://math.test"), view(1, "syllabus")]
+    theirs = [Thing("folder", path="Fall 2026/MATH 2210"), Thing("folder", path="Fall 2026"), Thing("course", course=1),
+              Thing("course", course=2), Thing("doc", course=2, kind="page", id="x"), view(2, "files"),
+              Thing("search", query="mt"), Thing("search", query="mt", courses=(1, 2))]
+    assert all(map(tabs.holds, mine)) and not any(map(tabs.holds, theirs))
+    assert not Place("tabs", 1, [], usual("tabs"), None).holds(mine[0])  # (a course not synced has no folder)
 
 
 OLD_CONFIG = """
@@ -210,6 +223,10 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
         assert len(r["tabs"]) == len(TAB_VIEWS) + 1
         assert api.put("/api/courses/1/layout/tabs", json={"entries": [{"type": "doc", "kind": "movie"}]}).status_code == 400
         assert api.put("/api/courses/1/layout/drawer", json={"entries": []}).status_code == 404
+        # Another course's things aren't this one's to show.
+        for other in ({"type": "doc", "course": 2, "kind": "page", "id": "x"}, {"type": "folder", "path": "Fall 2026"},
+                      {"type": "course", "course": 2}, {"type": "search", "query": "mt"}):
+            assert api.put("/api/courses/1/layout/overview", json={"entries": [other]}).status_code == 400, other
 
         # Every course's default: what this one has of its own (not what it added).
         api.put("/api/courses/1/layout/tabs", json={"entries": moved})

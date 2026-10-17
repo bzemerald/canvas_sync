@@ -98,9 +98,9 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
 # A course's page in the app, arranged for it: its tabs, the cards on its overview, and what's in
-# its 工具与链接. Each is a list of things (written as in [[pinned]] below; a course's own things
-# leave out `course`), each with a `title` of your own if you like, and `hidden = true` to hide
-# it. A course's views are its own (overview, modules, announcements, assignments, grades,
+# its 工具与链接. Each is a list of the course's things (written as in [[pinned]] below, leaving
+# out `course`; folders and files in its folder; web links too), each with a `title` of your own
+# if you like, and `hidden = true` to hide it. A course's views are its own (overview, modules, announcements, assignments, grades,
 # files, syllabus, pages; on the overview also tools, which is 工具与链接), and so are its tools
 # and Canvas (view "canvas") in 工具与链接: they're hidden, never taken away. A list without any
 # of them follows the default arrangement (set in the app), with what's in it after.

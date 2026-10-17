@@ -11,9 +11,11 @@ without the Canvas website or Finder.
   grades) in one app. Mac first, but keep the Windows paths working (the code has them).
 - The design goal is flexibility. Instructors put updates, the syllabus and assignments in
   different places (announcements, a page, a module, Ed, Gradescope, a website), and students
-  should be able to make every course look alike: anything can be put anywhere, and most things
-  can be renamed or hidden. Build new features on the one model below (things in places), not
-  beside it; a special case for one kind of thing or one place is a smell.
+  should be able to make every course look alike. Within a course, be extremely flexible:
+  anything of it can be put anywhere in it, and most things can be renamed or hidden. Between
+  courses, keep a clear border: a course's places hold only its own things (and web links);
+  置顶 is the one place where courses meet. Build new features on the one model below (things
+  in places), not beside it; a special case for one kind of thing or one place is a smell.
 - Frontend and UX decisions are Claude's: make them, say what was decided in the report, and
   don't ask the user to choose.
 - Requests come as numbered batches. Do them all, check each one in the running app, then
@@ -77,7 +79,9 @@ without the Canvas website or Finder.
     course's views: overview, modules, announcements, assignments, grades, files, syllabus,
     pages, tools = 工具与链接, canvas). Same fields in config.toml, the API and the app.
   - A *place* is a list of entries: a thing, `title` (your name for it there; "" = its own),
-    `hidden`. Places: `pinned`, and per course `tabs`, `overview`, `links`.
+    `hidden`. Places: `pinned` (anything), and per course `tabs`, `overview`, `links`, which
+    hold only the course's things (`Place.holds`, `ofCourse` in the app): its views, documents,
+    modules, tools, notes, folders and files in its folder, searches of just it; web links.
   - A course's places have *own* things (its views; in links its tools, syllabus, Canvas):
     hidden, never taken away. The rest were put there, and can be taken away (with 撤销).
   - A course's tabs and overview follow the default (app.toml) until arranged: then what's

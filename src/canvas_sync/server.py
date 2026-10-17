@@ -636,7 +636,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def place(e: Engine, course_id: int, name: str) -> Place:
         tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
         default = (prefs().tabs or usual("tabs")) if name == "tabs" else (prefs().overview or usual("overview")) if name == "overview" else []
-        return Place(name, course_id, tools, default)
+        course = next((c for c in e.state.courses() if c.id == course_id), None)
+        return Place(name, course_id, tools, default, e.layout.course_dir(course).as_posix() if course else None)
 
     def own_layout(e: Engine, course_id: int) -> CourseLayout:
         return e.settings.course_layouts.get(course_id) or CourseLayout()
@@ -667,7 +668,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         known(name)
         items = place_entries(req, course_id)
         with engine() as e:
-            save_course_place(config(), course_id, name, place(e, course_id, name).settle(items))
+            p = place(e, course_id, name)
+            if other := [x.thing.to_dict() for x in items if not p.holds(x.thing)]:
+                raise HTTPException(400, f"not this course's: {other}")  # (its places hold only its things)
+            save_course_place(config(), course_id, name, p.settle(items))
         return layout_of(course_id)
 
     @api.post("/courses/{course_id}/layout/{name}/reset")

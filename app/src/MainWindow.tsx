@@ -785,7 +785,6 @@ export function MainWindow() {
 
   /** What the open course's page shows, as its tab has it. */
   const coursePage = (cv: CourseView, course: Course, tab: Thing) => {
-    const doc = tab.type === "doc" ? courseById(tab.course) ?? course : course;
     if (isView(tab, "overview")) {
       return (
         <CourseOverview
@@ -807,7 +806,7 @@ export function MainWindow() {
       return (
         <CourseModules
           key={`${course.id}:${thingKey(tab)}`}
-          course={tab.type === "module" ? courseById(tab.course) ?? course : course}
+          course={course}
           version={version}
           focus={cv.item ? Number(cv.item) : undefined}
           only={tab.type === "module" ? tab.module : undefined}
@@ -839,8 +838,8 @@ export function MainWindow() {
         />
       );
     }
-    if (tab.type === "doc") return <CourseDoc course={doc} kind={tab.kind} id={tab.id} version={version} onSeen={seenChanged} />;
-    if (tab.type === "note") return <NoteEditor key={thingKey(tab)} course={tab.course} id={tab.id} page />;
+    if (tab.type === "doc") return <CourseDoc course={course} kind={tab.kind} id={tab.id} version={version} onSeen={seenChanged} />;
+    if (tab.type === "note") return <NoteEditor key={thingKey(tab)} course={course.id} id={tab.id} page />;
     if (tab.type === "search") return null; // (its results: below)
     return (
       <FileBrowser

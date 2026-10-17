@@ -67,6 +67,20 @@ export function isView<N extends ViewName = ViewName>(t: Thing | null | undefine
  * and files are in one by where they are: see `Placed.in_course`, or `courseAt`. */
 export const courseOf = (t: Thing): number | null => ("course" in t ? t.course : null);
 
+/** Whether a thing is a course's own: its views, documents, modules, tools and notes, the folders
+ * and files in its folder, a search of just that course. Within a course anything goes anywhere;
+ * between courses there's a border: a course's places take only its things (and web links, which
+ * are no course's). 置顶 is where things of different courses meet. */
+export function ofCourse(t: Thing, course: { id: number; dir: string }): boolean {
+  switch (t.type) {
+    case "link": return true;
+    case "course": return false;
+    case "folder": case "file": return t.path === course.dir || t.path.startsWith(course.dir + "/");
+    case "search": return t.courses.length === 1 && t.courses[0] === course.id;
+    default: return t.course === course.id;
+  }
+}
+
 /** Things that open somewhere else when you open them: a file in its app; a tool, a link or the
  * course on Canvas in the browser; a course on its own page. A tab of one opens it. */
 export const opensElsewhere = (t: Thing) =>

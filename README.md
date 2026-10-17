@@ -40,7 +40,7 @@ Office files / notebooks, and every page, assignment, announcement and syllabus.
   folders, files, a course's announcements, assignments, pages, modules, tools, notes and tabs,
   web links), and smart folders are searches pinned (names only unless `content = true`).
   `[course_layouts.<id>]` holds a course's page as you arranged it: its tabs, its overview's
-  cards, its 工具与链接, each a list of the same kind of things.
+  cards, its 工具与链接, each a list of the course's own things (and web links).
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 

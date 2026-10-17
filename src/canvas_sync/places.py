@@ -1,6 +1,11 @@
 """The places things are put: 置顶 in the sidebar, and each course's tabs, overview and 工具与链接
 (its links). Each is a list of entries (see things.py).
 
+Within a course anything goes anywhere; between courses there's a border. A course's places hold
+only its things: its views, documents, modules, tools and notes, the folders and files in its
+folder, searches of just that course; and web links, which are no course's. 置顶 is where things
+of different courses meet.
+
 A course's places have things of their own, which can be hidden but not taken away: its views
 are its tabs, and its overview's cards; its tools, its syllabus and the course on Canvas are its
 links. The rest are what you put there. A course's tabs and overview follow the default
@@ -34,10 +39,11 @@ def usual(place: str) -> list[Entry]:
 
 
 class Place:
-    """One of a course's places: which things are its own, and how it's arranged."""
+    """One of a course's places: what it can hold, which things are its own, how it's arranged.
+    `dir`: the course's folder (None: not synced, so nothing in it)."""
 
-    def __init__(self, name: str, course: int, tools: list[int], default: list[Entry]):
-        self.name, self.course = name, course
+    def __init__(self, name: str, course: int, tools: list[int], default: list[Entry], dir: str | None = None):
+        self.name, self.course, self.dir = name, course, dir
         views = TAB_VIEWS if name == "tabs" else CARD_VIEWS if name == "overview" else LINK_VIEWS
         tool_things = [Thing("tool", course=course, tool=t) for t in tools] if name == "links" else []
         self.things = [*tool_things, *(view(course, v) for v in views)]  # what it has of its own, now
@@ -45,6 +51,18 @@ class Place:
         mine = [e for e in (Entry(at_home(x.thing, course), x.title, x.hidden) for x in default) if e.thing in present]
         hidden = USUALLY_HIDDEN.get(name, ())
         self.default = fill(mine, [Entry(t, hidden=t.type == "view" and t.view in hidden) for t in self.things])
+
+    def holds(self, thing: Thing) -> bool:
+        """Whether it's the course's (or a web link), so it can be here."""
+        if thing.type == "link":
+            return True
+        if thing.type == "course":
+            return False
+        if thing.type in ("folder", "file"):
+            return self.dir is not None and thing.path is not None and (thing.path == self.dir or thing.path.startswith(self.dir + "/"))
+        if thing.type == "search":
+            return thing.courses == (self.course,)
+        return thing.course == self.course
 
     def own(self, thing: Thing) -> bool:
         """One of the place's own things (a tool the course has taken away still is)."""
@@ -60,7 +78,7 @@ class Place:
         it; ones it doesn't mention are put where the default has them."""
         base = stored if self.is_arranged(stored) else [*self.default, *stored]
         present = set(self.things)
-        return fill([e for e in base if not self.own(e.thing) or e.thing in present], self.default)
+        return fill([e for e in base if self.holds(e.thing) and (not self.own(e.thing) or e.thing in present)], self.default)
 
     def is_arranged(self, stored: list[Entry]) -> bool:
         return any(self.own(e.thing) for e in stored)
