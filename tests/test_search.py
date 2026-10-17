@@ -139,6 +139,18 @@ def test_misspelled_words_are_taken_for_the_nearest_there_are(client):
     assert got["corrected"] == {"lectrue": "lecture"} and [h["title"] for h in got["hits"]][:1] == ["Lecture 3.pdf"]
 
 
+def test_a_word_new_in_a_changed_file_isnt_taken_for_a_misspelling(root, course):
+    pull(root, course)
+    reindex(root)
+    with Engine(root) as e:
+        assert e.index.corrections("symmetry", {}) == {"symmetry": "symmetric"}
+    course.put(202, "Lecture 3.pdf", make_pdf("Symmetry of eigenvalue decomposition"), version="2026-09-02T00:00:00Z")
+    pull(root, course)
+    reindex(root)  # (the same item, changed: as many items as before)
+    with Engine(root) as e:
+        assert e.index.corrections("symmetry", {}) == {}
+
+
 def test_little_words_dont_have_to_be_found(root, course):
     """"how late can work be" is about late work: "how", "can", "be" needn't be in it too."""
     pull(root, course)

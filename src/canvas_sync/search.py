@@ -408,7 +408,7 @@ DOC_BODY = {"page": "body", "assignment": "description", "announcement": "messag
 
 
 # The words of each index, kept until it changes: (what it was then, the words sorted, how many
-# items each is in).
+# items each is in). An item changed in place leaves "what it was" as it was: sync drops them.
 _WORDS: dict[str, tuple[tuple[int, int], list[str], dict[str, int]]] = {}
 
 
@@ -514,6 +514,8 @@ class Index:
             self.db.execute("DELETE FROM items WHERE id = ?", (rowid,))
         stats.removed = len(gone)
         self.db.commit()
+        if todo or gone:
+            _WORDS.pop(self.path, None)
         if on_progress:
             on_progress(len(todo), len(todo), "")
         return stats

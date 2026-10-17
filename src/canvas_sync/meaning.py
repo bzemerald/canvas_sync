@@ -134,7 +134,7 @@ def cut(title: str, body: str) -> list[str]:
 
 
 # Each index's vectors, kept until its passages change: (what they were then, passages' rowids,
-# their items, the vectors).
+# their items, the vectors). Passages made again can leave "what they were" as it was: sync drops them.
 _VECTORS: dict[str, tuple[tuple[int, int], np.ndarray, np.ndarray, np.ndarray]] = {}
 
 
@@ -169,6 +169,7 @@ class Meaning:
                                     [(item, n, t, next(vectors).tobytes()) for n, t in enumerate(ts)])
                 self.db.execute("INSERT OR REPLACE INTO meant (item, stamp) VALUES (?, ?)", (item, stamp))
             self.db.commit()  # (an interrupted run keeps what it did)
+            _VECTORS.pop(self.index.path, None)
             batch.clear()
 
         for done, (item, title, stamp, body) in enumerate(todo, 1):
@@ -180,6 +181,7 @@ class Meaning:
         self.db.execute("DELETE FROM passages WHERE item NOT IN (SELECT id FROM items)")
         self.db.execute("DELETE FROM meant WHERE item NOT IN (SELECT id FROM items)")
         self.db.commit()
+        _VECTORS.pop(self.index.path, None)
         return len(todo)
 
     def _vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
