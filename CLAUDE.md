@@ -163,3 +163,7 @@ Rules, learned the hard way:
   syncing is fine.
 - **Leave the user's own customizations alone.** An odd setting the user made isn't a test
   leftover.
+- **Check the screen before driving it.** After a while idle the Mac shows its screen saver, or
+  locks: window captures come back black. `CGSSessionScreenIsLocked` (Quartz's
+  `CGSessionCopyCurrentDictionary()`) tells which: locked, stop (keystrokes would go to the
+  password field); not locked, moving the mouse a pixel wakes the screen.
