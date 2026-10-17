@@ -194,7 +194,11 @@ export function CourseTabs({
         bar.current = el;
         zone.ref(el); // (what drops land on)
       }}
-      className={`no-scrollbar relative flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4 ${
+      onWheel={(e) => {
+        // A wheel that scrolls up and down scrolls the tabs sideways (when they don't all fit).
+        if (bar.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) bar.current.scrollLeft += e.deltaY;
+      }}
+      className={`no-scrollbar relative flex shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 ${
         zone.state === "over" ? "bg-accent/10" : zone.state === "ready" ? "outline-1 -outline-offset-2 outline-dashed outline-accent/60" : ""
       }`}
       aria-label={t("课程")}
