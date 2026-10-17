@@ -5,7 +5,7 @@
 // tabs); drag something of the course onto the overview and it's a card where you let go (a tool
 // or a link goes into 工具与链接). Right-click a card to rename it, hide it or take it away;
 // right-click between the cards (or 自定义概览) for the overview as a whole.
-import { FolderOpen, Plus, SlidersHorizontal } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, DocKind, Entry as FileEntry, Hit, Item, Module, Overview } from "../lib/api";
@@ -160,14 +160,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     onArrange(place, without(before, e));
     onSay(t("已移除“{name}”", { name }), { label: t("撤销"), run: () => onArrange(place, before) });
   };
-  const customize = (): MenuItem[] => [
-    ...all.map((e): MenuItem => isOwn(e)
-      ? {
-          label: titleOf(e), checked: !e.hidden, hint: !e.hidden && !available(e) ? t("这门课没有") : undefined,
-          onSelect: () => onArrange("overview", changed(all, e, { hidden: !e.hidden })),
-        }
-      : { label: titleOf(e), checked: true, onSelect: () => takeAway("overview", e, titleOf(e)) }),
-    "separator",
+  /** The overview, right-clicked between the cards. (Hidden cards come back through 添加卡片.) */
+  const overviewMenu = (): MenuItem[] => [
     { label: t("添加卡片…"), onSelect: () => setAdding(true) },
     "separator",
     { label: t("设为所有课程的默认概览"), onSelect: onMakeDefault },
@@ -319,22 +313,16 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(customize(), e.clientX, e.clientY))}>
+    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
         <div className="mb-2 flex items-center justify-end gap-2">
           {own && <span className="text-xs text-muted">{t("这门课单独排过")}</span>}
-          <button
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              things.menu(customize(), r.right - 240, r.bottom + 4);
-            }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg"
-          >
-            <SlidersHorizontal className="size-3.5" />
-            {t("自定义概览")}
+          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg">
+            <Plus className="size-3.5" />
+            {t("添加卡片")}
           </button>
         </div>
-        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点右上角的“自定义概览”选几张。")}</p>}
+        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点右上角的“添加卡片”加几张。")}</p>}
         <div
           ref={(el) => {
             setGrid(el);
@@ -370,7 +358,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       {adding && (
         <AddCardDialog
           course={course}
-          shown={shown}
+          hidden={all.filter((e): e is Shown & { type: "view" } => !!e.hidden && e.type === "view" && isOwn(e))
+            .map((e) => ({ entry: e, title: titleOf(e), available: available(e) }))}
           onClose={() => setAdding(false)}
           onAdd={(entry) => {
             setAdding(false);

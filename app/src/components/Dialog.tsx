@@ -15,7 +15,16 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-6" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-6"
+      onMouseDown={onClose}
+      onContextMenu={(e) => {
+        // Not the menu of what's behind it (React passes events up to where the dialog was opened).
+        e.stopPropagation();
+        const el = e.target as HTMLElement;
+        if (!el.closest("input, textarea, [contenteditable]") && !window.getSelection()?.toString()) e.preventDefault();
+      }}
+    >
       <div
         role="dialog"
         aria-label={title}
