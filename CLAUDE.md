@@ -9,7 +9,11 @@ without the Canvas website or Finder.
 - The user writes in Chinese: reply in Chinese. Code, comments and commit messages are English.
 - Direction: everything a course has (files, announcements, assignments, pages, modules, tools,
   grades) in one app. Mac first, but keep the Windows paths working (the code has them).
-  Instructors put things in different places, so prefer flexible and customizable over fixed.
+- The design goal is flexibility. Instructors put updates, the syllabus and assignments in
+  different places (announcements, a page, a module, Ed, Gradescope, a website), and students
+  should be able to make every course look alike: anything can be put anywhere, and most things
+  can be renamed or hidden. Build new features on the one model below (things in places), not
+  beside it; a special case for one kind of thing or one place is a smell.
 - Frontend and UX decisions are Claude's: make them, say what was decided in the report, and
   don't ask the user to choose.
 - Requests come as numbered batches. Do them all, check each one in the running app, then
@@ -26,6 +30,8 @@ without the Canvas website or Finder.
 ## Layout
 
 - `src/canvas_sync/`: the Python package.
+  - `things.py`: what can be put somewhere (a thing), and how it's written down; the old formats.
+  - `places.py`: the places (置顶; a course's tabs, overview, 工具与链接), their rules.
   - `cli.py`: the `canvas` command.
   - `engine.py`, `plan.py`, `execute.py`: sync.
   - `discover.py`: finding files through modules and pages.
@@ -41,6 +47,8 @@ without the Canvas website or Finder.
   - `src/components/FileBrowser.tsx`, `HitBrowser.tsx` (search results).
   - `src/Launcher.tsx`: the search window.
   - `src/lib/api.ts`: every backend call and its types.
+  - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
+  - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin`.
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
 
@@ -63,25 +71,42 @@ without the Canvas website or Finder.
     (the part after `@@` only tells them apart).
   - `i18n-ignore` on a line exempts it from the check.
 - **Comments are short and plain:** what something is, or why. Match the file's density.
+- **Things and places** (the model everything is built on):
+  - A *thing* is `{type, ...}`: course, folder, file, doc (announcement / assignment / page),
+    module, tool, link, search (a smart folder is a search pinned), note, view (one of a
+    course's views: overview, modules, announcements, assignments, grades, files, syllabus,
+    pages, tools = 工具与链接, canvas). Same fields in config.toml, the API and the app.
+  - A *place* is a list of entries: a thing, `title` (your name for it there; "" = its own),
+    `hidden`. Places: `pinned`, and per course `tabs`, `overview`, `links`.
+  - A course's places have *own* things (its views; in links its tools, syllabus, Canvas):
+    hidden, never taken away. The rest were put there, and can be taken away (with 撤销).
+  - A course's tabs and overview follow the default (app.toml) until arranged: then what's
+    stored has own things in it. `Place.arranged/settle/added` in places.py; the app sends
+    whole lists (`PUT /pinned`, `PUT /courses/<id>/layout/<place>`), the backend settles them.
+  - In the app: `open(thing)` opens anything where it opens; `ways(thing)` is what its menu
+    offers; each place renders a thing its own way (a tab shows it, a card sums it up).
+  - Old config formats (pinned without `type`, `tab_items`, `cards`, `hidden_links`, app.toml's
+    `tab_order`...) are read by `old_*` in things.py and rewritten once, when the server starts.
 - **Dragging uses pointer events, not HTML5 drag and drop:**
   - `lib/drag.ts` (`trackDrag`): threshold, the copy that follows the pointer, auto-scroll, the
     swallowed click.
-  - `lib/reorder.tsx` (`useReorder`): rows, columns, cards. Options: `pin` (what an item is, to
-    drop elsewhere), `zone` (its own drop zone), `remove` (dragged off the list: take it away).
-  - `lib/pinZone.ts`: drop targets. 置顶 takes anything; a course's tab bar takes what's in
-    that course, and the item becomes a tab there.
-  - `lib/pinnable.ts`: `usePinnable()(target)` makes any row draggable to 置顶 and adds
-    置顶 / 取消置顶 to its right-click menu.
+  - `lib/reorder.tsx` (`useReorder`): rows, columns, cards. Options: `thing` (what an item is,
+    to drop in another place), `zone` (its own place), `remove` (dragged off the list: take it
+    away).
+  - `lib/dropZones.ts` (`useDropZone`): places that take drops. The innermost under the pointer
+    takes it; places inside one another don't take each other's items.
+  - `useThing()(entry)` (components/Things.tsx) makes anything on screen draggable to a place,
+    with `ways` + 置顶 in its right-click menu.
 - **Where settings live:**
   - `<sync folder>/.canvas/config.toml`: sync rules, and app things tied to courses:
-    - `[[pinned]]`: courses, folders, files, docs, modules, tools, links, smart folders.
-    - `[course_layouts.<id>]`: tabs and overview arranged per course, and the tabs you added
-      (`tab_items`, as `x:<id>` in `tabs`). A part left out follows the default; one equal to
-      the default is dropped (`settle()` in server.py).
+    - `[[pinned]]`: 置顶, entries of any thing.
+    - `[course_layouts.<id>]`: `tabs`, `overview`, `links`, each a list of entries (the
+      course's own things leave out `course`).
     - `[course_icons]`, `[sidebar]` order, hidden courses.
   - Notes typed on an overview: `<sync folder>/.canvas/notes/<course>/<id>.md`.
-  - `~/.config/canvas-sync/app.toml`: app prefs (language, auto sync, the default tabs and
-    overview).
+  - `~/.config/canvas-sync/app.toml`: app prefs (language, auto sync, the default `tabs` and
+    `overview`: views of no course). Tests must never touch the real one (conftest.py points
+    `CANVAS_SYNC_HOME` elsewhere).
   - The Canvas token is in the keychain.
 
 ## Checking the app's UI (macOS)
