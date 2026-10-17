@@ -946,9 +946,12 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 mj.phase, mj.done, mj.total, mj.error = "downloading", 0, 0, ""
                 meaning.download(home, lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
             if account is not None and prefs().meaning:
-                mj.phase, mj.done, mj.total = "indexing", 0, 0
                 with Engine(account.root) as e:
-                    Meaning(e.index).sync(meaning.embedder(home), lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
+                    m = Meaning(e.index)
+                    items, covered = m.counts()
+                    if covered < items:  # (turned off and on again: nothing to do)
+                        mj.phase, mj.done, mj.total = "indexing", 0, items - covered
+                        m.sync(meaning.embedder(home), lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
             mj.phase, mj.error = "idle", ""
         except Exception as err:  # (offline, say: shown in 设置)
             mj.phase, mj.error = "failed", f"{type(err).__name__}: {err}"

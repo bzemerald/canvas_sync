@@ -270,11 +270,12 @@ function MeaningRow() {
     void api.setMeaning(on).then(setState, (e) => setError(friendly((e as Error).message)));
   };
   const pct = state.total ? Math.floor((100 * state.done) / state.total) : 0;
+  // (Only while something's happening: the row keeps its height otherwise, and the switch its place.)
   const status = error
     ?? (state.phase === "downloading" ? t("正在下载模型… {pct}%", { pct })
-      : state.phase === "indexing" ? t("正在整理正文… {done}/{total}", { done: state.done, total: state.total })
+      : state.phase === "indexing" && state.total ? t("正在整理正文… {done}/{total}", { done: state.done, total: state.total })
       : state.phase === "failed" ? t("没能准备好：{error}", { error: friendly(state.error) })
-      : state.on && state.model ? t("已开启") : null);
+      : null);
   return (
     <Row
       label={t("按意思搜索英文内容")}

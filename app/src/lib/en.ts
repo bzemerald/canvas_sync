@@ -318,7 +318,6 @@ export const en: Record<string, string | [string, string]> = {
   "正在下载模型… {pct}%": "Downloading the model… {pct}%",
   "正在整理正文… {done}/{total}": "Going through the text… {done}/{total}",
   "没能准备好：{error}": "Couldn't get it ready: {error}",
-  "已开启": "On",
   "按 {word} 搜索": "Showing results for {word}.",
   "仍搜索“{word}”": "Search for “{word}” instead",
   "▶ 嵌入的内容（在浏览器中打开）": "▶ Embedded content (opens in your browser)",
