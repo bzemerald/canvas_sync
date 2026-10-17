@@ -36,9 +36,11 @@ Office files / notebooks, and every page, assignment, announcement and syllabus.
 - `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
 - `--open N` opens result N (the file, or the Canvas page).
 - Results whose name or folder matches come first; files that only mention it inside follow.
-- `[[pinned]]` in `config.toml` is the app's sidebar: pinned courses, folders, files, a
-  course's announcements, assignments, pages, modules and tools, web links, and smart folders
-  (saved searches; names only unless `content = true`).
+- `[[pinned]]` in `config.toml` is the app's sidebar: anything can be pinned there (courses,
+  folders, files, a course's announcements, assignments, pages, modules, tools, notes and tabs,
+  web links), and smart folders are searches pinned (names only unless `content = true`).
+  `[course_layouts.<id>]` holds a course's page as you arranged it: its tabs, its overview's
+  cards, its 工具与链接, each a list of the same kind of things.
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 

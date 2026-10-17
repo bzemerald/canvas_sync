@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
 
-from canvas_sync import Engine
-from fake_canvas import FakeCanvas
+# Never the real ~/.config/canvas-sync (the account, the app's preferences): set before
+# canvas_sync is imported, which is when it reads where they are.
+os.environ["CANVAS_SYNC_HOME"] = tempfile.mkdtemp(prefix="canvas-sync-home-")
+
+from canvas_sync import Engine  # noqa: E402
+from fake_canvas import FakeCanvas  # noqa: E402
 
 
 @pytest.fixture

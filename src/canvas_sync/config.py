@@ -10,14 +10,21 @@
 
 from __future__ import annotations
 
+import functools
 import os
-from dataclasses import asdict, dataclass, field
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import keyring
 import keyring.errors
 import tomlkit
+
+from .things import (
+    PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, parse_entry,
+)
 
 KEYRING_SERVICE = "canvas-sync"
 ACCOUNT_FILE = Path(os.environ.get("CANVAS_SYNC_HOME", "~/.config/canvas-sync")).expanduser() / "config.toml"
@@ -90,20 +97,22 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # value: what it's called instead. New files from Canvas keep going into it.
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
-# A course's page arranged for it in the app: its tabs, the cards on its overview. What isn't
-# here follows the default, set in the app. Cards: upcoming, announcements, modules, files,
-# grades, links, or added ones: folder (path), file (path), note (id), page (page), module
-# (module), search (query), syllabus.
+# A course's page in the app, arranged for it: its tabs, the cards on its overview, and what's in
+# its 工具与链接. Each is a list of things (written as in [[pinned]] below; a course's own things
+# leave out `course`), each with a `title` of your own if you like, and `hidden = true` to hide
+# it. A course's views are its own (overview, modules, announcements, assignments, grades,
+# files, syllabus, pages; on the overview also tools, which is 工具与链接), and so are its tools
+# and Canvas (view "canvas") in 工具与链接: they're hidden, never taken away. A list without any
+# of them follows the default arrangement (set in the app), with what's in it after.
 # [course_layouts.12345]
-# tabs = ["overview", "files", "assignments", "modules", "announcements", "grades", "syllabus", "pages"]
-# hidden_tabs = ["pages"]
-# cards = [{type = "upcoming"}, {type = "folder", id = "a1", path = "Fall 2026/MATH 221/Files/Labs"}]
-# extra_cards = [...]                   # without `cards`: added after the default ones
-# hidden_links = ["tool:5"]
-# tab_items = [{id = "t1", type = "doc", kind = "page", doc = "schedule", title = "Schedule"}]
-#                                       # tabs you added (in `tabs` as "x:t1"): a folder (path),
-#                                       # file (path), doc (kind, doc), module, tool, link (url)
-# links = [{title = "Course website", url = "https://..."}]
+# tabs = [
+#     {type = "view", view = "overview"},
+#     {type = "doc", kind = "page", id = "schedule", title = "Syllabus"},
+#     {type = "view", view = "syllabus", hidden = true},
+#     ...
+# ]
+# overview = [{type = "note", id = "a1b2"}, {type = "folder", path = "Fall 2026/MATH 221/Files/Labs"}]
+# links = [{type = "link", url = "https://math221.example.edu", title = "Course website"}]
 
 [sidebar]
 # The app's sidebar order, as you drag it: terms by Canvas's name for them, courses by id.
@@ -111,30 +120,22 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # term_order = ["Fall 2026", "Spring 2026"]
 # course_order = [12345, 67890]
 
-# The app's sidebar: what's pinned, in order: courses, folders, files, a course's
-# announcements, assignments, pages, modules and tools, web links, smart folders.
+# The app's sidebar: what's pinned (置顶), in order, each with a `title` of your own if you like.
+# Anything can be:
+#   type = "course", course = 12345
+#   type = "folder", path = "Fall 2026/MATH 221/Modules"         (relative to this folder)
+#   type = "file", path = "Fall 2026/MATH 221/Files/schedule.pdf"
+#   type = "doc", course = 12345, kind = "page", id = "schedule" (kind: announcement | assignment | page)
+#   type = "module", course = 12345, module = 678
+#   type = "tool", course = 12345, tool = 90                     (an external tool in the course's menu)
+#   type = "link", url = "https://math221.example.edu"
+#   type = "note", course = 12345, id = "a1b2"                   (kept in .canvas/notes)
+#   type = "view", course = 12345, view = "assignments"          (one of a course's views)
+#   type = "search", query = "mt1"                               (a smart folder: a saved search)
 #
 # [[pinned]]
-# course = 12345                        # a course
-#
-# [[pinned]]
-# path = "Fall 2026/MATH 221/Modules"   # a folder
-#
-# [[pinned]]
-# file = "Fall 2026/MATH 221/Files/schedule.pdf"
-#
-# [[pinned]]
-# course = 12345                        # in a course: an announcement, assignment or page,
-# kind = "page"                         # (or module = <id>, tool = <id>)
-# id = "schedule"
-# title = "Schedule"
-#
-# [[pinned]]
-# url = "https://math221.example.edu"
-# title = "Course website"
-#
-# [[pinned]]
-# name = "Midterm 1"                    # a smart folder
+# type = "search"
+# title = "Midterm 1"
 # query = "mt1"
 # courses = [12345]                   # optional: only these courses
 # kinds = ["file", "announcement"]    # optional: file | page | assignment | announcement | syllabus
@@ -143,73 +144,20 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 
 ICON_KEYS = ("icon", "color", "emoji")
 
-# A course's page in the app: its tabs, and the cards on its overview.
-COURSE_TABS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
-OVERVIEW_CARDS = ("upcoming", "announcements", "modules", "files", "grades", "links")  # one of each, built in
-# Cards you add, with what they show: a folder or file (path), a note (id), a page (page),
-# a module (module), a saved search (query, content), the syllabus.
-ADDED_CARDS = ("folder", "file", "note", "page", "module", "search", "syllabus")
-CARD_KEYS = {"type": str, "id": str, "title": str, "path": str, "page": str, "module": int, "query": str, "content": bool}
-# Tabs you add: something in the course, or a web link. Folders, documents and modules open in
-# the tab; files, tools and links open where they open.
-TAB_NEEDS = {"folder": ("path",), "file": ("path",), "doc": ("kind", "doc"), "module": ("module",), "tool": ("tool",),
-             "link": ("url",)}
-TAB_KEYS = {"id": str, "type": str, "title": str, "path": str, "kind": str, "doc": str, "module": int, "tool": int, "url": str}
-
-
-def _known(names: Any, allowed: tuple[str, ...]) -> list[str]:
-    return [n for n in dict.fromkeys(names) if n in allowed] if isinstance(names, list) else []
-
-
-def _tab_item(x: Any) -> dict[str, Any] | None:
-    """A tab you added, as config.toml has it, if it makes sense."""
-    if not isinstance(x, dict) or x.get("type") not in TAB_NEEDS or not isinstance(x.get("id"), str) or not x["id"]:
-        return None
-    out = {k: x[k] for k, kind in TAB_KEYS.items() if k in x and isinstance(x[k], kind) and not (kind is int and isinstance(x[k], bool))}
-    if any(k not in out for k in TAB_NEEDS[out["type"]]) or (out["type"] == "doc" and out["kind"] not in DOC_KINDS):
-        return None
-    return out
-
-
-def _card(c: Any) -> dict[str, Any] | None:
-    """A card as config.toml has it, if it makes sense."""
-    if not isinstance(c, dict) or c.get("type") not in (*OVERVIEW_CARDS, *ADDED_CARDS):
-        return None
-    out = {}
-    for k, kind in CARD_KEYS.items():
-        if k in c and isinstance(c[k], kind) and not (kind is int and isinstance(c[k], bool)):
-            out[k] = c[k]
-    return out
-
 
 @dataclass
 class CourseLayout:
-    """One course's page, arranged for it. Tabs and the overview each follow the default unless
-    arranged for the course (None)."""
-    tabs: list[str] | None = None  # all tabs, in order
-    hidden_tabs: list[str] | None = None
-    cards: list[dict[str, Any]] | None = None  # the overview's cards, shown, in order
-    extra_cards: list[dict[str, Any]] = field(default_factory=list)  # without `cards`: after the default ones
-    hidden_links: list[str] = field(default_factory=list)  # in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
-    links: list[dict[str, str]] = field(default_factory=list)  # your own: {title, url}
-    tab_items: list[dict[str, Any]] = field(default_factory=list)  # tabs you added; "x:<id>" in `tabs`
+    """A course's places in the app, as stored for it (see places.py): its tabs, its overview,
+    its 工具与链接 (links)."""
+    tabs: list[Entry] = field(default_factory=list)
+    overview: list[Entry] = field(default_factory=list)
+    links: list[Entry] = field(default_factory=list)
 
     @classmethod
-    def parse(cls, d: dict[str, Any]) -> CourseLayout:
-        def cards(key: str) -> list[dict[str, Any]]:
-            return [c for c in (_card(x) for x in d.get(key, []) or []) if c]
-        items = [i for i in (_tab_item(x) for x in d.get("tab_items", []) or []) if i]
-        names = (*COURSE_TABS, *(f"x:{i['id']}" for i in items))
-        own_tabs = "tabs" in d or "hidden_tabs" in d
-        links = [{"title": str(x.get("title", "")), "url": str(x["url"])}
-                 for x in d.get("links", []) or [] if isinstance(x, dict) and isinstance(x.get("url"), str)]
-        return cls(_known(d.get("tabs"), names) if own_tabs else None,
-                   _known(d.get("hidden_tabs"), COURSE_TABS) if own_tabs else None,
-                   cards("cards") if "cards" in d else None, cards("extra_cards"),
-                   [str(x) for x in d.get("hidden_links", []) or []], links, items)
-
-    def empty(self) -> bool:
-        return self.tabs is None and self.cards is None and not (self.extra_cards or self.hidden_links or self.links or self.tab_items)
+    def parse(cls, d: dict[str, Any], course: int, tools: list[int] | None = None) -> CourseLayout:
+        if is_old_layout(d):
+            return cls(**old_layout(d, course, tools))
+        return cls(*(entries(d.get(place), course) for place in PLACES))
 
 CHOICES = {
     "select": {"active", "favorites"},
@@ -233,70 +181,6 @@ class Rule:
     skip: bool = False
 
 
-KINDS = {"file", "page", "assignment", "announcement", "syllabus"}
-
-
-@dataclass
-class SmartFolder:
-    name: str
-    query: str = ""
-    courses: list[int] = field(default_factory=list)
-    kinds: list[str] = field(default_factory=list)
-    content: bool = False  # also match the text inside, not just titles and folder names
-
-
-@dataclass(frozen=True)
-class PinnedFolder:
-    path: str  # relative to the sync folder
-
-
-@dataclass(frozen=True)
-class PinnedCourse:
-    course: int  # Canvas course id: a course, not its folder, so it survives renames and layouts
-
-
-@dataclass(frozen=True)
-class PinnedFile:
-    file: str  # relative to the sync folder
-
-
-# In a course: an announcement, assignment, page (or the syllabus); a module; an external tool.
-# The title is what it was called when pinned, for when it's gone; it's not what tells them apart.
-DOC_KINDS = ("announcement", "assignment", "page", "syllabus")
-
-
-@dataclass(frozen=True)
-class PinnedDoc:
-    course: int
-    kind: str
-    id: str
-    title: str = field(default="", compare=False)
-
-
-@dataclass(frozen=True)
-class PinnedModule:
-    course: int
-    module: int
-    title: str = field(default="", compare=False)
-
-
-@dataclass(frozen=True)
-class PinnedTool:
-    course: int
-    tool: int
-    title: str = field(default="", compare=False)
-
-
-@dataclass(frozen=True)
-class PinnedLink:
-    url: str
-    title: str = field(default="", compare=False)
-
-
-PinnedThing = PinnedFolder | PinnedCourse | PinnedFile | PinnedDoc | PinnedModule | PinnedTool | PinnedLink
-Pinned = PinnedThing | SmartFolder
-
-
 @dataclass
 class Settings:
     select: str = "active"
@@ -317,17 +201,13 @@ class Settings:
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
     course_icons: dict[int, dict[str, str]] = field(default_factory=dict)  # {icon, color} or {emoji}
-    course_layouts: dict[int, CourseLayout] = field(default_factory=dict)  # courses arranged for themselves
+    course_layouts: dict[int, CourseLayout] = field(default_factory=dict)  # courses' pages, as arranged
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
-    pinned: list[Pinned] = field(default_factory=list)
+    pinned: list[Entry] = field(default_factory=list)  # 置顶
     folder_names: dict[str, str] = field(default_factory=dict)
     skip_folders: list[str] = field(default_factory=list)
     term_order: list[str] = field(default_factory=list)   # the sidebar, as you arranged it
     course_order: list[int] = field(default_factory=list)
-
-    @property
-    def smart_folders(self) -> list[SmartFolder]:
-        return [p for p in self.pinned if isinstance(p, SmartFolder)]
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -357,7 +237,7 @@ class Settings:
             rules=[_rule(r) for r in data.get("rules", [])],
             course_aliases={int(k): _strings(v) for k, v in data.get("course_aliases", {}).items()},
             course_layouts={
-                int(k): CourseLayout.parse(v) for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict)
+                int(k): CourseLayout.parse(v, int(k)) for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict)
             },
             course_icons={
                 int(k): {str(kk): str(vv) for kk, vv in v.items() if kk in ICON_KEYS}
@@ -367,8 +247,7 @@ class Settings:
                 str(k).lower(): [x.lower() for x in _strings(v)]
                 for k, v in data.get("search", {}).get("abbreviations", {}).items()
             },
-            pinned=[_pinned_item(f) for f in data.get("pinned", [])]
-            + [_smart_folder(f) for f in data.get("smart_folders", [])],
+            pinned=_pinned(data),
             folder_names={str(k).strip("/"): str(v) for k, v in data.get("folder_names", {}).items()},
             skip_folders=[str(x).strip("/") for x in layout.get("skip_folders", [])],
             term_order=[str(x) for x in sidebar.get("term_order", [])],
@@ -387,141 +266,90 @@ def _strings(v: Any) -> list[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
-def _smart_folder(f: dict[str, Any]) -> SmartFolder:
-    if not f.get("name"):
-        raise ConfigError(f"smart folder without `name`: {f}")
-    kinds = _strings(f.get("kinds", []))
-    if bad := set(kinds) - KINDS:
-        raise ConfigError(f"smart folder {f['name']!r}: unknown kinds {sorted(bad)}; use {sorted(KINDS)}")
-    return SmartFolder(str(f["name"]), str(f.get("query", "")), [int(c) for c in f.get("courses", [])], kinds,
-                       bool(f.get("content", False)))
+F = TypeVar("F", bound=Callable[..., Any])
+_writing = threading.RLock()
 
 
-def _pinned_item(d: dict[str, Any]) -> Pinned:
-    title = str(d.get("title", ""))
-    if "url" in d:
-        return PinnedLink(str(d["url"]), title)
-    if "file" in d:
-        return PinnedFile(str(d["file"]).strip("/"))
-    if "course" in d:
-        course = int(d["course"])
-        if "kind" in d:
-            if d["kind"] not in DOC_KINDS:
-                raise ConfigError(f"pinned: unknown kind {d['kind']!r}; use {list(DOC_KINDS)}")
-            return PinnedDoc(course, str(d["kind"]), str(d.get("id", "")), title)
-        if "module" in d:
-            return PinnedModule(course, int(d["module"]), title)
-        if "tool" in d:
-            return PinnedTool(course, int(d["tool"]), title)
-        return PinnedCourse(course)
-    if "path" in d:
-        return PinnedFolder(str(d["path"]).strip("/"))
-    return _smart_folder(d)
+def _writes(fn: F) -> F:
+    """config.toml read, changed and written back, one change at a time (the app's requests come
+    in on threads of their own)."""
+    @functools.wraps(fn)
+    def locked(*args: Any, **kwargs: Any) -> Any:
+        with _writing:
+            return fn(*args, **kwargs)
+    return locked  # type: ignore[return-value]
 
 
-def _pinned_table(item: Pinned) -> Any:
-    t = tomlkit.table()
-    if not isinstance(item, SmartFolder):
-        for k, v in asdict(item).items():
-            if v != "" or k != "title":  # (no title: left out)
-                t[k] = v
-        return t
-    t["name"] = item.name
-    t["query"] = item.query
-    if item.courses:
-        t["courses"] = item.courses
-    if item.kinds:
-        t["kinds"] = item.kinds
-    if item.content:
-        t["content"] = True
-    return t
+def _pinned(data: dict[str, Any]) -> list[Entry]:
+    """置顶. ([[smart_folders]] is where smart folders were before anything could be pinned.)"""
+    tables = [x for x in [*data.get("pinned", []), *data.get("smart_folders", [])] if isinstance(x, dict)]
+    out: list[Entry] = []
+    for e in (old_pinned(x) if is_old(x) else parse_entry(x) for x in tables):
+        if e is not None and all(x.thing != e.thing for x in out):
+            out.append(e)
+    return out
 
 
-def load_pinned(path: Path) -> list[Pinned]:
-    data = tomlkit.parse(path.read_text()).unwrap()
-    # [[smart_folders]] is where smart folders lived before pinning existed.
-    return [_pinned_item(x) for x in data.get("pinned", [])] + [_smart_folder(x) for x in data.get("smart_folders", [])]
+def load_pinned(path: Path) -> list[Entry]:
+    return _pinned(tomlkit.parse(path.read_text()).unwrap())
 
 
-def save_pinned(path: Path, items: list[Pinned]) -> None:
-    """Write the sidebar's pinned list (folders and smart folders, in order)."""
+def _dump(doc: Any) -> str:
+    """The file, with a blank line before each table (tomlkit leaves none after one it replaced)."""
+    out: list[str] = []
+    for line in tomlkit.dumps(doc).split("\n"):
+        if line.startswith("[") and out and out[-1].strip() and not out[-1].startswith("#"):
+            out.append("")
+        if line.strip() or (out and out[-1].strip()):
+            out.append(line)
+    return "\n".join(out)
+
+
+def _rows(items: list[Entry], home: int | None = None) -> Any:
+    """Entries as a list of inline tables, one per line."""
+    a = tomlkit.array()
+    for e in items:
+        t = tomlkit.inline_table()
+        t.update(e.to_dict(home, compact=True))
+        a.append(t)
+    return a.multiline(True)
+
+
+@_writes
+def save_pinned(path: Path, items: list[Entry]) -> None:
+    """置顶, in order."""
     doc = tomlkit.parse(path.read_text())
     for key in ("pinned", "smart_folders"):
         if key in doc:
             del doc[key]
     if items:
         aot = tomlkit.aot()
-        for item in items:
-            aot.append(_pinned_table(item))
+        for e in items:
+            t = tomlkit.table()
+            t.update(e.to_dict(compact=True))
+            aot.append(t)
         doc["pinned"] = aot
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(_dump(doc))
 
 
-def _smart_names(items: list[Pinned]) -> list[str | None]:
-    return [i.name if isinstance(i, SmartFolder) else None for i in items]
+@_writes
+def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
+    """Every thing in every place (置顶, courses' pages) as `change` makes it."""
+    s = Settings.load(path)
+    doc = tomlkit.parse(path.read_text())
+    pinned = [Entry(change(e.thing), e.title, e.hidden) for e in s.pinned]
+    for course, layout in s.course_layouts.items():
+        for place in PLACES:
+            now = getattr(layout, place)
+            moved = [Entry(change(e.thing), e.title, e.hidden) for e in now]
+            if moved != now:
+                _put_place(doc, course, place, moved)
+    path.write_text(_dump(doc))
+    if pinned != s.pinned:
+        save_pinned(path, pinned)
 
 
-def save_smart_folder(path: Path, folder: SmartFolder, replaces: str | None = None) -> None:
-    """Add `folder` to the pinned list, or replace the one called `replaces` in place."""
-    if set(folder.kinds) - KINDS:
-        raise ConfigError(f"unknown kinds {sorted(set(folder.kinds) - KINDS)}")
-    items = load_pinned(path)
-    names = _smart_names(items)
-    if folder.name != replaces and folder.name in names:
-        raise ConfigError(f"a smart folder called {folder.name!r} already exists")
-    if replaces is not None and replaces in names:
-        items[names.index(replaces)] = folder
-    else:
-        items.append(folder)
-    save_pinned(path, items)
-
-
-def delete_smart_folder(path: Path, name: str) -> None:
-    items = load_pinned(path)
-    names = _smart_names(items)
-    if name not in names:
-        raise LookupError(f"no smart folder called {name!r}")
-    del items[names.index(name)]
-    save_pinned(path, items)
-
-
-def pin(path: Path, item: PinnedThing, at: int | None = None) -> None:
-    """Pin `item` (at the end, or at position `at`); pinned already, it moves there."""
-    items = load_pinned(path)
-    if item in items:
-        if at is None:
-            return
-        was = items.index(item)
-        del items[was]
-        if was < at:
-            at -= 1  # (`at` counted it where it was)
-    items.insert(len(items) if at is None else max(0, min(at, len(items))), item)
-    save_pinned(path, items)
-
-
-def unpin(path: Path, item: PinnedThing) -> None:
-    items = load_pinned(path)
-    if item not in items:
-        raise LookupError(f"{item} is not pinned")
-    save_pinned(path, [i for i in items if i != item])
-
-
-def pin_folder(path: Path, folder: str) -> None:
-    pin(path, PinnedFolder(folder.strip("/")))
-
-
-def unpin_folder(path: Path, folder: str) -> None:
-    unpin(path, PinnedFolder(folder.strip("/")))
-
-
-def move_pinned(path: Path, index: int, to: int) -> None:
-    items = load_pinned(path)
-    if not (0 <= index < len(items) and 0 <= to < len(items)):
-        raise LookupError("no such position")
-    items.insert(to, items.pop(index))
-    save_pinned(path, items)
-
-
+@_writes
 def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list[int] | None = None) -> None:
     """The sidebar's order of terms and of courses (within their terms), as dragged in the app."""
     doc = tomlkit.parse(path.read_text())
@@ -533,6 +361,7 @@ def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list
     path.write_text(tomlkit.dumps(doc))
 
 
+@_writes
 def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = ()) -> None:  # type: ignore[assignment]
     """Add folders to [layout] skip_folders, and drop those at or under `remove_under`."""
     doc = tomlkit.parse(path.read_text())
@@ -547,9 +376,10 @@ def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str]
         path.write_text(tomlkit.dumps(doc))
 
 
+@_writes
 def record_folder_rename(path: Path, canonical: str, name: str | None, old: str, new: str) -> None:
     """Remember that the folder Canvas names would put at `canonical` is called `name`
-    (None: its own name again), and point pinned folders at `old` or below to `new`."""
+    (None: its own name again), and point what's anywhere in the app at `old` or below to `new`."""
     doc = tomlkit.parse(path.read_text())
     names = doc.get("folder_names")
     if names is None:
@@ -559,14 +389,7 @@ def record_folder_rename(path: Path, canonical: str, name: str | None, old: str,
     else:
         names[canonical] = name
     path.write_text(tomlkit.dumps(doc))
-    under = lambda p: p == old or p.startswith(old + "/")  # noqa: E731
-    moved = [
-        PinnedFolder(new + i.path[len(old):]) if isinstance(i, PinnedFolder) and under(i.path)
-        else PinnedFile(new + i.file[len(old):]) if isinstance(i, PinnedFile) and under(i.file)
-        else i
-        for i in load_pinned(path)
-    ]
-    save_pinned(path, moved)
+    change_things(path, lambda t: t.moved(old, new))
 
 
 def _rule(r: dict[str, Any]) -> Rule:
@@ -581,6 +404,7 @@ def _rule(r: dict[str, Any]) -> Rule:
     )
 
 
+@_writes
 def set_course_select(path: Path, select: str) -> None:
     """Sync the active courses or the favorites, keeping the file's comments."""
     if select not in CHOICES["select"]:
@@ -596,6 +420,7 @@ def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool
     set_courses_hidden(path, [course_id], hidden, syncing=syncing)
 
 
+@_writes
 def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, syncing: bool | None = None) -> None:
     """set_course_hidden for several courses at once (a whole term)."""
     doc = tomlkit.parse(path.read_text())
@@ -619,6 +444,7 @@ def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, synci
     path.write_text(tomlkit.dumps(doc))
 
 
+@_writes
 def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> None:
     """A course's icon in the app ({icon, color} or {emoji}); None: back to the app's pick."""
     doc = tomlkit.parse(path.read_text())
@@ -634,45 +460,60 @@ def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> 
     path.write_text(tomlkit.dumps(doc))
 
 
-def save_course_layout(path: Path, course_id: int, layout: CourseLayout | None) -> None:
-    """A course's page arranged for it; None (or nothing arranged): all of it follows the default."""
-    doc = tomlkit.parse(path.read_text())
+def _put_place(doc: Any, course_id: int, place: str, items: list[Entry]) -> None:
     layouts = doc.setdefault("course_layouts", tomlkit.table(is_super_table=True))
     key = str(course_id)
-    if layout is None or layout.empty():
-        if key in layouts:
-            del layouts[key]
-        path.write_text(tomlkit.dumps(doc))
-        return
-
-    def inline(d: dict[str, Any]) -> Any:
-        t = tomlkit.inline_table()
-        t.update(d)
-        return t
-
-    def rows(items: list[dict[str, Any]]) -> Any:
-        a = tomlkit.array()
-        a.extend(inline(x) for x in items)
-        return a.multiline(True)
-
-    t = tomlkit.table()
-    if layout.tabs is not None:
-        t["tabs"] = layout.tabs
-        t["hidden_tabs"] = layout.hidden_tabs or []
-    if layout.cards is not None:
-        t["cards"] = rows(layout.cards)
-    if layout.extra_cards:
-        t["extra_cards"] = rows(layout.extra_cards)
-    if layout.hidden_links:
-        t["hidden_links"] = layout.hidden_links
-    if layout.links:
-        t["links"] = rows(layout.links)
-    if layout.tab_items:
-        t["tab_items"] = rows(layout.tab_items)
-    layouts[key] = t
-    path.write_text(tomlkit.dumps(doc))
+    table = layouts.get(key)
+    if table is None:
+        table = layouts[key] = tomlkit.table()
+    if items:
+        table[place] = _rows(items, course_id)
+    elif place in table:
+        del table[place]
+    if not table:
+        del layouts[key]
 
 
+@_writes
+def save_course_place(path: Path, course_id: int, place: str, items: list[Entry]) -> None:
+    """One of a course's places as arranged for it (tabs, overview, links); [] : nothing of its own."""
+    if place not in PLACES:
+        raise ConfigError(f"no place {place!r}; places are {PLACES}")
+    doc = tomlkit.parse(path.read_text())
+    _put_place(doc, course_id, place, items)
+    path.write_text(_dump(doc))
+
+
+def needs_migration(path: Path) -> bool:
+    """config.toml has things written the old way (before things had a type: see things.py)."""
+    data = tomlkit.parse(path.read_text()).unwrap()
+    layouts = [v for v in data.get("course_layouts", {}).values() if isinstance(v, dict)]
+    return "smart_folders" in data or any(is_old(x) for x in data.get("pinned", [])) or any(map(is_old_layout, layouts))
+
+
+@_writes
+def migrate(path: Path, tools: Callable[[int], list[int]] | None = None) -> bool:
+    """Write what config.toml has the old way the new way. `tools`: a course's tools, in Canvas's
+    order. True if there was any."""
+    if not needs_migration(path):
+        return False
+    data = tomlkit.parse(path.read_text()).unwrap()
+    old_layouts = {int(k): v for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict) and is_old_layout(v)}
+    s = Settings.load(path)
+    save_pinned(path, s.pinned)
+    doc = tomlkit.parse(path.read_text())
+    for course, table in old_layouts.items():
+        doc["course_layouts"][str(course)] = tomlkit.table()
+        layout = CourseLayout.parse(table, course, tools(course) if tools else None)
+        for place in PLACES:
+            _put_place(doc, course, place, getattr(layout, place))
+        if str(course) in doc["course_layouts"] and not doc["course_layouts"][str(course)]:
+            del doc["course_layouts"][str(course)]
+    path.write_text(_dump(doc))
+    return True
+
+
+@_writes
 def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
     """Move a course id into `include` (sync=True) or `exclude`, keeping the file's comments."""
     doc = tomlkit.parse(path.read_text())
@@ -702,10 +543,10 @@ class AppPrefs:
     language: str = "system"     # system | zh | en
     auto_sync: int = 60          # minutes between syncs while the app runs; 0: off
     sync_on_launch: bool = True  # sync when the app starts (unless it just did)
-    tab_order: list[str] = field(default_factory=list)    # a course's tabs, as dragged; [] = the usual
-    hidden_tabs: list[str] = field(default_factory=list)  # tabs you hid (in every course)
-    overview_order: list[str] = field(default_factory=list)   # the overview's cards, as dragged
-    overview_hidden: list[str] = field(default_factory=list)  # cards you turned off
+    # The default arrangement of a course's tabs and overview, for courses not arranged for
+    # themselves: their views (of no course in particular). []: the usual.
+    tabs: list[Entry] = field(default_factory=list)
+    overview: list[Entry] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppPrefs:
@@ -718,27 +559,38 @@ class AppPrefs:
         d = cls()
         language = data.get("language", d.language)
         auto_sync = data.get("auto_sync", d.auto_sync)
+        old = old_defaults(data)  # (tab_order, hidden_tabs, overview_order, overview_hidden)
+
+        def default(place: str) -> list[Entry]:
+            mine = [e for e in entries(data.get(place), template=True) if e.thing.type == "view" and e.thing.course is None]
+            return mine or old.get(place, [])
         return cls(
             language=language if language in LANGUAGES else d.language,
             auto_sync=auto_sync if auto_sync in AUTO_SYNC_MINUTES else d.auto_sync,
             sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
-            tab_order=_known(data.get("tab_order"), COURSE_TABS),
-            hidden_tabs=_known(data.get("hidden_tabs"), COURSE_TABS),
-            overview_order=_known(data.get("overview_order"), OVERVIEW_CARDS),
-            overview_hidden=_known(data.get("overview_hidden"), OVERVIEW_CARDS),
+            tabs=default("tabs"),
+            overview=default("overview"),
         )
+
+    @classmethod
+    def migrate(cls, path: Path | None = None) -> None:
+        """app.toml as an older version wrote it (tab_order, overview_order...), the way this one does."""
+        path = path or PREFS_FILE
+        try:
+            data = tomlkit.parse(path.read_text()).unwrap() if path.exists() else {}
+        except Exception:
+            return
+        if any(k in data for k in ("tab_order", "hidden_tabs", "overview_order", "overview_hidden")):
+            cls.load(path).save(path)
 
     def save(self, path: Path | None = None) -> None:
         if self.language not in LANGUAGES:
             raise ConfigError(f"language must be one of {LANGUAGES}")
         if self.auto_sync not in AUTO_SYNC_MINUTES:
             raise ConfigError(f"auto_sync must be one of {AUTO_SYNC_MINUTES} (minutes)")
-        for name in [*self.tab_order, *self.hidden_tabs]:
-            if name not in COURSE_TABS:
-                raise ConfigError(f"no tab {name!r}; tabs are {COURSE_TABS}")
-        for name in [*self.overview_order, *self.overview_hidden]:
-            if name not in OVERVIEW_CARDS:
-                raise ConfigError(f"no overview card {name!r}; cards are {OVERVIEW_CARDS}")
+        for e in [*self.tabs, *self.overview]:
+            if e.thing.type != "view" or e.thing.course is not None:
+                raise ConfigError("a default arrangement has a course's views, of no course in particular")
         path = path or PREFS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
@@ -746,10 +598,11 @@ class AppPrefs:
         doc["language"] = self.language
         doc["auto_sync"] = self.auto_sync
         doc["sync_on_launch"] = self.sync_on_launch
-        doc["tab_order"] = list(dict.fromkeys(self.tab_order))
-        doc["hidden_tabs"] = list(dict.fromkeys(self.hidden_tabs))
-        doc["overview_order"] = list(dict.fromkeys(self.overview_order))
-        doc["overview_hidden"] = list(dict.fromkeys(self.overview_hidden))
+        for place in ("tabs", "overview"):
+            if getattr(self, place):
+                doc.add(tomlkit.nl())
+                doc.add(tomlkit.comment(f"Every course's {place}, unless arranged for itself (as in config.toml)."))
+                doc[place] = _rows(getattr(self, place))
         path.write_text(tomlkit.dumps(doc))
 
 

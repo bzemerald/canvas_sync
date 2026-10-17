@@ -1,40 +1,34 @@
-// A course's page: tabs (概览 first), the overview, and readers for announcements,
-// assignments, pages, the syllabus and grades. The 文件 tab is the file browser, rendered
-// by the main window. A blue dot marks what's new to you; opening it clears the dot.
+// A course's page: its tabs (概览 first), and its views: the overview, readers for
+// announcements, assignments, pages and the syllabus, modules, grades. The 文件 tab is the file
+// browser, rendered by the main window. A blue dot marks what's new to you; opening it clears it.
 import {
-  AppWindow, BookOpen, Check, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, Folder, FolderOpen, Link, ListChecks, Lock,
-  Megaphone, MessagesSquare, Paperclip, ScrollText,
+  Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessagesSquare, Paperclip,
+  AppWindow, BookOpen, ClipboardList,
 } from "lucide-react";
-import { createElement, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type {
-  Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, LayoutChanges, Module, ModuleItem, NewCounts, Overview, PinTarget, TabItem,
-  Total,
-} from "../lib/api";
-import { PinsContext, pinMenuItem, usePinnable } from "../lib/pinnable";
-import { usePinZone } from "../lib/pinZone";
-import { RenameDialog } from "./RenameDialog";
+import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, Module, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
+import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
 import { useSearch } from "../lib/useSearch";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
+import {
+  type Shown, type Thing, type ViewName, changed, opensElsewhere, putAt, refill, same, slotIndex, thingKey, thingOfItem, without,
+} from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
+import { RenameDialog } from "./RenameDialog";
 import { Count, NewDot } from "./Status";
-import { RichText, type CourseLink } from "./RichText";
+import { RichText } from "./RichText";
+import { ThingIcon, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
 
-export type CourseTab = "overview" | "modules" | "announcements" | "assignments" | "grades" | "files" | "syllabus" | "pages";
-/** A tab: built in, or one you added ("x:" and its id). */
-export type TabKey = CourseTab | `x:${string}`;
-export const isAddedTab = (k: string): k is `x:${string}` => k.startsWith("x:");
-/** Tabs you added that open elsewhere (a file in its app, a tool or link in the browser), not in the tab. */
-export const OPENS_ELSEWHERE: TabItem["type"][] = ["file", "tool", "link"];
-
-export const TAB_OF_KIND: Record<DocKind, CourseTab> = {
+/** Where each kind of document is listed. */
+export const KIND_VIEW: Record<DocKind, ViewName> = {
   announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus",
 };
-const KIND_OF_TAB: Partial<Record<CourseTab, DocKind>> = {
+export const VIEW_KIND: Partial<Record<ViewName, DocKind>> = {
   announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus",
 };
 
@@ -63,129 +57,90 @@ export function useLaunch(courseId: number) {
   return { launch, pending };
 }
 
+/** Opening a module's item: where it leads (a file, a page, a link), or the tool it is. */
+export function useItemOpener(course: number) {
+  const things = useThings();
+  const { launch, pending } = useLaunch(course);
+  const activate = (it: ModuleItem) => {
+    const x = thingOfItem(it, course);
+    if (it.tool) launch(`item:${it.tool.module_item_id}`, { module_item_id: it.tool.module_item_id });
+    else if (x) things.open(x);
+    else if (it.url) void api.openUrl(it.url);
+  };
+  return { activate, pending };
+}
+
 export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files : 0);
 
-export const DEFAULT_TABS: CourseTab[] = ["overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages"];
-
-export const TAB_LABEL: Record<CourseTab, string> = {
-  overview: t("概览"), modules: t("模块"), announcements: t("公告"), assignments: t("作业"), grades: t("成绩"),
-  files: t("文件"), syllabus: t("大纲"), pages: t("页面"),
-};
-
-/** Every tab, in the order you dragged them into (built-in ones you never placed go at the end,
- * then tabs you added that aren't placed). */
-export function arrangeTabs(saved: string[], items: TabItem[] = []): TabKey[] {
-  const added = items.map((i): TabKey => `x:${i.id}`);
-  const placed = saved.filter((x): x is TabKey => (DEFAULT_TABS as string[]).includes(x) || added.includes(x as TabKey));
-  return [...placed, ...DEFAULT_TABS.filter((x) => !placed.includes(x)), ...added.filter((x) => !placed.includes(x))];
+/** The views of a course with something in them (the rest aren't shown as tabs). */
+export function viewsWithContent(overview: Overview | null): Set<ViewName> {
+  const c = overview?.counts;
+  const has: Record<ViewName, boolean> = {
+    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, assignments: !!c?.assignments,
+    grades: !!c?.grades, files: true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
+  };
+  return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }
 
-const under = (path: string, dir: string) => path === dir || path.startsWith(dir + "/");
+/** Whether a course's page can show something as a tab: anything but the course itself, or
+ * another course's views. */
+export const tabbable = (e: Thing, course: Course) =>
+  !(e.type === "course" && e.course === course.id) && !(e.type === "view" && e.course !== course.id);
 
-/** Whether something dragged onto a course's tabs can be a tab there: what's in that course (not
- * the course itself), or a web link. */
-function belongsTo(target: PinTarget, course: Course): boolean {
-  if ("url" in target) return true;
-  if ("file" in target) return under(target.file, course.dir);
-  if ("path" in target) return target.path !== course.dir && under(target.path, course.dir);
-  if ("kind" in target || "module" in target || "tool" in target) return target.course === course.id;
-  return false;
-}
-
-const DOC_ICON: Record<DocKind, typeof Megaphone> = { announcement: Megaphone, assignment: ClipboardList, page: BookOpen, syllabus: ScrollText };
-
-export const tabItemLabel = (i: TabItem) =>
-  i.title || (i.path ? i.path.split("/").pop() ?? i.path : i.url ? i.url.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] : "");
-
-function TabItemIcon({ item }: { item: TabItem }) {
-  if (item.type === "file") return <FileIcon name={item.path ?? ""} />;
-  const icon = item.type === "doc" ? DOC_ICON[item.kind ?? "page"] : item.type === "folder" ? Folder : item.type === "module" ? ListChecks
-    : item.type === "tool" ? AppWindow : Link;
-  return createElement(icon, { className: "size-3.5 shrink-0" });
-}
-
-const newTabId = () => Math.random().toString(36).slice(2, 10);
-
-/** `all` with the items of `subset` (in it) put back in the order of `reordered`; the rest stay put. */
-export function refill<T>(all: T[], subset: T[], reordered: T[]): T[] {
-  const queue = [...reordered];
-  return all.map((x) => (subset.includes(x) ? queue.shift()! : x));
-}
-
-/** A course's tabs. Drag to reorder, right-click to hide. Tabs with nothing in them aren't
- * shown; 概览 and 文件 always are, unless you hid them. Drag something of the course (a page, a
- * folder, a module, a tool...) onto them and it's a tab too; drag one of those off, it's gone. */
+/** A course's tabs: its views, and whatever you put there (a page, a folder, a module, a tool, a
+ * link, a search, a note; of this course or another). Drag them into your order; drag anything
+ * onto them and it's a tab where you let go; drag one you put there off, and it's gone. Right-
+ * click to rename any of them, hide the course's own, take away what you put there. Views with
+ * nothing in them aren't shown; 概览 and 文件 always are, unless you hid them. Something shown
+ * that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end. */
 export function CourseTabs({
-  course, tab, overview, order, hidden, items, own, onTab, onOpenItem, onSay, onMarkAllSeen, onLayout, onReset, onMakeDefault, onMenu,
+  course, tab, overview, entries: loaded, own, onTab, onArrange, onReset, onMakeDefault, onSay, onMarkAllSeen,
 }: {
   course: Course;
-  tab: TabKey;
+  tab: Thing; // what's showing
   overview: Overview | null;
-  order: TabKey[]; // every tab, built in and added, in order
-  hidden: CourseTab[];
-  items: TabItem[]; // the tabs you added
-  own: boolean; // this course's tabs are arranged for itself
-  onTab: (t: TabKey) => void;
-  onOpenItem: (item: TabItem) => void; // a tab that opens elsewhere: a file, a tool, a link
-  onSay: (message: string, action?: { label: string; run: () => void }) => void;
-  onMarkAllSeen: () => void;
-  onLayout: (changes: LayoutChanges) => void; // for this course
+  entries: Shown[] | null; // every tab, in order, hidden ones too (null: not loaded yet)
+  own: boolean; // arranged for this course (else as every course is)
+  onTab: (t: Thing) => void;
+  onArrange: (entries: Shown[]) => void; // for this course
   onReset: () => void; // back to how every course is
   onMakeDefault: () => void; // every course (not arranged for itself) like this one
-  onMenu: (items: MenuItem[], x: number, y: number) => void;
+  onSay: (message: string, action?: { label: string; run: () => void }) => void;
+  onMarkAllSeen: () => void;
 }) {
-  const pins = useContext(PinsContext);
+  const things = useThings();
   const bar = useRef<HTMLElement>(null);
-  const [renaming, setRenaming] = useState<TabItem | null>(null);
-  const c = overview?.counts;
+  const [renaming, setRenaming] = useState<Shown | null>(null);
+  const entries = loaded ?? [];
   const n = overview?.new;
-  const has: Record<CourseTab, boolean> = {
-    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, assignments: !!c?.assignments,
-    grades: !!c?.grades, files: true, syllabus: !!c?.syllabus, pages: !!c?.pages,
-  };
-  const fresh: Partial<Record<CourseTab, number>> = {
+  const has = viewsWithContent(overview);
+  const fresh: Partial<Record<ViewName, number>> = {
     announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages,
   };
-  const itemOf = (k: TabKey) => (isAddedTab(k) ? items.find((i) => `x:${i.id}` === k) ?? null : null);
-  const visible = order.filter((k) => (isAddedTab(k) ? !!itemOf(k) : !hidden.includes(k) && (has[k] || k === tab)));
-  const removeItem = (item: TabItem) => {
-    const before = { tab_items: items, tabs: order };
-    onLayout({ tab_items: items.filter((i) => i.id !== item.id) });
-    onSay(t("已移除标签“{name}”", { name: tabItemLabel(item) }), { label: t("撤销"), run: () => onLayout(before) });
-  };
+  const isOwn = (e: Thing) => e.type === "view" && e.course === course.id;
+  const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has((e as Thing & { type: "view" }).view))));
+  const extra = !loaded || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
+  const name = (e: Shown) => thingName(e, things.courses, "tab");
 
-  // Dropped on the tabs: a tab of its own, where it was let go (already one: it moves there).
-  const addTab = (target: PinTarget, slot: number) => {
-    const existing = items.find((i) => api.pinKey(api.targetOfTab(i, course.id)) === api.pinKey(target));
-    const item = existing ?? api.tabItemOf(target, newTabId());
-    if (!item) return;
-    const key: TabKey = `x:${item.id}`;
-    const shown = visible.filter((k) => k !== key);
-    const at = Math.min(slot - (visible.slice(0, slot).includes(key) ? 1 : 0), shown.length);
-    const rest = order.filter((k) => k !== key);
-    const next = shown[at];
-    const place = next !== undefined ? rest.indexOf(next) : shown.length ? rest.indexOf(shown[shown.length - 1]) + 1 : 0;
-    onLayout({ tab_items: existing ? items : [...items, item], tabs: [...rest.slice(0, place), key, ...rest.slice(place)] });
+  const takeAway = (e: Shown) => {
+    onArrange(without(entries, e));
+    onSay(t("已移除标签“{name}”", { name: name(e) }), { label: t("撤销"), run: () => onArrange(entries) });
   };
+  // Dropped on the tabs: a tab, where it was let go (one already: it moves there, shown).
+  const put = (entry: Shown, slot: number) => onArrange(putAt(entries, { ...entry, hidden: false }, slotIndex(entries, visible, slot)));
   const slotAt = (x: number) => {
     const tabs = Array.from(bar.current?.querySelectorAll<HTMLElement>(":scope > [data-tab]") ?? []);
     const i = tabs.findIndex((el) => {
       const r = el.getBoundingClientRect();
       return x < r.left + r.width / 2;
     });
-    return i < 0 ? tabs.length : i;
+    return i < 0 ? visible.length : Math.min(i, visible.length);
   };
-  const zone = usePinZone(addTab, (x) => slotAt(x), (target) => belongsTo(target, course));
-  const drag = useReorder(visible.length, (from, to) => onLayout({ tabs: refill(order, visible, moved(visible, from, to)), hidden_tabs: hidden }), "x", {
+  const zone = useDropZone(put, (x) => slotAt(x), (e) => tabbable(e, course));
+  const drag = useReorder(visible.length, (from, to) => onArrange(refill(entries, visible, moved(visible, from, to))), "x", {
     zone: zone.id,
-    pin: (i) => {
-      const item = itemOf(visible[i]);
-      return item ? api.targetOfTab(item, course.id) : null; // (onto 置顶)
-    },
-    remove: (i) => {
-      const item = itemOf(visible[i]);
-      return item ? () => removeItem(item) : null;
-    },
+    thing: (i) => visible[i],
+    remove: (i) => (isOwn(visible[i]) ? null : () => takeAway(visible[i])),
   });
 
   // Where a dropped thing would go: a line between two tabs.
@@ -198,35 +153,54 @@ export function CourseTabs({
     return (zone.slot < tabs.length ? r.left - 2 : r.right + 2) - box.left + bar.current.scrollLeft;
   })();
 
-  const menu = (k: TabKey | null): MenuItem[] => {
-    const item = k ? itemOf(k) : null;
-    const showAgain: MenuItem[] = hidden.map((h) => ({
-      label: t("显示“{name}”标签", { name: TAB_LABEL[h] }), onSelect: () => onLayout({ tabs: order, hidden_tabs: hidden.filter((x) => x !== h) }),
+  const menu = (e: Shown | null): MenuItem[] => {
+    const showAgain: MenuItem[] = entries.filter((x) => x.hidden).map((x) => ({
+      label: t("显示“{name}”标签", { name: name(x) }), onSelect: () => onArrange(changed(entries, x, { hidden: false })),
     }));
-    const own_: MenuItem[] = item
-      ? [
-          ...(OPENS_ELSEWHERE.includes(item.type) ? [{ label: t("打开"), onSelect: () => onOpenItem(item) }] : []),
-          ...(pins ? [pinMenuItem(pins, api.targetOfTab(item, course.id))] : []),
-          { label: t("重命名…"), onSelect: () => setRenaming(item) },
-          { label: t("移除这个标签"), onSelect: () => removeItem(item) },
-        ]
-      : k && !isAddedTab(k)
-        ? [{
-            label: t("隐藏“{name}”标签", { name: TAB_LABEL[k] }),
-            disabled: visible.length <= 1,
-            onSelect: () => onLayout({ tabs: order, hidden_tabs: [...hidden, k] }),
-          }]
-        : [];
-    const list: MenuItem[] = [
-      ...own_,
-      ...(showAgain.length ? ["separator" as const, ...showAgain] : []),
-      "separator",
-      { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
-      { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
-    ];
-    while (list[0] === "separator") list.shift(); // (no tab under the pointer: nothing to hide)
-    return list;
+    const mine: MenuItem[] = !e ? [] : e === extra
+      ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
+      : [
+          { label: t("重命名…"), onSelect: () => setRenaming(e) },
+          ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, "tab") }), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
+          isOwn(e)
+            ? { label: t("隐藏“{name}”标签", { name: name(e) }), disabled: visible.length <= 1, onSelect: () => onArrange(changed(entries, e, { hidden: true })) }
+            : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
+        ];
+    return sections(
+      e && !isOwn(e) ? things.ways(e) : [],
+      mine,
+      e ? [pinItem(things, e)] : [],
+      showAgain,
+      [
+        { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
+        { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
+      ],
+    );
   };
+
+  const button = (e: Shown, props: object, i: number | null) => (
+    <button
+      key={thingKey(e)}
+      data-tab={i === null ? undefined : ""}
+      {...props}
+      onClick={() => (opensElsewhere(e) ? things.open(e) : onTab(e))}
+      onContextMenu={(ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        things.menu(menu(e), ev.clientX, ev.clientY);
+      }}
+      aria-current={same(tab, e) ? "page" : undefined}
+      title={opensHint(e) ?? (!isOwn(e) && i !== null ? t("拖离标签栏可以移除") : undefined)}
+      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${same(tab, e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${e.hidden || e === extra ? "italic" : ""}`}
+    >
+      {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
+      <span className="max-w-48 truncate">{name(e)}</span>
+      {isOwn(e) && !!fresh[(e as Thing & { type: "view" }).view] && (
+        <Count n={fresh[(e as Thing & { type: "view" }).view]!} label={t("{n} 个新的", { n: fresh[(e as Thing & { type: "view" }).view]! })} />
+      )}
+      {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+    </button>
+  );
 
   return (
     <nav
@@ -241,39 +215,12 @@ export function CourseTabs({
       onContextMenu={(e) => {
         if (e.target !== e.currentTarget) return;
         e.preventDefault();
-        onMenu(menu(null), e.clientX, e.clientY);
+        things.menu(menu(null), e.clientX, e.clientY);
       }}
     >
-      {visible.map((k, i) => {
-        const item = itemOf(k);
-        return (
-          <button
-            key={k}
-            data-tab
-            {...drag.item(i)}
-            onClick={() => (item && OPENS_ELSEWHERE.includes(item.type) ? onOpenItem(item) : onTab(k))}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              onMenu(menu(k), e.clientX, e.clientY);
-            }}
-            aria-current={tab === k ? "page" : undefined}
-            title={item ? t("拖离标签栏可以移除") : undefined}
-            className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${tab === k ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
-          >
-            {item ? (
-              <>
-                <TabItemIcon item={item} />
-                <span className="max-w-48 truncate">{tabItemLabel(item)}</span>
-              </>
-            ) : (
-              <>
-                {TAB_LABEL[k as CourseTab]}
-                {!!fresh[k as CourseTab] && <Count n={fresh[k as CourseTab]!} label={t("{n} 个新的", { n: fresh[k as CourseTab]! })} />}
-              </>
-            )}
-          </button>
-        );
-      })}
+      {visible.map((e, i) => button(e, drag.item(i), i))}
+      {extra && button(extra, {}, null)}
+      {!loaded && <span aria-hidden className="invisible py-2 text-sm">&nbsp;</span>}
       {markerLeft !== null && (
         <span aria-hidden className="pointer-events-none absolute top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" style={{ left: markerLeft - 1 }} />
       )}
@@ -284,12 +231,12 @@ export function CourseTabs({
       )}
       {renaming && (
         <RenameDialog
-          current={tabItemLabel(renaming)}
+          current={name(renaming)}
           title={t("重命名标签")}
           hint={t("只改这个标签的名字。")}
           onClose={() => setRenaming(null)}
-          onSubmit={(name) => {
-            onLayout({ tab_items: items.map((i) => (i.id === renaming.id ? { ...i, title: name } : i)) });
+          onSubmit={(title) => {
+            onArrange(changed(entries, renaming, { title }));
             setRenaming(null);
           }}
         />
@@ -349,11 +296,11 @@ export function TotalLine({ total, big = false }: { total: Total; big?: boolean 
 
 // -- 概览 --------------------------------------------------------------------------------
 
-/** A row in a card or list; `pin`: what it is, to drag onto 置顶 or right-click to pin. */
-export function Row({ onClick, pin, children }: { onClick: () => void; pin?: PinTarget | null; children: React.ReactNode }) {
-  const pinnable = usePinnable();
+/** A row in a card or list; `thing`: what it is, to drag somewhere or right-click. */
+export function Row({ onClick, thing, children }: { onClick: () => void; thing?: Shown | null; children: React.ReactNode }) {
+  const props = useThing();
   return (
-    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()} {...pinnable(pin)}
+    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()} {...props(thing)}
       className="cursor-default rounded-md px-2 py-1.5 text-sm hover:bg-chip">
       {children}
     </div>
@@ -374,9 +321,13 @@ function Due({ iso }: { iso: string | null | undefined }) {
   );
 }
 
+/** An announcement, assignment or page, as a thing (named as it's listed). */
+export const docThing = (course: number, it: ItemSummary): Shown =>
+  it.kind === "syllabus" ? { type: "view", course, view: "syllabus" } : { type: "doc", course, kind: it.kind, id: it.id, name: it.title };
+
 export function AssignmentRow({ a, course, onClick }: { a: ItemSummary; course: number; onClick: () => void }) {
   return (
-    <Row onClick={onClick} pin={{ course, kind: "assignment", id: a.id, title: a.title }}>
+    <Row onClick={onClick} thing={docThing(course, a)}>
       <div className="flex items-center gap-2">
         {a.new && <NewDot label={t("新作业")} />}
         <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
@@ -411,20 +362,19 @@ const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 
 /** The course as the instructor laid it out. Opens with the current modules expanded
  * (newest upload, next deadline); what you expand or collapse is remembered per course. */
-export function CourseModules({ course, version, focus, only, onOpenDoc, onShowFolder, query, onWiden }: {
+export function CourseModules({ course, version, focus, only, query, onWiden }: {
   course: Course;
   version: number;
   focus?: number; // a module to show: opened, and scrolled to (as from 置顶)
   only?: number; // just this module, open (a tab of its own)
-  onOpenDoc: (kind: DocKind, id: string) => void;
-  onShowFolder: (path: string) => void;
   query: string; // the search box: only items (or modules) with these words in their titles
   onWiden: () => void;
 }) {
   const [list, setList] = useState<Module[] | null>(null);
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
-  const { launch, pending } = useLaunch(course.id);
-  const pinnable = usePinnable();
+  const { activate, pending } = useItemOpener(course.id);
+  const things = useThings();
+  const thing = useThing();
   useEffect(() => {
     api.modules(course.id).then(setList, () => setList([]));
   }, [course.id, version]);
@@ -440,14 +390,6 @@ export function CourseModules({ course, version, focus, only, onOpenDoc, onShowF
     const next = new Set(expanded);
     if (!next.delete(id)) next.add(id);
     setOpen([...next]);
-  };
-
-  const activate = (it: ModuleItem) => {
-    if (it.file) void api.openPath(it.file);
-    else if (it.doc) onOpenDoc(it.doc.kind, it.doc.id);
-    else if (it.external) void api.openExternal(it.external);
-    else if (it.tool) launch(`item:${it.tool.module_item_id}`, { module_item_id: it.tool.module_item_id });
-    else if (it.url) void api.openUrl(it.url);
   };
 
   if (list === null) return <p className="px-6 py-8 text-sm text-muted">{t("正在加载…")}</p>;
@@ -483,7 +425,7 @@ export function CourseModules({ course, version, focus, only, onOpenDoc, onShowF
           const locked = m.state === "locked";
           return (
             <section key={m.id} id={`module-${m.id}`} className={`mb-2 scroll-mt-4 rounded-xl border bg-panel ${m.id === focus ? "border-accent/70" : "border-line"}`}>
-              <header className="group flex items-center gap-2 px-3 py-2" {...pinnable({ course: course.id, module: m.id, title: m.name })}>
+              <header className="group flex items-center gap-2 px-3 py-2" {...thing({ type: "module", course: course.id, module: m.id, name: m.name })}>
                 <button onClick={() => toggle(m.id)} aria-expanded={isOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   {isOpen ? <ChevronDown className="size-4 shrink-0 text-muted" /> : <ChevronRight className="size-4 shrink-0 text-muted" />}
                   <span className="truncate font-medium">{m.name}</span>
@@ -498,7 +440,7 @@ export function CourseModules({ course, version, focus, only, onOpenDoc, onShowF
                 {m.folder && (
                   <button
                     title={t("在“文件”中查看这个模块的文件夹")}
-                    onClick={() => onShowFolder(m.folder!)}
+                    onClick={() => things.open({ type: "folder", path: m.folder! })}
                     className="shrink-0 rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus:opacity-100"
                   >
                     <FolderOpen className="size-4" />
@@ -521,15 +463,9 @@ export function CourseModules({ course, version, focus, only, onOpenDoc, onShowF
   );
 }
 
-/** What a module item is, to pin: its file, its page (or assignment...), or the web page it links to. */
-const itemTarget = (it: ModuleItem, course: number): PinTarget | null =>
-  it.file ? { file: it.file }
-    : it.doc ? { course, kind: it.doc.kind, id: it.doc.id, title: it.title }
-      : it.external ? { url: it.external, title: it.title }
-        : null;
-
 export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; course: number; opening: boolean; onClick: () => void }) {
-  const pinnable = usePinnable();
+  const thing = useThing();
+  const what = thingOfItem(it, course);
   const pad = { paddingLeft: 8 + it.indent * 20 };
   if (it.type === "SubHeader") {
     return <li style={pad} className="pt-2.5 pb-1 text-xs font-medium text-muted">{it.title}</li>;
@@ -540,7 +476,7 @@ export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; co
     <li>
       <button
         onClick={onClick}
-        {...pinnable(it.deleted ? null : itemTarget(it, course))}
+        {...thing(what && { ...what, name: it.title })}
         style={pad}
         title={
           it.deleted ? t("你删除了这个文件；在 Canvas 中打开")
@@ -566,34 +502,31 @@ export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; co
 // -- 公告 / 作业 / 页面 / 大纲 --------------------------------------------------------------
 
 /** One announcement, assignment or page (or the syllabus) as a tab of its own. */
-export function CourseDoc({ course, kind, id, version, onNavigate, onSeen }: {
+export function CourseDoc({ course, kind, id, version, onSeen }: {
   course: Course;
   kind: DocKind;
   id: string;
   version: number;
-  onNavigate: (to: CourseLink) => void;
   onSeen: () => void; // it was new, and now it's been opened
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <ItemView key={`${kind}:${id}`} course={course} kind={kind} id={id} version={version} onNavigate={onNavigate} onLoaded={(it) => it.new && onSeen()} />
+      <ItemView key={`${kind}:${id}`} course={course} kind={kind} id={id} version={version} onLoaded={(it) => it.new && onSeen()} />
     </div>
   );
 }
 
 /** A list on the left, the selected item on the right, like a mail client. */
-export function CourseReader({ course, tab, selected, version, onSelect, onNavigate, onSeen, query, onWiden }: {
+export function CourseReader({ course, kind, selected, version, onSelect, onSeen, query, onWiden }: {
   course: Course;
-  tab: CourseTab;
+  kind: DocKind;
   selected: string | null;
   version: number;
   onSelect: (id: string) => void;
-  onNavigate: (to: CourseLink) => void;
   onSeen: () => void;
   query: string; // the search box: the list shows what matches, best first (titles and text)
   onWiden: () => void;
 }) {
-  const kind = KIND_OF_TAB[tab]!;
   const [items, setItems] = useState<ItemSummary[] | null>(null);
   // Opened here: no dot, even if the list was fetched before opening it marked it seen.
   const [opened, setOpened] = useState<Set<string>>(new Set());
@@ -624,7 +557,7 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
   if (kind === "syllabus") {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ItemView course={course} kind="syllabus" id={String(course.id)} version={version} onNavigate={onNavigate} />
+        <ItemView course={course} kind="syllabus" id={String(course.id)} version={version} />
       </div>
     );
   }
@@ -635,7 +568,7 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
         {list === null && <li className="px-2 py-3 text-sm text-muted">{t("正在加载…")}</li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
         {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
-          <ListRow key={it.id} it={it} pin={{ course: course.id, kind, id: it.id, title: it.title }} active={it.id === current} onClick={() => onSelect(it.id)} />
+          <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
       </ul>
       <div className="min-w-0 flex-1 overflow-y-auto">
@@ -646,7 +579,6 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
             kind={kind}
             id={current}
             version={version}
-            onNavigate={onNavigate}
             onLoaded={(it) => it.new && seen(it.id)}
           />
         )}
@@ -655,11 +587,11 @@ export function CourseReader({ course, tab, selected, version, onSelect, onNavig
   );
 }
 
-function ListRow({ it, pin, active, onClick }: { it: ItemSummary; pin: PinTarget; active: boolean; onClick: () => void }) {
-  const pinnable = usePinnable();
+function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown; active: boolean; onClick: () => void }) {
+  const props = useThing();
   return (
     <li>
-      <button onClick={onClick} {...pinnable(pin)} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
+      <button onClick={onClick} {...props(thing)} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
         <div className="flex items-center gap-2">
           {it.new && <NewDot />}
           <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
@@ -674,7 +606,7 @@ function ListRow({ it, pin, active, onClick }: { it: ItemSummary; pin: PinTarget
 }
 
 function AssignmentList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
-  const pinnable = usePinnable();
+  const thing = useThing();
   const groups = useMemo(() => {
     const now = Date.now();
     const g: [string, ItemSummary[]][] = [[t("即将截止"), []], [t("已过截止"), []], [t("没有截止日期"), []]];
@@ -692,7 +624,7 @@ function AssignmentList({ course, list, current, onSelect }: { course: number; l
           <ul>
             {xs.map((a) => (
               <li key={a.id}>
-                <button onClick={() => onSelect(a.id)} {...pinnable({ course, kind: "assignment", id: a.id, title: a.title })}
+                <button onClick={() => onSelect(a.id)} {...thing(docThing(course, a))}
                   className={`block w-full rounded-md px-2.5 py-2 text-left ${a.id === current ? "bg-selected" : "hover:bg-chip"}`}>
                   <div className="flex items-center gap-2">
                     {a.new && <NewDot />}
@@ -718,12 +650,11 @@ const SUBMISSION: Record<string, string> = {
   discussion_topic: t("讨论"), external_tool: t("外部工具"), on_paper: t("纸质"), none: t("不需要提交"), media_recording: t("录音/录像"),
 };
 
-function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
+function ItemView({ course, kind, id, version, onLoaded }: {
   course: Course;
   kind: DocKind;
   id: string;
   version: number;
-  onNavigate: (to: CourseLink) => void;
   onLoaded?: (it: Item) => void; // (loading it marked it seen)
 }) {
   const [it, setIt] = useState<Item | null>(null);
@@ -803,7 +734,7 @@ function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
         </ul>
       )}
       {it.html.trim() ? (
-        <RichText html={it.html} courseId={course.id} files={it.files} onNavigate={onNavigate} />
+        <RichText html={it.html} files={it.files} />
       ) : (
         <p className="text-sm text-muted">{t("没有正文。")}</p>
       )}
@@ -814,14 +745,14 @@ function ItemView({ course, kind, id, version, onNavigate, onLoaded }: {
 // -- 成绩 ----------------------------------------------------------------------------------
 
 /** Your total as Canvas computes it, and every assignment's grade, latest due first. */
-export function CourseGrades({ course, version, onOpenDoc, query, onWiden }: {
+export function CourseGrades({ course, version, query, onWiden }: {
   course: Course;
   version: number;
-  onOpenDoc: (kind: DocKind, id: string) => void;
   query: string; // the search box: only assignments with these words in their titles
   onWiden: () => void;
 }) {
-  const pinnable = usePinnable();
+  const thing = useThing();
+  const things = useThings();
   const [g, setG] = useState<Grades | null>(null);
   useEffect(() => {
     api.grades(course.id).then(setG, () => setG({ total: null, assignments: [] }));
@@ -860,8 +791,8 @@ export function CourseGrades({ course, version, onOpenDoc, query, onWiden }: {
             {rows.map((a) => (
               <li key={a.id}>
                 <button
-                  onClick={() => onOpenDoc("assignment", a.id)}
-                  {...pinnable({ course: course.id, kind: "assignment", id: a.id, title: a.title })}
+                  onClick={() => things.open(docThing(course.id, a))}
+                  {...thing(docThing(course.id, a))}
                   className="grid w-full grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-chip"
                 >
                   <span className="flex min-w-0 items-center gap-2">

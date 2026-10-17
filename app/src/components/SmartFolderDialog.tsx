@@ -1,30 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, Kind, PinnedItem, SmartFolder } from "../lib/api";
+import type { Course, Kind } from "../lib/api";
+import type { ThingOf } from "../lib/things";
 import { CoursePicker } from "./CoursePicker";
 import { Button, Dialog } from "./Dialog";
 import { KIND } from "./Result";
 import { t } from "../lib/i18n";
 
+/** A smart folder: a search, pinned, with a name. */
+export type SmartFolder = ThingOf<"search"> & { title: string };
+
 /** Create or edit a saved search. Shows how many items it matches as you type. */
-export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }: {
+export function SmartFolderDialog({ initial, preset, courses, onClose, onSave }: {
   initial: SmartFolder | null; // the folder being edited; null: a new one
-  preset?: SmartFolder | null; // a new one's starting values (e.g. limited to a course)
+  preset?: Partial<SmartFolder> | null; // a new one's starting values (e.g. limited to a course)
   courses: Course[];
   onClose: () => void;
-  onSaved: (pinned: PinnedItem[], name: string) => void;
+  onSave: (folder: SmartFolder) => void;
 }) {
   const start = initial ?? preset;
-  const [name, setName] = useState(start?.name ?? "");
+  const [name, setName] = useState(start?.title ?? "");
   const [query, setQuery] = useState(start?.query ?? "");
   const [picked, setPicked] = useState<Set<number>>(new Set(start?.courses ?? []));
   const [kinds, setKinds] = useState<Set<Kind>>(new Set(start?.kinds ?? []));
   const [content, setContent] = useState(start?.content ?? false);
   const [count, setCount] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const folder: SmartFolder = useMemo(
-    () => ({ name: name.trim(), query: query.trim(), courses: [...picked], kinds: [...kinds], content }),
+    () => ({ type: "search", title: name.trim(), query: query.trim(), courses: [...picked], kinds: [...kinds], content }),
     [name, query, picked, kinds, content],
   );
 
@@ -36,14 +38,6 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
     }, 200);
     return () => clearTimeout(t);
   }, [folder]);
-
-  const save = async () => {
-    try {
-      onSaved(await api.saveSmartFolder(folder, initial?.name), folder.name);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
 
   const toggle = <T,>(set: Set<T>, value: T) => {
     const next = new Set(set);
@@ -61,7 +55,7 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
         <>
           <span className="mr-auto self-center text-xs text-muted">{count === null ? "" : t("现在匹配 {n} 项", { n: count >= 500 ? "500+" : count })}</span>
           <Button onClick={onClose}>{t("取消")}</Button>
-          <Button primary disabled={!folder.name || nothing} onClick={save}>{t("保存")}</Button>
+          <Button primary disabled={!folder.title || nothing} onClick={() => onSave(folder)}>{t("保存")}</Button>
         </>
       }
     >
@@ -98,7 +92,6 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSaved }
           <span className="mb-1 block text-xs text-muted">{t("课程（不选 = 全部）")}</span>
           <CoursePicker courses={courses} picked={[...picked]} onChange={(ids) => setPicked(new Set(ids))} />
         </div>
-        {error && <p className="text-danger">{error}</p>}
       </div>
     </Dialog>
   );

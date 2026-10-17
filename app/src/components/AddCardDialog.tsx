@@ -1,10 +1,11 @@
 // Adding a card to a course's overview: what kind, then which folder, file, page, module, or
-// what to search for.
+// what to search for. (Anything can also be dragged onto the overview.)
 import { BookOpen, ChevronLeft, ChevronRight, FileText, Folder, ListChecks, NotebookPen, ScrollText, Search as SearchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../lib/api";
-import type { Card, Course, Entry, ItemSummary, Module } from "../lib/api";
+import type { Course, Entry, ItemSummary, Module } from "../lib/api";
 import { t } from "../lib/i18n";
+import { type Shown, isView, view } from "../lib/things";
 import { Button, Dialog } from "./Dialog";
 import { FileIcon } from "./FileIcon";
 
@@ -22,11 +23,11 @@ const KINDS: { kind: Kind; icon: React.ReactNode; label: string; hint: string }[
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 
-export function AddCardDialog({ course, has, onClose, onAdd }: {
+export function AddCardDialog({ course, shown, onClose, onAdd }: {
   course: Course;
-  has: Card[];
+  shown: Shown[]; // the cards on the overview now
   onClose: () => void;
-  onAdd: (card: Card) => void;
+  onAdd: (card: Shown) => void;
 }) {
   const [kind, setKind] = useState<Kind | null>(null);
   const [title, setTitle] = useState("");
@@ -48,9 +49,9 @@ export function AddCardDialog({ course, has, onClose, onAdd }: {
         <>
           {back}
           <Button onClick={onClose}>{t("取消")}</Button>
-          {kind === "note" && <Button primary onClick={() => onAdd({ type: "note", id: newId(), ...(title.trim() ? { title: title.trim() } : {}) })}>{t("添加")}</Button>}
+          {kind === "note" && <Button primary onClick={() => onAdd({ type: "note", course: course.id, id: newId(), title: title.trim() })}>{t("添加")}</Button>}
           {kind === "search" && (
-            <Button primary disabled={!query.trim()} onClick={() => onAdd({ type: "search", id: newId(), query: query.trim(), content })}>{t("添加")}</Button>
+            <Button primary disabled={!query.trim()} onClick={() => onAdd({ type: "search", query: query.trim(), courses: [course.id], kinds: [], content })}>{t("添加")}</Button>
           )}
         </>
       }
@@ -58,12 +59,12 @@ export function AddCardDialog({ course, has, onClose, onAdd }: {
       {!kind && (
         <ul className="grid grid-cols-2 gap-2 pb-2">
           {KINDS.map((k) => {
-            const taken = k.kind === "syllabus" && has.some((c) => c.type === "syllabus");
+            const taken = k.kind === "syllabus" && shown.some((c) => isView(c, "syllabus"));
             return (
               <li key={k.kind}>
                 <button
                   disabled={taken}
-                  onClick={() => (k.kind === "syllabus" ? onAdd({ type: "syllabus" }) : setKind(k.kind))}
+                  onClick={() => (k.kind === "syllabus" ? onAdd(view(course.id, "syllabus")) : setKind(k.kind))}
                   className="flex h-full w-full gap-3 rounded-lg border border-line p-3 text-left hover:bg-chip disabled:opacity-40"
                 >
                   <span className="text-muted">{k.icon}</span>
@@ -87,11 +88,11 @@ export function AddCardDialog({ course, has, onClose, onAdd }: {
         <PathPicker
           root={course.dir}
           files={kind === "file"}
-          onPick={(path) => onAdd({ type: kind, id: newId(), path })}
+          onPick={(path) => onAdd({ type: kind, path })}
         />
       )}
-      {kind === "page" && <PagePicker course={course} onPick={(p) => onAdd({ type: "page", id: newId(), page: p.id, title: p.title })} />}
-      {kind === "module" && <ModulePicker course={course} onPick={(m) => onAdd({ type: "module", id: newId(), module: m.id, title: m.name })} />}
+      {kind === "page" && <PagePicker course={course} onPick={(p) => onAdd({ type: "doc", course: course.id, kind: "page", id: p.id, name: p.title })} />}
+      {kind === "module" && <ModulePicker course={course} onPick={(m) => onAdd({ type: "module", course: course.id, module: m.id, name: m.name })} />}
       {kind === "search" && (
         <div className="space-y-3 pb-2">
           <label className="block">

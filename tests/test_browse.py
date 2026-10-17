@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from canvas_sync import CanvasClient, Engine
-from canvas_sync.config import Account, ConfigError, Settings, SmartFolder, delete_smart_folder, save_smart_folder
+from canvas_sync.config import Account, load_pinned, save_pinned
+from canvas_sync.things import Entry, Thing
 from canvas_sync.plan import Scope
 from canvas_sync.server import create_app
 from canvas_sync.thumbs import thumbnail
@@ -150,20 +151,13 @@ def test_list_dir_sorts_naturally_and_hides_internal_files(root, fake):
 
 
 def test_smart_folders_are_saved_in_config_keeping_comments(root):
+    """A smart folder is a search, pinned, with a name of your own."""
     cfg = root / ".canvas/config.toml"
-    save_smart_folder(cfg, SmartFolder("MT1", "mt1", [1], ["file"]))
-    save_smart_folder(cfg, SmartFolder("Syllabi", "", [], ["syllabus"]))
-    with pytest.raises(ConfigError):
-        save_smart_folder(cfg, SmartFolder("Syllabi", "x"))
-    save_smart_folder(cfg, SmartFolder("Midterm 1", "mt1 OR midterm1", [1], [], content=True), replaces="MT1")
-    assert Settings.load(cfg).smart_folders[0].content is True
-    save_smart_folder(cfg, SmartFolder("Midterm 1", "mt1 OR midterm1", [1], []), replaces="Midterm 1")
-    assert [f.name for f in Settings.load(cfg).smart_folders] == ["Midterm 1", "Syllabi"]
-    delete_smart_folder(cfg, "Syllabi")
-    assert Settings.load(cfg).smart_folders == [SmartFolder("Midterm 1", "mt1 OR midterm1", [1], [])]
+    mt1 = Entry(Thing("search", query="mt1 OR midterm1", courses=(1,), kinds=("file",), content=True), "Midterm 1")
+    syllabi = Entry(Thing("search", query="", kinds=("syllabus",)), "Syllabi")
+    save_pinned(cfg, [mt1, syllabi])
+    assert load_pinned(cfg) == [mt1, syllabi]
     assert "# How canvas-sync lays out" in cfg.read_text()
-    with pytest.raises(ConfigError):
-        save_smart_folder(cfg, SmartFolder("Bad", "", [], ["video"]))
 
 
 def test_search_by_kind_alone(root, fake):
@@ -248,12 +242,11 @@ def test_api_sync_with_no_files_to_fetch_still_stores_the_rest(api, fake):
 
 
 def test_api_smart_folders_thumbs_and_preview(api, root):
-    folder = {"name": "Week 2", "query": "lec2", "courses": [1], "kinds": ["file"]}
-    assert api.post("/api/smart-folders", json=folder).json() == [{"type": "smart", **folder, "content": False}]
-    assert api.post("/api/smart-folders", json={**folder, "content": True, "replaces": "Week 2"}).json()[0]["content"] is True
-    assert api.post("/api/smart-folders", json={**folder, "kinds": ["movie"]}).status_code == 400
-    assert api.delete("/api/smart-folders/Week 2").json() == []
-    assert api.delete("/api/smart-folders/Week 2").status_code == 404
+    folder = {"type": "search", "query": "lec2", "courses": [1], "kinds": ["file"], "content": False}
+    [got] = api.put("/api/pinned", json={"entries": [{**folder, "title": "Week 2"}]}).json()
+    assert got == {**folder, "title": "Week 2", "hidden": False, "name": None, "exists": True, "in_course": None}
+    assert api.put("/api/pinned", json={"entries": [{**folder, "kinds": ["movie"]}]}).status_code == 400
+    assert api.put("/api/pinned", json={"entries": []}).json() == []
 
     (root / COURSE / "slides.pdf").write_bytes(make_pdf("Hi"))
     r = api.get("/api/thumb", params={"path": f"{COURSE}/slides.pdf", "size": 64})

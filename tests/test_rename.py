@@ -9,9 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from canvas_sync import Engine
-from canvas_sync.config import (
-    Account, Settings, SmartFolder, load_pinned, move_pinned, pin_folder, save_smart_folder, unpin_folder,
-)
+from canvas_sync.config import Account, Settings, save_pinned
+from canvas_sync.things import Entry, Thing
 from canvas_sync.plan import Scope
 from canvas_sync.server import create_app
 from fake_canvas import BASE, COURSE, FakeCanvas, kinds, pull
@@ -108,23 +107,6 @@ def test_rename_keeps_your_own_moves_and_edits(root, fake):
     assert pull(root, fake).actions == []
 
 
-def test_pinned_list(root):
-    cfg = root / ".canvas/config.toml"
-    # Smart folders made before pinning existed are picked up and moved over.
-    cfg.write_text(cfg.read_text() + '\n[[smart_folders]]\nname = "Old"\nquery = "mt"\n')
-    pin_folder(cfg, "Fall 2026/MATH 221/Modules")
-    pin_folder(cfg, "Fall 2026/MATH 221/Modules")  # once only
-    save_smart_folder(cfg, SmartFolder("Syllabi", "", [], ["syllabus"]))
-    assert [type(p).__name__ for p in load_pinned(cfg)] == ["SmartFolder", "PinnedFolder", "SmartFolder"]
-    assert "smart_folders" not in cfg.read_text()
-    move_pinned(cfg, 2, 0)
-    assert load_pinned(cfg)[0] == SmartFolder("Syllabi", "", [], ["syllabus"])
-    unpin_folder(cfg, "Fall 2026/MATH 221/Modules")
-    assert [p.name for p in load_pinned(cfg)] == ["Syllabi", "Old"]  # type: ignore[union-attr]
-    with pytest.raises(LookupError):
-        unpin_folder(cfg, "nope")
-
-
 @pytest.fixture
 def api(root, fake):
     pull(root, fake)
@@ -133,10 +115,9 @@ def api(root, fake):
 
 
 def test_api_rename_and_pin(api, root):
-    assert api.post("/api/pinned", json={"path": WEEK1}).json() == [
-        {"type": "folder", "path": WEEK1, "course_id": 1, "exists": True}
+    assert api.put("/api/pinned", json={"entries": [{"type": "folder", "path": WEEK1}]}).json() == [
+        {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1}
     ]
-    assert api.post("/api/pinned", json={"path": f"{WEEK1}/lec1.pdf"}).status_code == 404  # folders only
     r = api.post("/api/rename", json={"path": WEEK1, "name": "Week One"})
     assert r.json() == {"path": f"{MOD}/Week One"}
     assert api.get("/api/pinned").json()[0]["path"] == f"{MOD}/Week One"  # the pin followed
@@ -148,64 +129,19 @@ def test_api_rename_and_pin(api, root):
     [course] = api.get("/api/courses").json()
     assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "Linear Algebra" and course["renamed"]
     assert course["default_name"] == "MATH 221" and course["term_label"] == "Fall 2026"
-    assert api.post("/api/pinned/remove", json={"path": "Fall 2026/Linear Algebra/Modules/Week One"}).json() == []
+    assert api.get("/api/pinned").json()[0]["path"] == "Fall 2026/Linear Algebra/Modules/Week One"
     # Search results call the course by its new name too.
     assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"Linear Algebra"}
 
 
 def test_pinned_courses(api, root):
     cfg = root / ".canvas/config.toml"
-    # A course's folder pinned the old way turns into the course.
-    pin_folder(cfg, COURSE)
-    assert api.get("/api/pinned").json() == [{"type": "course", "id": 1, "exists": True}]
-    assert "course = 1" in cfg.read_text()
-    assert api.post("/api/pinned", json={"path": COURSE}).json() == [{"type": "course", "id": 1, "exists": True}]
+    # A course's own folder pinned is the course.
+    save_pinned(cfg, [Entry(Thing("folder", path=COURSE))])
+    course = {"type": "course", "course": 1, "title": "", "hidden": False, "name": "MATH 221", "exists": True, "in_course": 1}
+    assert api.get("/api/pinned").json() == [course]
+    assert 'type = "course"' in cfg.read_text()
     api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
-    assert api.get("/api/pinned").json()[0]["exists"]  # by id: renaming doesn't matter
-    assert api.post("/api/pinned/remove", json={"course": 1}).json() == []
+    assert api.get("/api/pinned").json()[0]["name"] == "Linear Algebra"  # by id: renaming doesn't matter
     api.post("/api/rename", json={"path": "Fall 2026", "name": "2026 秋"})
     assert api.get("/api/courses").json()[0]["term_label"] == "2026 秋"
-
-
-def test_pin_anything(root, fake: FakeCanvas):
-    """Files, a course's pages, modules and tools, web links: pinned (dragged to 置顶 or by
-    right-click in the app), listed by what they're called now."""
-    fake.pages["schedule"] = {"url": "schedule", "title": "Schedule", "body": "<p>x</p>"}
-    fake.tabs = [{"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3,
-                  "html_url": "/courses/1/external_tools/5"}]
-    pull(root, fake)
-    with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:
-        def pin(**what):
-            return api.post("/api/pinned", json=what)
-
-        assert pin(file=f"{WEEK1}/lec1.pdf").status_code == 200
-        assert pin(file=WEEK1).status_code == 404  # (a folder)
-        pin(course=1, kind="page", id="schedule", title="Old name")
-        pin(course=1, module=1, title="Week 1")
-        pin(course=1, tool=5, title="Gradescope")
-        pin(course=1, kind="page", id="gone", title="Deleted page")
-        assert [i["type"] for i in pin(url="https://math.test", title="Site", at=0).json()] == [
-            "link", "file", "doc", "module", "tool", "doc"]
-        assert pin(url="javascript:alert(1)").status_code == 400
-        assert pin(course=1, kind="movie", id="x").status_code == 400
-        link, file, page, module, tool, gone = api.get("/api/pinned").json()
-        assert file == {"type": "file", "path": f"{WEEK1}/lec1.pdf", "course_id": 1, "exists": True}
-        assert (page["title"], page["exists"]) == ("Schedule", True)  # what it's called now
-        assert (module["title"], module["exists"], tool["title"], tool["exists"]) == ("Week 1", True, "Gradescope", True)
-        assert (gone["title"], gone["exists"]) == ("Deleted page", False)
-        assert link == {"type": "link", "url": "https://math.test", "title": "Site"}
-
-        # Pinned again: still once; pinned at a place: moved there.
-        assert len(pin(course=1, module=1).json()) == 6
-        assert pin(course=1, module=1, at=0).json()[0]["type"] == "module"
-        assert pin(course=1, module=1, at=1).json()[0]["type"] == "module"  # (just before where it is: stays)
-        assert pin(course=1, module=1, at=2).json()[1]["type"] == "module"
-        # A pinned file follows its folder when that's renamed.
-        api.post("/api/rename", json={"path": WEEK1, "name": "Week One"})
-        assert {"type": "file", "path": f"{MOD}/Week One/lec1.pdf", "course_id": 1, "exists": True} in api.get("/api/pinned").json()
-        # Unpinned by what it is, whatever its title.
-        assert len(api.post("/api/pinned/remove", json={"course": 1, "kind": "page", "id": "schedule"}).json()) == 5
-        assert api.post("/api/pinned/remove", json={"url": "https://nope.test"}).status_code == 404
-        # Hiding the course unpins all that's in it; the link stays.
-        api.post("/api/courses/1/hide", json={"hidden": True})
-        assert [i["type"] for i in api.get("/api/pinned").json()] == ["link"]

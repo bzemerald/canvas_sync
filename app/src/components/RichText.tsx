@@ -4,11 +4,11 @@
 // external tools open the tool signed in, anything else opens in the browser; images that
 // need the Canvas login are fetched by the backend.
 import DOMPurify from "dompurify";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import { t } from "../lib/i18n";
-
-export type CourseLink = { tab: "pages" | "assignments" | "announcements" | "syllabus" | "modules"; id?: string };
+import { type Thing, view } from "../lib/things";
+import { ThingsContext } from "./Things";
 
 const COURSE_PATH = /^\/courses\/(\d+)\/(pages|assignments|discussion_topics|announcements|modules)(?:\/([^/?#]+))?/;
 const FILE_PATH = /^(?:\/courses\/(\d+))?\/files\/(\d+)/;
@@ -38,13 +38,12 @@ function prepare(html: string): string {
   });
 }
 
-export function RichText({ html, courseId, files, onNavigate, className = "" }: {
+export function RichText({ html, files, className = "" }: {
   html: string;
-  courseId: number;
   files: Record<string, { path: string; name: string }>;
-  onNavigate: (to: CourseLink) => void;
   className?: string;
 }) {
+  const things = useContext(ThingsContext);
   const box = useRef<HTMLDivElement>(null);
   const safe = useMemo(() => prepare(html), [html]);
   const [site, setSite] = useState<string | null>(null);
@@ -101,15 +100,18 @@ export function RichText({ html, courseId, files, onNavigate, className = "" }: 
           : url.searchParams.get("url") ? { url: url.searchParams.get("url")! } : null;
       if (target) return void api.launch(Number(course), target);
     }
+    // A page, assignment, announcement or module of a course we have: shown here.
     const m = url.pathname.match(COURSE_PATH);
-    if (m && Number(m[1]) === courseId) {
-      const [, , what, id] = m;
-      if (what === "assignments" && id === "syllabus") return onNavigate({ tab: "syllabus" });
-      if (what === "modules" && id !== "items") return onNavigate({ tab: "modules" }); // (module items: above)
-      if (what === "modules") return void api.openUrl(url.pathname + url.search);
-      if (what === "pages") return onNavigate({ tab: "pages", id: id && decodeURIComponent(id) });
-      if (what === "assignments") return onNavigate({ tab: "assignments", id });
-      return onNavigate({ tab: "announcements", id });
+    if (m && things) {
+      const [, c, what, id] = m;
+      const course = Number(c);
+      const doc = (kind: "page" | "assignment" | "announcement", i: string): Thing => ({ type: "doc", course, kind, id: i });
+      const to: Thing | null = what === "assignments" && id === "syllabus" ? view(course, "syllabus")
+        : what === "modules" ? (id === "items" ? null : id ? { type: "module", course, module: Number(id) } : view(course, "modules"))
+          : what === "pages" ? (id ? doc("page", decodeURIComponent(id)) : view(course, "pages"))
+            : what === "assignments" ? (id ? doc("assignment", id) : view(course, "assignments"))
+              : id ? doc("announcement", id) : view(course, "announcements");
+      if (to && things.courses.some((x) => x.id === course)) return things.open(to);
     }
     void api.openUrl(url.pathname + url.search);
   };

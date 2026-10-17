@@ -6,7 +6,8 @@ import { useMemo, useRef } from "react";
 import * as api from "../lib/api";
 import type { Hit } from "../lib/api";
 import { fileCommand } from "../lib/keys";
-import { useDragToPin } from "../lib/pinnable";
+import { thingOfHit } from "../lib/things";
+import { useDragThing } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import type { ViewMode } from "./FileBrowser";
 import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
@@ -23,7 +24,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void; // only files that are on disk are passed
 }) {
-  const dragPin = useDragToPin(); // (置顶 is in their menu)
+  const dragThing = useDragThing(); // (置顶 is in their menu)
   const scroller = useRef<HTMLDivElement>(null);
   const keys = useMemo(() => hits.map(hitKey), [hits]);
   const byKey = useMemo(() => new Map(hits.map((h) => [hitKey(h), h])), [hits]);
@@ -65,7 +66,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
       onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(),
       onClick: (ev: React.MouseEvent) => sel.click(k, ev),
       onDoubleClick: () => onOpen(h),
-      ...dragPin(api.hitTarget(h)),
+      ...dragThing(thingOfHit(h) && { ...thingOfHit(h)!, name: h.title }),
       onContextMenu: (ev: React.MouseEvent) => {
         ev.preventDefault();
         const picked = sel.has(k) ? chosen() : [h];

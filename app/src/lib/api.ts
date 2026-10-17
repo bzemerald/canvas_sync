@@ -1,6 +1,7 @@
 // Talks to the Python backend (`canvas serve`) that the shell starts for us.
 import { invoke } from "@tauri-apps/api/core";
 import type { LangPref } from "./i18n";
+import type { Placed, Shown } from "./things";
 
 export type Kind = "file" | "page" | "assignment" | "announcement" | "syllabus";
 
@@ -173,139 +174,28 @@ export interface FileStatus {
   states: string[];
 }
 
-export interface SmartFolder {
-  name: string;
-  query: string;
-  courses: number[];
-  kinds: Kind[];
-  content: boolean; // also match text inside files and pages, not just names
-}
-
-/** A sidebar entry under 置顶. Things in a course are listed with what they're called now
- * (`exists`: false when they've gone from Canvas, or from the sync folder). */
-export type PinnedItem =
-  | { type: "course"; id: number; exists: boolean }
-  | { type: "folder"; path: string; course_id: number | null; exists: boolean }
-  | { type: "file"; path: string; course_id: number | null; exists: boolean }
-  | { type: "doc"; course_id: number; kind: DocKind; id: string; title: string; exists: boolean }
-  | { type: "module"; course_id: number; module: number; title: string; exists: boolean }
-  | { type: "tool"; course_id: number; tool: number; title: string; exists: boolean }
-  | { type: "link"; url: string; title: string }
-  | ({ type: "smart" } & SmartFolder);
-
-/** A card on a course's overview: built in (upcoming, announcements, modules, files, grades,
- * links), or added (folder, file, note, page, module, search, syllabus) with what it shows. */
-export interface Card {
-  type: string;
-  id?: string; // added cards
-  title?: string; // a title of your own
-  path?: string; // folder, file
-  page?: string; // page: its url
-  module?: number;
-  query?: string; // search
-  content?: boolean; // search: also text inside
-}
-
-/** A course's page as arranged. Its tabs, and its overview, are each arranged for the course or
- * follow the default (which any course's can be made). */
+/** A course's places: its tabs, its overview's cards, its 工具与链接 (links); each with all it
+ * holds, in order. `own`: arranged for the course (else it follows the default). */
+export type Place = "tabs" | "overview" | "links";
 export interface CourseLayout {
-  tabs: string[]; // all tabs, in order
-  hidden_tabs: string[];
-  cards: Card[]; // the overview's, shown, in order
-  hidden_links: string[]; // in 工具与链接: "tool:<id>", "syllabus", "canvas", "link:<n>"
-  links: { title: string; url: string }[]; // added to 工具与链接
-  tab_items: TabItem[]; // tabs you added; "x:<id>" in `tabs`
-  own_tabs: boolean; // arranged for the course (else: the default)
-  own_cards: boolean;
+  tabs: Placed[];
+  overview: Placed[];
+  links: Placed[];
+  own: Record<Place, boolean>;
 }
-export type LayoutChanges = Partial<Omit<CourseLayout, "own_tabs" | "own_cards">>;
-
-/** A tab you added to a course, by dragging something in it onto its tabs (or a web link).
- * Folders, documents and modules open in the tab; files, tools and links open where they open. */
-export interface TabItem {
-  id: string;
-  type: "folder" | "file" | "doc" | "module" | "tool" | "link";
-  title?: string; // documents, modules, tools, links; or a name of your own
-  path?: string; // folder, file
-  kind?: DocKind; // doc
-  doc?: string;
-  module?: number;
-  tool?: number;
-  url?: string;
-}
-
-/** Something dragged onto a course's tabs, as a tab (null: a course, which can't be one). */
-export function tabItemOf(t: PinTarget, id: string): TabItem | null {
-  if ("url" in t) return { id, type: "link", url: t.url, title: t.title };
-  if ("file" in t) return { id, type: "file", path: t.file };
-  if ("path" in t) return { id, type: "folder", path: t.path };
-  if ("kind" in t) return { id, type: "doc", kind: t.kind, doc: t.id, title: t.title };
-  if ("module" in t) return { id, type: "module", module: t.module, title: t.title };
-  if ("tool" in t) return { id, type: "tool", tool: t.tool, title: t.title };
-  return null;
-}
-
-/** What a tab shows, to pin it to the sidebar too (or to tell whether it's there already). */
-export function targetOfTab(i: TabItem, course: number): PinTarget {
-  switch (i.type) {
-    case "folder": return { path: i.path! };
-    case "file": return { file: i.path! };
-    case "doc": return { course, kind: i.kind!, id: i.doc!, title: i.title ?? "" };
-    case "module": return { course, module: i.module!, title: i.title ?? "" };
-    case "tool": return { course, tool: i.tool!, title: i.title ?? "" };
-    default: return { url: i.url!, title: i.title ?? "" };
-  }
-}
-export type LayoutPart = "tabs" | "overview";
 
 export const courseLayout = (course: number) => api<CourseLayout>(`/courses/${course}/layout`);
-export const arrangeCourse = (course: number, changes: LayoutChanges) => post<CourseLayout>(`/courses/${course}/layout`, changes);
-/** Its tabs, or its overview, back to the default (cards and links added to it stay). */
-export const resetCourseLayout = (course: number, part: LayoutPart) => post<CourseLayout>(`/courses/${course}/layout/reset/${part}`, {});
-/** Its tabs, or its overview's built-in cards, as the default. */
-export const makeDefaultLayout = (course: number, part: LayoutPart) => post<CourseLayout>(`/courses/${course}/layout/default/${part}`, {});
+const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "PUT", body: JSON.stringify(body) });
+/** One of a course's places as it should be (its own things it leaves out come back). */
+export const arrangeCourse = (course: number, place: Place, entries: Shown[]) =>
+  put<CourseLayout>(`/courses/${course}/layout/${place}`, { entries });
+/** Back to the default; what was added stays, after the rest. */
+export const resetCourseLayout = (course: number, place: Place) => post<CourseLayout>(`/courses/${course}/layout/${place}/reset`, {});
+/** Its tabs, or its overview, as every course's default (what it added stays its own). */
+export const makeDefaultLayout = (course: number, place: Place) => post<CourseLayout>(`/courses/${course}/layout/${place}/default`, {});
 export const note = (course: number, id: string) => api<{ text: string }>(`/courses/${course}/notes/${id}`);
 export const saveNote = (course: number, id: string, text: string) =>
   api<{ text: string }>(`/courses/${course}/notes/${id}`, { method: "PUT", body: JSON.stringify({ text }) });
-
-/** What can be pinned to the sidebar (besides smart folders, which are made in their dialog). */
-export type PinTarget =
-  | { course: number } // a course
-  | { path: string } // a folder
-  | { file: string } // a file
-  | { course: number; kind: DocKind; id: string; title: string } // an announcement, assignment or page
-  | { course: number; module: number; title: string } // a module
-  | { course: number; tool: number; title: string } // an external tool
-  | { url: string; title: string }; // a web link
-
-/** What a pinned item is, to unpin it (smart folders are deleted instead). */
-export function targetOf(item: PinnedItem): PinTarget | null {
-  switch (item.type) {
-    case "course": return { course: item.id };
-    case "folder": return { path: item.path };
-    case "file": return { file: item.path };
-    case "doc": return { course: item.course_id, kind: item.kind, id: item.id, title: item.title };
-    case "module": return { course: item.course_id, module: item.module, title: item.title };
-    case "tool": return { course: item.course_id, tool: item.tool, title: item.title };
-    case "link": return { url: item.url, title: item.title };
-    default: return null;
-  }
-}
-
-/** Tells pinned things apart (titles don't count). */
-export function pinKey(t: PinTarget): string {
-  if ("url" in t) return `link:${t.url}`;
-  if ("file" in t) return `file:${t.file}`;
-  if ("path" in t) return `folder:${t.path}`;
-  if ("kind" in t) return `doc:${t.course}:${t.kind}:${t.id}`;
-  if ("module" in t) return `module:${t.course}:${t.module}`;
-  if ("tool" in t) return `tool:${t.course}:${t.tool}`;
-  return `course:${t.course}`;
-}
-export const pinnedKey = (item: PinnedItem) => (item.type === "smart" ? `smart:${item.name}` : pinKey(targetOf(item)!));
-/** A search result, to pin: the file, or the announcement / assignment / page. */
-export const hitTarget = (h: Hit): PinTarget | null =>
-  h.path ? { file: h.path } : h.doc_id ? { course: h.course_id, kind: h.kind as DocKind, id: h.doc_id, title: h.title } : null;
 
 /** A term, course, folder or file: what a sync or restore applies to. */
 export interface Scope {
@@ -332,10 +222,6 @@ export interface Prefs {
   language: LangPref;
   auto_sync: number; // minutes between automatic syncs; 0: off
   sync_on_launch: boolean;
-  tab_order?: string[]; // a course's tabs, as you dragged them
-  hidden_tabs?: string[];
-  overview_order?: string[]; // the overview's cards, as you dragged them
-  overview_hidden?: string[];
   select?: "active" | "favorites"; // (once an account is set up)
 }
 
@@ -421,13 +307,13 @@ export const restorePreview = (scope: Scope) =>
 export const restore = (scope: Scope) =>
   api<{ restored: string[] }>("/restore", { method: "POST", body: JSON.stringify(scope) });
 
-const post = <T,>(path: string, body: unknown) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
+function post<T>(path: string, body: unknown) {
+  return api<T>(path, { method: "POST", body: JSON.stringify(body) });
+}
 
-export const pinned = () => api<PinnedItem[]>("/pinned");
-export const movePinned = (index: number, to: number) => post<PinnedItem[]>("/pinned/move", { index, to });
-/** Pin anything pinnable (at a place in the list; else at the end). */
-export const pin = (target: PinTarget, at?: number) => post<PinnedItem[]>("/pinned", { ...target, at });
-export const unpin = (target: PinTarget) => post<PinnedItem[]>("/pinned/remove", target);
+/** 置顶: what's pinned, in order (smart folders are searches pinned). */
+export const pinned = () => api<Placed[]>("/pinned");
+export const arrangePinned = (entries: Shown[]) => put<Placed[]>("/pinned", { entries });
 
 /** How the sidebar is arranged: terms (by Canvas's name for them) and courses, in order. */
 export interface SidebarOrder {
@@ -445,10 +331,6 @@ export const hideCourses = (courses: number[], hidden: boolean, syncing?: boolea
 export const hideCourse = (course: number, hidden: boolean, syncing?: boolean) =>
   post<{ hidden: boolean; excluded: boolean }>(`/courses/${course}/hide`, { hidden, syncing: syncing ?? null });
 export const arrangeSidebar = (order: Partial<SidebarOrder>) => post<SidebarOrder>("/sidebar", order);
-export const saveSmartFolder = (folder: SmartFolder, replaces?: string) =>
-  post<PinnedItem[]>("/smart-folders", { ...folder, replaces });
-export const deleteSmartFolder = (name: string) =>
-  api<PinnedItem[]>(`/smart-folders/${encodeURIComponent(name)}`, { method: "DELETE" });
 
 export interface DeletePreview {
   canvas_files: number;

@@ -38,17 +38,16 @@ from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
-    ADDED_CARDS, COURSE_TABS, DOC_KINDS, OVERVIEW_CARDS, PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout,
-    PinnedCourse, PinnedDoc, PinnedFile, PinnedFolder, PinnedLink, PinnedModule, PinnedThing, PinnedTool, SmartFolder,
-    _card, _tab_item, delete_smart_folder, save_course_layout,
-    move_pinned, pin, save_pinned, save_sidebar_order, save_smart_folder, set_course_icon, set_course_select,
-    set_courses_hidden, unpin,
+    PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, migrate, needs_migration, save_course_place, save_pinned,
+    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden,
 )
-from .search import course_label
 from .engine import Engine
 from .local import open_path
+from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
+from .search import course_label
 from .state import META_DIR, NEWS_KINDS
+from .things import Entry, parse_entry
 from .thumbs import thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
@@ -123,10 +122,6 @@ class PrefsRequest(BaseModel):
     language: str | None = None
     auto_sync: int | None = None
     sync_on_launch: bool | None = None
-    tab_order: list[str] | None = None
-    hidden_tabs: list[str] | None = None
-    overview_order: list[str] | None = None
-    overview_hidden: list[str] | None = None
     select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
 
 
@@ -140,14 +135,9 @@ class TokenRequest(BaseModel):
     token: str
 
 
-class LayoutRequest(BaseModel):
-    """What to change in a course's page; what's left out stays."""
-    tabs: list[str] | None = None
-    hidden_tabs: list[str] | None = None
-    cards: list[dict[str, Any]] | None = None
-    hidden_links: list[str] | None = None
-    links: list[dict[str, str]] | None = None
-    tab_items: list[dict[str, Any]] | None = None  # tabs you added (in `tabs` as "x:<id>")
+class PlaceRequest(BaseModel):
+    """What a place holds, in order (things as written down, with `title` and `hidden`)."""
+    entries: list[dict[str, Any]]
 
 
 class NoteRequest(BaseModel):
@@ -184,21 +174,6 @@ class PathRequest(BaseModel):
     path: str
 
 
-class PinRequest(BaseModel):
-    """What to pin: a folder (path), a file, a course, or in a course (course and kind + id,
-    module or tool), a web link (url). `at`: where in the list (else: at the end)."""
-    path: str | None = None
-    file: str | None = None
-    course: int | None = None
-    kind: str | None = None
-    id: str | None = None
-    module: int | None = None
-    tool: int | None = None
-    url: str | None = None
-    title: str | None = None
-    at: int | None = None
-
-
 class PathsRequest(BaseModel):
     paths: list[str]
 
@@ -213,20 +188,6 @@ class RenameRequest(BaseModel):
     name: str
 
 
-class MoveRequest(BaseModel):
-    index: int
-    to: int
-
-
-class SmartFolderRequest(BaseModel):
-    name: str
-    query: str = ""
-    courses: list[int] = []
-    kinds: list[str] = []
-    content: bool = False
-    replaces: str | None = None  # renaming: the old name
-
-
 def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FILE, background: bool = False) -> FastAPI:
     """The API. `account` None: not set up yet (the app shows its sign-in). `background`:
     also sync automatically, as the preferences say."""
@@ -238,6 +199,17 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         if timer:
             timer.cancel()
 
+    def update_files() -> None:
+        """config.toml and app.toml written as an older version did, the way this one does."""
+        try:
+            if account is not None and needs_migration(cfg := account.root / META_DIR / "config.toml"):
+                with Engine(account.root) as e:
+                    migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
+            AppPrefs.migrate(prefs_path)
+        except Exception:  # (a broken config.toml: every request says so)
+            pass
+
+    update_files()
     app = FastAPI(title="canvas-sync", version=__version__, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=APP_ORIGINS, allow_methods=["*"], allow_headers=["*"],
@@ -290,7 +262,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/prefs")
     def get_prefs() -> dict[str, Any]:
-        out: dict[str, Any] = asdict(prefs())
+        p = prefs()
+        out: dict[str, Any] = {"language": p.language, "auto_sync": p.auto_sync, "sync_on_launch": p.sync_on_launch}
         if account is not None:
             with engine() as e:
                 out["select"] = e.settings.select
@@ -359,6 +332,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         new.save()
         new.set_token(new_token)
         account = new
+        update_files()
         try:
             start_sync(SyncRequest())  # what you signed in for
         except HTTPException:
@@ -604,95 +578,34 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         assert account is not None
         return account.root / META_DIR / "config.toml"
 
+    def course_dirs(e: Engine) -> dict[str, int]:
+        return {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
+
+    def place_entries(req: PlaceRequest, home: int | None = None) -> list[Entry]:
+        out: list[Entry] = []
+        for d in req.entries:
+            entry = parse_entry(d, home)
+            if entry is None:
+                raise HTTPException(400, f"that doesn't make sense: {d}")
+            if all(x.thing != entry.thing for x in out):
+                out.append(entry)
+        return out
+
     @api.get("/pinned")
     def pinned() -> list[dict[str, Any]]:
-        """The sidebar's pinned list: courses, folders and smart folders, in order."""
+        """置顶: what's pinned, in order, each as it's called now."""
         with engine() as e:
-            dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
-            items = list(e.settings.pinned)
-            # A course's folder pinned before courses could be: it's the course that was meant.
-            if any(isinstance(i, PinnedFolder) and i.path in dirs for i in items):
-                converted = [PinnedCourse(dirs[i.path]) if isinstance(i, PinnedFolder) and i.path in dirs else i for i in items]
-                items = [i for n, i in enumerate(converted) if i not in converted[:n]]  # (pinned twice: once)
+            items = as_course(e.settings.pinned, course_dirs(e))
+            if items != e.settings.pinned:
                 save_pinned(config(), items)
-            def course_of(path: str) -> int | None:
-                return next((cid for d, cid in dirs.items() if path == d or path.startswith(d + "/")), None)
+            return describe(items, e)
 
-            def title_of(sql: str, args: tuple[Any, ...]) -> str | None:  # as it's called now (None: it's gone)
-                row = e.state.db.execute(sql, args).fetchone()
-                return row[0] if row else None
-
-            out: list[dict[str, Any]] = []
-            for item in items:
-                if isinstance(item, PinnedCourse):
-                    out.append({"type": "course", "id": item.course, "exists": item.course in dirs.values()})
-                elif isinstance(item, PinnedFolder):
-                    out.append({"type": "folder", "path": item.path, "course_id": course_of(item.path),
-                                "exists": (account.root / item.path).is_dir()})
-                elif isinstance(item, PinnedFile):
-                    out.append({"type": "file", "path": item.file, "course_id": course_of(item.file),
-                                "exists": (account.root / item.file).is_file()})
-                elif isinstance(item, PinnedDoc):
-                    now = title_of("SELECT title FROM documents WHERE course_id = ? AND kind = ? AND id = ?", (item.course, item.kind, item.id))
-                    out.append({"type": "doc", "course_id": item.course, "kind": item.kind, "id": item.id,
-                                "title": now or item.title, "exists": now is not None})
-                elif isinstance(item, PinnedModule):
-                    now = title_of("SELECT name FROM modules WHERE course_id = ? AND id = ?", (item.course, item.module))
-                    out.append({"type": "module", "course_id": item.course, "module": item.module,
-                                "title": now or item.title, "exists": now is not None})
-                elif isinstance(item, PinnedTool):
-                    tool = next((t for t in content.tools(e.state, item.course) if t["id"] == item.tool), None)
-                    out.append({"type": "tool", "course_id": item.course, "tool": item.tool,
-                                "title": (tool and tool["label"]) or item.title, "exists": tool is not None})
-                elif isinstance(item, PinnedLink):
-                    out.append({"type": "link", "url": item.url, "title": item.title})
-                else:
-                    out.append({"type": "smart", **asdict(item)})
-            return out
-
-    def pin_item(req: PinRequest, check: bool = True) -> PinnedThing:
-        """What the request names; `check`: that it's there to pin."""
-        title = (req.title or "").strip()[:200]
-        if req.url is not None:
-            if urlsplit(req.url).scheme not in ("http", "https"):
-                raise HTTPException(400, "links must be web addresses")
-            return PinnedLink(req.url, title)
-        if req.file is not None:
-            if check and not inside(req.file).is_file():
-                raise HTTPException(404, f"{req.file} is not a file")
-            return PinnedFile(req.file.strip("/"))
-        if req.course is not None:
-            if req.kind is not None:
-                if req.kind not in DOC_KINDS or not req.id:
-                    raise HTTPException(400, f"kind: one of {list(DOC_KINDS)}, with an id")
-                return PinnedDoc(req.course, req.kind, req.id, title)
-            if req.module is not None:
-                return PinnedModule(req.course, req.module, title)
-            if req.tool is not None:
-                return PinnedTool(req.course, req.tool, title)
-            return PinnedCourse(req.course)
-        if req.path is None:
-            raise HTTPException(400, "say what to pin")
-        if check and not inside(req.path).is_dir():
-            raise HTTPException(404, f"{req.path} is not a folder")
-        return PinnedFolder(req.path.strip("/"))
-
-    @api.post("/pinned")
-    def add_pin(req: PinRequest) -> list[dict[str, Any]]:
-        item = pin_item(req)
+    @api.put("/pinned")
+    def arrange_pinned(req: PlaceRequest) -> list[dict[str, Any]]:
+        """置顶 as it should be: anything, in this order."""
+        items = place_entries(req)
         with engine() as e:
-            dirs = {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
-        if isinstance(item, PinnedFolder) and item.path in dirs:
-            item = PinnedCourse(dirs[item.path])  # a course's own folder: pin the course
-        pin(config(), item, req.at)
-        return pinned()
-
-    @api.post("/pinned/remove")
-    def remove_pin(req: PinRequest) -> list[dict[str, Any]]:
-        try:
-            unpin(config(), pin_item(req, check=False))
-        except LookupError as err:
-            raise HTTPException(404, str(err))
+            save_pinned(config(), as_course(items, course_dirs(e)))
         return pinned()
 
     @api.post("/courses/{course_id}/icon")
@@ -712,137 +625,70 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         if req.hidden:
             # A hidden course isn't on show anywhere: it's unpinned, and so is what's pinned from it.
             with engine() as e:
-                dirs = [e.layout.course_dir(c).as_posix() for c in e.state.courses() if c.id in course_ids]
-                items = list(e.settings.pinned)
-            inside_dirs = lambda p: any(p == d or p.startswith(d + "/") for d in dirs)  # noqa: E731
-            gone = [i for i in items if (isinstance(i, (PinnedCourse, PinnedDoc, PinnedModule, PinnedTool)) and i.course in course_ids)
-                    or (isinstance(i, PinnedFolder) and inside_dirs(i.path)) or (isinstance(i, PinnedFile) and inside_dirs(i.file))]
-            if gone:
-                save_pinned(config(), [i for i in items if i not in gone])
+                items = e.settings.pinned
+                shown = [x for x, d in zip(items, describe(items, e)) if d["in_course"] not in course_ids]
+            if shown != items:
+                save_pinned(config(), shown)
         set_courses_hidden(config(), course_ids, req.hidden, syncing=req.syncing)
 
     # -- a course's page, arranged ------------------------------------------------------------
 
-    def default_layout() -> dict[str, Any]:
-        """What a course doesn't arrange for itself: the default (set in the app), else the usual."""
-        p = prefs()
-        tabs = [*p.tab_order, *(x for x in COURSE_TABS if x not in p.tab_order)]
-        order = [*p.overview_order, *(x for x in OVERVIEW_CARDS if x not in p.overview_order)]
-        return {"tabs": tabs, "hidden_tabs": p.hidden_tabs, "cards": [{"type": c} for c in order if c not in p.overview_hidden]}
+    def place(e: Engine, course_id: int, name: str) -> Place:
+        tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
+        default = (prefs().tabs or usual("tabs")) if name == "tabs" else (prefs().overview or usual("overview")) if name == "overview" else []
+        return Place(name, course_id, tools, default)
 
-    def own_layout(course_id: int) -> CourseLayout:
-        with engine() as e:
-            return e.settings.course_layouts.get(course_id) or CourseLayout()
-
-    def added(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [c for c in cards if c["type"] not in OVERVIEW_CARDS]
-
-    def all_tabs(tabs: list[str], items: list[dict[str, Any]]) -> list[str]:
-        """Every tab, in this order: ones it leaves out at the end (tabs you added last)."""
-        added_tabs = [f"x:{i['id']}" for i in items]
-        known = [x for x in tabs if x in COURSE_TABS or x in added_tabs]
-        return [*known, *(x for x in COURSE_TABS if x not in known), *(x for x in added_tabs if x not in known)]
+    def own_layout(e: Engine, course_id: int) -> CourseLayout:
+        return e.settings.course_layouts.get(course_id) or CourseLayout()
 
     def layout_of(course_id: int) -> dict[str, Any]:
-        own, usual = own_layout(course_id), default_layout()
-        return {
-            "tabs": all_tabs(usual["tabs"] if own.tabs is None else own.tabs, own.tab_items),
-            "hidden_tabs": usual["hidden_tabs"] if own.hidden_tabs is None else own.hidden_tabs,
-            "cards": [*usual["cards"], *own.extra_cards] if own.cards is None else own.cards,
-            "hidden_links": own.hidden_links,
-            "links": own.links,
-            "tab_items": own.tab_items,
-            "own_tabs": own.tabs is not None,  # arranged for the course (else: the default)
-            "own_cards": own.cards is not None or bool(own.hidden_links),
-        }
+        """The course's page: its tabs, overview and 工具与链接, each with all it holds, in order."""
+        with engine() as e:
+            own = own_layout(e, course_id)
+            out: dict[str, Any] = {"own": {}}
+            for name in PLACES:
+                p, stored = place(e, course_id, name), getattr(own, name)
+                out[name] = describe(p.arranged(stored), e)
+                out["own"][name] = p.is_arranged(stored)  # (else it follows the default)
+            return out
 
-    def settle(own: CourseLayout) -> CourseLayout:
-        """Arranged just as the default has it: then it follows the default (as that changes too)."""
-        usual = default_layout()
-        if own.tabs is not None and (all_tabs(own.tabs, own.tab_items), set(own.hidden_tabs or [])) == (
-                all_tabs(usual["tabs"], own.tab_items), set(usual["hidden_tabs"])):
-            own = replace(own, tabs=None, hidden_tabs=None)
-        if own.cards is not None and own.cards == [*usual["cards"], *added(own.cards)]:
-            own = replace(own, cards=None, extra_cards=added(own.cards))
-        return own
+    def known(name: str) -> None:
+        if name not in PLACES:
+            raise HTTPException(404, f"places are {PLACES}")
 
     @api.get("/courses/{course_id}/layout")
     def course_layout(course_id: int) -> dict[str, Any]:
-        """The course's page: its tabs, in order, which are hidden, and its overview's cards."""
         return layout_of(course_id)
 
-    @api.post("/courses/{course_id}/layout")
-    def arrange_course(course_id: int, req: LayoutRequest) -> dict[str, Any]:
-        """Arrange this course's tabs or overview for itself (the default no longer applies to them)."""
-        now = layout_of(course_id)
-        changes = {k: v for k, v in req.model_dump().items() if v is not None}
-        merged = {**now, **changes}
-        cards = [_card(c) for c in merged["cards"]]
-        ids = [c.get("id") for c in cards if c and c.get("id")]
-        if None in cards or len(ids) != len(set(ids)):
-            raise HTTPException(400, "cards don't make sense")
-        if any(c["type"] in ADDED_CARDS and c["type"] != "syllabus" and not c.get("id") for c in cards if c):
-            raise HTTPException(400, "an added card needs an id")
-        items = [_tab_item(i) for i in merged["tab_items"]]
-        if None in items or len({i["id"] for i in items if i}) != len(items):
-            raise HTTPException(400, "tabs don't make sense")
-        for item in items:
-            if item and item["type"] == "link" and urlsplit(item["url"]).scheme not in ("http", "https"):
-                raise HTTPException(400, "links must be web addresses")
-        added_tabs = {f"x:{i['id']}" for i in items if i}
-        # A tab you added and then took away leaves the order with it; it isn't hidden, it's gone.
-        tabs = [x for x in merged["tabs"] if not x.startswith("x:") or x in added_tabs]
-        hidden = [x for x in merged["hidden_tabs"] if not x.startswith("x:")]
-        for tab in [*tabs, *hidden]:
-            if tab not in COURSE_TABS and tab not in added_tabs:
-                raise HTTPException(400, f"no tab {tab!r}")
-        for link in merged["links"]:
-            if urlsplit(link.get("url", "")).scheme not in ("http", "https"):
-                raise HTTPException(400, "links must be web addresses")
-        own = own_layout(course_id)
-        if "tab_items" in changes:
-            own = replace(own, tab_items=[i for i in items if i])
-        if "tabs" in changes or "hidden_tabs" in changes:
-            own = replace(own, tabs=tabs, hidden_tabs=hidden)
-        elif own.tabs is not None:
-            own = replace(own, tabs=[x for x in own.tabs if not x.startswith("x:") or x in added_tabs])
-        if "cards" in changes:
-            own = replace(own, cards=[c for c in cards if c], extra_cards=[])
-        if "hidden_links" in changes:
-            own = replace(own, hidden_links=merged["hidden_links"])
-        if "links" in changes:
-            own = replace(own, links=[{"title": str(x.get("title", "")), "url": x["url"]} for x in merged["links"]])
-        save_course_layout(config(), course_id, settle(own))
+    @api.put("/courses/{course_id}/layout/{name}")
+    def arrange_course(course_id: int, name: str, req: PlaceRequest) -> dict[str, Any]:
+        """One of the course's places as it should be. Its own things it leaves out are put back
+        where the default has them: they're hidden, not taken away."""
+        known(name)
+        items = place_entries(req, course_id)
+        with engine() as e:
+            save_course_place(config(), course_id, name, place(e, course_id, name).settle(items))
         return layout_of(course_id)
 
-    @api.post("/courses/{course_id}/layout/reset/{part}")
-    def reset_course_layout(course_id: int, part: str) -> dict[str, Any]:
-        """The course's tabs, or its overview, back to the default. What you added stays: tabs (after
-        the default ones), cards (after the default ones), and links."""
-        own = own_layout(course_id)
-        if part == "tabs":
-            own = replace(own, tabs=None, hidden_tabs=None)
-        elif part == "overview":
-            own = replace(own, cards=None, extra_cards=added(layout_of(course_id)["cards"]), hidden_links=[])
-        else:
+    @api.post("/courses/{course_id}/layout/{name}/reset")
+    def reset_course_layout(course_id: int, name: str) -> dict[str, Any]:
+        """Back to the default (as other courses are). What was added stays, after the rest."""
+        known(name)
+        with engine() as e:
+            save_course_place(config(), course_id, name, place(e, course_id, name).added(getattr(own_layout(e, course_id), name)))
+        return layout_of(course_id)
+
+    @api.post("/courses/{course_id}/layout/{name}/default")
+    def make_default_layout(course_id: int, name: str) -> dict[str, Any]:
+        """The course's own things here (its views), as it has them, become the default: for every
+        course that isn't arranged for itself. (What it added is its own.)"""
+        if name not in ("tabs", "overview"):
             raise HTTPException(404, "tabs or overview")
-        save_course_layout(config(), course_id, own)
-        return layout_of(course_id)
-
-    @api.post("/courses/{course_id}/layout/default/{part}")
-    def make_default_layout(course_id: int, part: str) -> dict[str, Any]:
-        """The course's tabs, or its overview's built-in cards, become the default: for courses that
-        don't arrange them for themselves. (Cards it added are its own: a folder, a note...)"""
-        now = layout_of(course_id)
-        if part == "tabs":  # (the tabs it added are its own)
-            replace(prefs(), tab_order=[x for x in now["tabs"] if x in COURSE_TABS], hidden_tabs=now["hidden_tabs"]).save(prefs_path)
-        elif part == "overview":
-            shown = [c["type"] for c in now["cards"] if c["type"] in OVERVIEW_CARDS]
-            replace(prefs(), overview_order=[*shown, *(x for x in OVERVIEW_CARDS if x not in shown)],
-                    overview_hidden=[x for x in OVERVIEW_CARDS if x not in shown]).save(prefs_path)
-        else:
-            raise HTTPException(404, "tabs or overview")
-        save_course_layout(config(), course_id, settle(own_layout(course_id)))
+        with engine() as e:
+            p, stored = place(e, course_id, name), getattr(own_layout(e, course_id), name)
+            mine = [Entry(replace(x.thing, course=None), x.title, x.hidden) for x in p.arranged(stored) if p.own(x.thing)]
+            replace(prefs(), **{name: mine}).save(prefs_path)
+            save_course_place(config(), course_id, name, place(e, course_id, name).settle(stored))
         return layout_of(course_id)
 
     def note_file(course_id: int, note: str) -> Path:
@@ -894,14 +740,6 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         save_sidebar_order(config(), req.terms, req.courses)
         return sidebar()
 
-    @api.post("/pinned/move")
-    def move(req: MoveRequest) -> list[dict[str, Any]]:
-        try:
-            move_pinned(config(), req.index, req.to)
-        except LookupError as err:
-            raise HTTPException(400, str(err))
-        return pinned()
-
     @api.post("/rename")
     def rename(req: RenameRequest) -> dict[str, str]:
         if job.running:
@@ -916,25 +754,6 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 raise HTTPException(404, str(err))
             e.reindex()  # paths changed; the text is reused, so this is quick
         return {"path": new}
-
-    @api.post("/smart-folders")
-    def save_folder(req: SmartFolderRequest) -> list[dict[str, Any]]:
-        if not req.name.strip():
-            raise HTTPException(400, "a smart folder needs a name")
-        folder = SmartFolder(req.name.strip(), req.query.strip(), req.courses, req.kinds, req.content)
-        try:
-            save_smart_folder(config(), folder, req.replaces)
-        except ConfigError as err:
-            raise HTTPException(400, str(err))
-        return pinned()
-
-    @api.delete("/smart-folders/{name}")
-    def delete_folder(name: str) -> list[dict[str, Any]]:
-        try:
-            delete_smart_folder(config(), name)
-        except LookupError as err:
-            raise HTTPException(404, str(err))
-        return pinned()
 
     @api.get("/status")
     def status() -> list[dict[str, Any]]:

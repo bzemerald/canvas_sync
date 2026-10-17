@@ -49,16 +49,10 @@ def client(account: Account | None, tmp_path: Path, background: bool = False) ->
 def test_prefs(root, tmp_path, keychain):
     with client(Account(BASE, root), tmp_path) as api:
         assert api.get("/api/prefs").json() == {"language": "system", "auto_sync": 60, "sync_on_launch": True,
-                                                "tab_order": [], "hidden_tabs": [], "overview_order": [], "overview_hidden": [],
                                                 "select": "active"}
         got = api.post("/api/prefs", json={"language": "en", "auto_sync": 180}).json()
         assert (got["language"], got["auto_sync"], got["sync_on_launch"]) == ("en", 180, True)
         assert AppPrefs.load(tmp_path / PREFS) == AppPrefs("en", 180, True)
-        got = api.post("/api/prefs", json={"tab_order": ["files", "overview"], "hidden_tabs": ["pages"]}).json()
-        assert (got["tab_order"], got["hidden_tabs"], got["language"]) == (["files", "overview"], ["pages"], "en")
-        assert api.post("/api/prefs", json={"hidden_tabs": ["movies"]}).status_code == 400
-        got = api.post("/api/prefs", json={"overview_order": ["files", "upcoming"], "overview_hidden": ["grades"]}).json()
-        assert (got["overview_order"], got["overview_hidden"]) == (["files", "upcoming"], ["grades"])
         assert api.post("/api/prefs", json={"auto_sync": 7}).status_code == 400
         assert api.post("/api/prefs", json={"language": "fr"}).status_code == 400
         assert api.post("/api/prefs", json={"select": "favorites"}).json()["select"] == "favorites"
@@ -169,7 +163,7 @@ def test_hide_a_course(root, tmp_path, canvas, keychain):
         api.post("/api/sync", json={})
         wait_for_sync(api)
         api.post("/api/reindex")
-        api.post("/api/pinned", json={"course": 1})
+        api.put("/api/pinned", json={"entries": [{"type": "course", "course": 1}]})
         assert [h["title"] for h in api.get("/api/search", params={"q": "midterm"}).json()] == ["midterm.pdf"]
 
         assert api.post("/api/courses/1/hide", json={"hidden": True, "syncing": False}).json() == {"hidden": True, "excluded": True}
@@ -203,7 +197,7 @@ def test_course_icons(root, tmp_path, keychain):
 
 def test_hide_a_whole_term(root, tmp_path, keychain):
     with client(Account(BASE, root), tmp_path) as api:
-        api.post("/api/pinned", json={"course": 2})
+        api.put("/api/pinned", json={"entries": [{"type": "course", "course": 2}]})
         r = api.post("/api/courses/hide", json={"courses": [1, 2, 3], "hidden": True, "syncing": False}).json()
         assert r == {"hidden": [1, 2, 3], "excluded": [1, 2, 3]}
         assert api.get("/api/pinned").json() == []
@@ -211,88 +205,3 @@ def test_hide_a_whole_term(root, tmp_path, keychain):
         assert r == {"hidden": [], "excluded": []}
     settings = Settings.load(root / ".canvas" / "config.toml")
     assert (settings.hidden, settings.exclude) == ([3], [3])
-
-
-def test_course_layouts(root, tmp_path, keychain):
-    with client(Account(BASE, root), tmp_path) as api:
-        usual = api.get("/api/courses/1/layout").json()
-        assert not usual["own_tabs"] and not usual["own_cards"]
-        assert usual["tabs"][0] == "overview" and usual["cards"][0] == {"type": "upcoming"}
-        default_cards = usual["cards"]
-
-        # Arranging one course doesn't touch the others.
-        r = api.post("/api/courses/1/layout", json={"hidden_tabs": ["pages"], "cards": [
-            {"type": "files"}, {"type": "note", "id": "n1", "title": "Exam notes"}, {"type": "folder", "id": "f1", "path": "Fall 2026/MATH 221/Files"},
-        ], "links": [{"title": "Site", "url": "https://math.test"}]}).json()
-        assert r["own_tabs"] and r["own_cards"] and r["hidden_tabs"] == ["pages"]
-        assert [c["type"] for c in r["cards"]] == ["files", "note", "folder"]
-        other = api.get("/api/courses/2/layout").json()
-        assert not other["own_tabs"] and not other["own_cards"] and other["hidden_tabs"] == []
-        assert api.post("/api/courses/1/layout", json={"cards": [{"type": "note"}]}).status_code == 400  # (no id)
-        assert api.post("/api/courses/1/layout", json={"cards": [{"type": "movie"}]}).status_code == 400
-        assert api.post("/api/courses/1/layout", json={"links": [{"title": "x", "url": "javascript:1"}]}).status_code == 400
-
-        # Notes are kept in the sync folder.
-        assert api.get("/api/courses/1/notes/n1").json() == {"text": ""}
-        api.put("/api/courses/1/notes/n1", json={"text": "Bring a calculator"})
-        assert api.get("/api/courses/1/notes/n1").json() == {"text": "Bring a calculator"}
-        assert (root / ".canvas" / "notes" / "1" / "n1.md").read_text() == "Bring a calculator"
-        assert api.get("/api/courses/1/notes/..%2Fx").status_code in (400, 404)
-
-        # Tabs and the overview go back to the default apart: cards and links you added stay.
-        r = api.post("/api/courses/1/layout/reset/overview").json()
-        assert not r["own_cards"] and r["own_tabs"] and r["hidden_tabs"] == ["pages"]
-        assert r["cards"] == [*default_cards, {"type": "note", "id": "n1", "title": "Exam notes"},
-                              {"type": "folder", "id": "f1", "path": "Fall 2026/MATH 221/Files"}]
-        assert r["links"] == [{"title": "Site", "url": "https://math.test"}]
-        r = api.post("/api/courses/1/layout/reset/tabs").json()
-        assert not r["own_tabs"] and r["hidden_tabs"] == [] and len(r["cards"]) == len(default_cards) + 2
-
-        # A course's tabs, or its built-in cards, can become the default; cards it added stay its own.
-        api.post("/api/courses/1/layout", json={"hidden_tabs": ["pages"], "cards": [{"type": "files"}, {"type": "note", "id": "n1"}]})
-        r = api.post("/api/courses/1/layout/default/tabs").json()
-        assert not r["own_tabs"] and r["own_cards"]  # (it is the default now)
-        other = api.get("/api/courses/2/layout").json()
-        assert other["hidden_tabs"] == ["pages"] and other["cards"] == default_cards
-        r = api.post("/api/courses/1/layout/default/overview").json()
-        assert not r["own_cards"] and r["cards"] == [{"type": "files"}, {"type": "note", "id": "n1"}]
-        assert api.get("/api/courses/2/layout").json()["cards"] == [{"type": "files"}]
-        assert api.post("/api/courses/1/layout/reset/everything").status_code == 404
-
-        # Arranged just like the default, a course follows the default again.
-        api.post("/api/courses/2/layout", json={"hidden_tabs": []})
-        assert api.post("/api/courses/2/layout", json={"hidden_tabs": ["pages"]}).json()["own_tabs"] is False
-
-
-def test_added_tabs(root, tmp_path, keychain):
-    """Things dragged onto a course's tabs become tabs of its own; taken away, they're gone."""
-    with client(Account(BASE, root), tmp_path) as api:
-        page = {"id": "p1", "type": "doc", "kind": "page", "doc": "schedule", "title": "Schedule"}
-        folder = {"id": "f1", "type": "folder", "path": "Fall 2026/MATH 221/Files/Labs"}
-        # Added at the end, the course's tabs still follow the default.
-        r = api.post("/api/courses/1/layout", json={"tab_items": [page]}).json()
-        assert r["tabs"][-1] == "x:p1" and not r["own_tabs"] and r["tab_items"] == [page]
-        # Put in a place of its own: the tabs are arranged for the course.
-        order = [x for x in r["tabs"] if x != "x:p1"]
-        r = api.post("/api/courses/1/layout", json={"tab_items": [page, folder], "tabs": [order[0], "x:f1", *order[1:], "x:p1"]}).json()
-        assert r["tabs"][:2] == [order[0], "x:f1"] and r["own_tabs"]
-        assert api.get("/api/courses/2/layout").json()["tab_items"] == []  # (another course)
-
-        bad = [{"id": "z", "type": "doc", "kind": "movie", "doc": "x"}, {"id": "z", "type": "link", "url": "javascript:1"},
-               {"id": "z", "type": "folder"}, {"type": "file", "path": "x"}]
-        for item in bad:
-            assert api.post("/api/courses/1/layout", json={"tab_items": [item]}).status_code == 400
-        assert api.post("/api/courses/1/layout", json={"tab_items": [page, page]}).status_code == 400  # (one id, twice)
-        assert "x:nope" not in api.post("/api/courses/1/layout", json={"tabs": ["x:nope", *r["tabs"]]}).json()["tabs"]  # (gone: left out)
-
-        # Taken away, it's out of the order too; tabs you added can't be hidden, only removed.
-        r = api.post("/api/courses/1/layout", json={"tab_items": [page]}).json()
-        assert "x:f1" not in r["tabs"] and r["tabs"].count("x:p1") == 1
-        r = api.post("/api/courses/1/layout", json={"hidden_tabs": ["x:p1", "pages"]}).json()
-        assert r["hidden_tabs"] == ["pages"]
-        # Back to the default: what you added stays, at the end; and it isn't made everyone's default.
-        r = api.post("/api/courses/1/layout/reset/tabs").json()
-        assert not r["own_tabs"] and r["tabs"][-1] == "x:p1" and r["tab_items"] == [page]
-        api.post("/api/courses/1/layout", json={"tabs": ["x:p1", "files"]})
-        api.post("/api/courses/1/layout/default/tabs")
-        assert api.get("/api/courses/2/layout").json()["tabs"][0] == "files"

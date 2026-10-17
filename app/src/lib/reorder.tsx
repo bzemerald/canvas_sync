@@ -1,13 +1,13 @@
-// Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards.
-// What's dragged follows the pointer (see drag.ts); in a row or a column the others slide
-// aside to open a gap where it will land; among cards, the one it will take the place of is
-// outlined. Things that can be pinned can also be dropped on 置顶 or a course's tabs (see
-// pinZone.ts); things you put in a list (pins, tabs you added) can be dragged off it to take
-// them away.
+// Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards, the
+// rows of 工具与链接. What's dragged follows the pointer (see drag.ts); in a row or a column the
+// others slide aside to open a gap where it will land; among cards, the one it will take the
+// place of is outlined. What's in a list is a thing, so it can be dropped in another place too
+// (see dropZones.ts); what you put in a list (not the list's own) can be dragged off it to take
+// it away.
 import { useRef, useState } from "react";
-import type { PinTarget } from "./api";
 import { trackDrag, type DragOver } from "./drag";
-import { pinZones, type ZoneId } from "./pinZone";
+import { dropZones, type ZoneId } from "./dropZones";
+import type { Shown } from "./things";
 
 /** "y": a column; "x": a row; "cards": anything (columns of cards): dropped on a card, an item
  * takes its place. */
@@ -17,8 +17,8 @@ export type Axis = "x" | "y" | "cards";
 export type Mark = "onto" | null;
 
 export interface ReorderOptions {
-  pin?: (index: number) => PinTarget | null; // what dropping it on 置顶 (or a course's tabs) adds there
-  zone?: ZoneId; // the drop zone this list is: its own items moving in it aren't drops on it
+  thing?: (index: number) => Shown | null; // what it is, to drop in another place
+  zone?: ZoneId; // the place this list is: its own items moving in it aren't drops on it
   remove?: (index: number) => (() => void) | null; // dragged well off the list and let go: this takes it away
 }
 
@@ -37,7 +37,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
       if (e.button !== 0 || (e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]")) return;
       const source = elements.current.get(index);
       if (!source) return;
-      const target = opts.current.pin?.(index) ?? null;
+      const target = opts.current.thing?.(index) ?? null;
       const zone = opts.current.zone;
       const remove = opts.current.remove?.(index) ?? null;
       let removing = false;
@@ -129,12 +129,12 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
           setDrag({ from: index, target: index });
         },
         onMove: (x, y): DragOver => {
-          const elsewhere = pinZones.update(x, y, target, zone);
+          const elsewhere = dropZones.update(x, y, target, zone);
           const off = !elsewhere && !!remove && !!list &&
             (x < list.left - OFF || x > list.right + OFF || y < list.top - OFF || y > list.bottom + OFF);
           if (elsewhere || off) {
-            // Over 置顶 (or a course's tabs): it'll be added there and stay here, so its gap stays
-            // open. Off the list: it'll be taken away, so the ones after it close the gap.
+            // Over another place: it'll be put there and stay here, so its gap stays open. Off the
+            // list: it'll be taken away, so the ones after it close the gap.
             removing = off;
             at = index;
             slide(off && axis !== "cards" ? count : index);
@@ -150,14 +150,14 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         },
         onDrop: (x, y) => {
           reset();
-          if (pinZones.drop(x, y, target, zone)) return;
+          if (dropZones.drop(x, y, target, zone)) return;
           if (removing && remove) return remove();
           const to = axis === "cards" ? at : at > index ? at - 1 : at;
           if (to !== index) moveRef.current(index, to);
         },
         onCancel: () => {
           reset();
-          pinZones.end();
+          dropZones.end();
         },
       });
     },
