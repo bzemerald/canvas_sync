@@ -62,7 +62,7 @@ def test_overview(root, course):
 def test_items_and_one_item(root, course):
     pull(root, course)
     with Engine(root) as e:
-        assert [a["title"] for a in content.items(e.state, e.root, 1, "assignment")] == ["HW 6", "Project", "HW 5", "Reading"]
+        assert [a["title"] for a in content.items(e.state, e.root, 1, "assignment", NOW)] == ["HW 6", "Project", "HW 5", "Reading"]
         assert [p["title"] for p in content.items(e.state, e.root, 1, "page")] == ["Intro", "Another"]  # front page first
         hw = content.item(e.state, e.root, 1, "assignment", "10")
         assert hw["files"] == {"101": {"path": f"{COURSE}/Files/hw6.pdf", "name": "hw6.pdf"}}

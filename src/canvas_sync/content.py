@@ -168,13 +168,13 @@ def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:
             "pages": len(n["page"]), "files": len(n["file"])}
 
 
-def items(state: State, root: Path, course_id: int, kind: str) -> list[dict[str, Any]]:
-    """Summaries of one kind of item, in the order the app lists them."""
+def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
     new = news(state, root, course_id).get(kind, {})
     out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind)]
     if kind == "assignment":
         # Upcoming soonest first, then past ones most recent first, then undated.
-        now = datetime.now(timezone.utc)
+        now = now or datetime.now(timezone.utc)
         def order(a: dict[str, Any]) -> tuple[int, float]:
             due = _when(a["due_at"])
             if due is None:
