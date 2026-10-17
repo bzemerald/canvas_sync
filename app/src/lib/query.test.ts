@@ -199,6 +199,9 @@ describe("what's done with a reading", () => {
     expect(indexQuery(read("作业 midterm 本周", vocab, NOW), ABBR)).toEqual({ q: "midterm", courses: [], kinds: ["assignment"], since: new Date(at(10, 12)).toISOString().replace(".000", ""), until: new Date(at(10, 19)).toISOString().replace(".000", "") }); // i18n-ignore
     expect(indexQuery(read("lecture notes", { ...vocab, kinds: { ...KINDS, note: "note" } }, NOW), ABBR)?.q).toBe("lecture notes"); // (no notes in the index: a word)
     expect(indexQuery(read("cs70 公告", vocab, NOW), ABBR)).toBeNull(); // i18n-ignore
+    expect(indexQuery(read("can I get an extension", vocab, NOW), ABBR)?.q).toBe("extension"); // (little words left out)
+    expect(indexQuery(read("what is due this week", vocab, NOW), ABBR)).toBeNull(); // (only what's due)
+    expect(indexQuery(read("what is", vocab, NOW), ABBR)?.q).toBe("what is"); // (nothing else)
     expect(indexQuery(read("cs70 本周", vocab, NOW), ABBR)).toBeNull(); // i18n-ignore
   });
 

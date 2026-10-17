@@ -613,6 +613,16 @@ export function read(query: string, v: Vocabulary = NO_VOCABULARY, now = Date.no
   return { query, parts };
 }
 
+/** Words that say little by themselves ("can I get an extension": extension), left out of what
+ * has to match when a query has others. (As search.py has them.) */
+export const STOPWORDS = new Set(`a an the and or but if of to in on at by for with from about as into than then so
+is are was were be been being am do does did done can could will would should shall must might get
+i me my we us our you your he him his she her it its they them their
+this that these those there here what which who whom whose when where why how`.split(/\s+/));
+
+/** Whether a part is a word that says little by itself (see STOPWORDS). */
+export const little = (p: Part) => p.role === "word" && !p.quoted && STOPWORDS.has(p.text.toLowerCase());
+
 // -- what to do with a reading -----------------------------------------------------------------
 
 /** What the index is asked for a reading: the words (a series as its name and number, which the
@@ -621,7 +631,9 @@ export function read(query: string, v: Vocabulary = NO_VOCABULARY, now = Date.no
  * there's nothing to find in the text (only a course, a kind, a time, a status). */
 export function indexQuery(r: Reading, abbr: Record<string, string[]>): IndexQuery | null {
   const kinds = [...new Set(r.parts.flatMap((p) => (p.role === "kind" && INDEXED.includes(p.kind) ? [p.kind as IndexedKind] : [])))];
-  const words = r.parts.flatMap((p) => {
+  // Little words only when there's nothing else: "what is due this week" is about what's due.
+  const parts = r.parts.some((p) => !little(p)) ? r.parts.filter((p) => !little(p)) : r.parts;
+  const words = parts.flatMap((p) => {
     if (p.role === "word") return [p.quoted ? `"${p.text.replace(/"/g, "")}"` : p.text];
     if (p.role === "kind") return INDEXED.includes(p.kind) ? [] : [p.text];
     if (p.role !== "series") return [];

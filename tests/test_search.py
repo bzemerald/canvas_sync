@@ -139,6 +139,16 @@ def test_misspelled_words_are_taken_for_the_nearest_there_are(client):
     assert got["corrected"] == {"lectrue": "lecture"} and [h["title"] for h in got["hits"]][:1] == ["Lecture 3.pdf"]
 
 
+def test_little_words_dont_have_to_be_found(root, course):
+    """"how late can work be" is about late work: "how", "can", "be" needn't be in it too."""
+    pull(root, course)
+    reindex(root)
+    assert search(root, "how late can work be") == ["Problem Set 4"]
+    assert search(root, "the late work") == ["Problem Set 4"]
+    with Engine(root) as e:
+        assert [h.title for h in e.index.search("is late work", e.state.courses(), e.settings, literal=True)] == ["Problem Set 4"]
+
+
 def test_custom_abbreviation(root, course):
     pull(root, course)
     reindex(root)

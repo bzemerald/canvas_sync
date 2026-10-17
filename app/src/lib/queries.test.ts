@@ -230,8 +230,12 @@ describe("narrowed down", () => {
   it("逾期: past due and not handed in", () => { // i18n-ignore
     expect(search("逾期").all.sort()).toEqual(["Course Capture - Monday September 28", "HW2: Neurotech for Sensory Restoration"]); // i18n-ignore
   });
-  it("due this week: what's due this week", () => {
+  it("due this week: what's due this week, asked any way", () => {
     expect(search("due this week").all).toEqual(["HW 3: Final Project Brainstorm + Sign-ups"]);
+    expect(search("what is due this week").all).toEqual(["HW 3: Final Project Brainstorm + Sign-ups"]);
+  });
+  it("the midterm room: little words left out", () => {
+    expect(search("where is the midterm 2 room").top).toBe("Midterm 2 room");
   });
   it("neu198 hw: that course's homework, what's due soon first", () => {
     expect(search("neu198 hw").top).toBe("HW 4: EEG Classification with Machine Learning");

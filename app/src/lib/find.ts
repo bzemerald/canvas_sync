@@ -13,7 +13,7 @@
 // Nothing here draws or says anything (no i18n): what things are called comes from `describe`.
 import { matchSorterWithRankInfo, rankings } from "match-sorter";
 import type { CatalogEntry, Hit, Usage } from "./api";
-import { CJK, type KindId, type Part, type PartOf, type Reading, type Status, type Vocabulary, seriesIn, seriesNear, singular, spaced } from "./query";
+import { CJK, type KindId, type Part, type PartOf, type Reading, type Status, type Vocabulary, little, seriesIn, seriesNear, singular, spaced } from "./query";
 import { termRank } from "./terms";
 import { thingKey, thingOfHit } from "./things";
 
@@ -278,6 +278,8 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   const statuses = parts.flatMap((p) => (p.role === "status" ? [p.status] : []));
   const narrowed = !!when || statuses.length > 0;
   let terms: Term[] = parts.filter(isTerm);
+  // Little words ("can I get an extension") needn't match when there's more to go by.
+  if (terms.some(little) && (terms.some((t) => !little(t)) || narrowed || courseParts.length)) terms = terms.filter((t) => !little(t));
   if (!terms.length && !narrowed) {
     if (!courseParts.length) return { top: null, groups: [] };
     // Only a course: the course, and what's called that ("cs70": CS 70).

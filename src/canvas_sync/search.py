@@ -330,15 +330,32 @@ def expand(token: str, abbreviations: dict[str, list[str]], series: Iterable[str
     return list(seen.items())
 
 
+# Words that say little by themselves ("can I get an extension": extension). Left out of what
+# has to be found when a query has others. (As the app's query.ts has them.)
+STOPWORDS = frozenset("""
+a an the and or but if of to in on at by for with from about as into than then so
+is are was were be been being am do does did done can could will would should shall must might get
+i me my we us our you your he him his she her it its they them their
+this that these those there here what which who whom whose when where why how
+""".split())
+
+
+def _without_stopwords(tokens: list[str]) -> list[str]:
+    content = [t for t in tokens if t.lower() not in STOPWORDS]
+    return content if content else tokens
+
+
 def parse_words(query: str, abbreviations: dict[str, list[str]], series: Iterable[str] = ()) -> Query:
     """The words of a query the app has read (its query.ts took the courses, times and the like
-    out): each to be found, "quoted" ones only as they are."""
+    out): each to be found ("can", "the" and the like only when nothing else is), "quoted"
+    ones only as they are."""
     groups = []
+    words = _without_stopwords([m[2] for m in re.finditer(r'"([^"]*)"?|(\S+)', query) if m[2] and re.search(r"\w", m[2])])
     for m in re.finditer(r'"([^"]*)"?|(\S+)', query):
         if m[1] is not None:
             if m[1].strip():
                 groups.append([(m[1].strip().lower(), True)])
-        elif re.search(r"\w", m[2]):
+        elif m[2] in words:
             groups.append(expand(m[2], abbreviations, series))
     return Query([], groups)
 
@@ -347,7 +364,7 @@ def parse(query: str, matcher: CourseMatcher, abbreviations: dict[str, list[str]
     """Course tokens may come anywhere, but loose (prefix) course matching only applies to
     the first token, so "221 data" searches MATH 221 for "data" instead of also pulling
     in "Data Structures"."""
-    tokens = [t for t in re.split(r"\s+", query.strip()) if re.search(r"\w", t)]
+    tokens = _without_stopwords([t for t in re.split(r"\s+", query.strip()) if re.search(r"\w", t)])
     course_ids: set[int] = set()
     groups = []
     for i, tok in enumerate(tokens):
