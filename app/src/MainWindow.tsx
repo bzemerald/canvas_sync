@@ -105,10 +105,16 @@ const VIEW_FINDS: Partial<Record<ViewName, KindId>> = {
 // A course's 文件 shows its Files folder as itself (what Canvas's Files has), and the folders of
 // what's from elsewhere in the course first, saying what they are.
 const inlineOf = (c: Course, tab: Thing | null) => (tab && isView(tab, "files") ? c.source_dirs.files : undefined);
-const sourceMarks = (c: Course) => ({
-  ...(c.source_dirs.modules ? { [c.source_dirs.modules]: { icon: ListChecks, note: t("模块里的文件") } } : {}),
-  ...(c.source_dirs.attachments ? { [c.source_dirs.attachments]: { icon: Paperclip, note: t("页面、作业、公告附带的文件") } } : {}),
-});
+const marks = new WeakMap<Course, React.ComponentProps<typeof FileBrowser>["marked"]>(); // (one per course loaded: the list keeps its order)
+const sourceMarks = (c: Course) => {
+  if (!marks.has(c)) {
+    marks.set(c, {
+      ...(c.source_dirs.modules ? { [c.source_dirs.modules]: { icon: ListChecks, note: t("模块里的文件") } } : {}),
+      ...(c.source_dirs.attachments ? { [c.source_dirs.attachments]: { icon: Paperclip, note: t("页面、作业、公告附带的文件") } } : {}),
+    });
+  }
+  return marks.get(c);
+};
 const kindShown = (tab: Thing | null): KindId | undefined =>
   !tab ? undefined : isView(tab) ? VIEW_FINDS[tab.view] : tab.type === "doc" ? tab.kind : tab.type === "module" ? "module" : tab.type === "folder" ? "file" : undefined;
 
