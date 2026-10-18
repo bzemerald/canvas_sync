@@ -584,6 +584,9 @@ export function MainWindow() {
   const restoreScope = (e: Entry): Scope => (e.type === "dir" ? { paths: [e.path] } : { file_ids: [e.file_id!] });
   /** Not synced: a file you stopped syncing, or anything in a folder you stopped syncing. */
   const notSynced = (e: Entry) => e.skipped || e.states.includes("untracked");
+  /** What can stop syncing: folders (one you deleted, too: what Canvas adds to it later), and
+   * files from Canvas that are still here. */
+  const canStop = (e: Entry) => !notSynced(e) && (e.type === "dir" || (!e.deleted && e.file_id !== null));
 
   const entryMenu = (e: Entry): MenuItem[] => {
     if (e.deleted) {
@@ -654,7 +657,9 @@ export function MainWindow() {
     if (es.length === 1) return entryMenu(es[0]);
     const live = es.filter((e) => !e.deleted);
     const files = live.filter((e) => e.type === "file");
-    const synced = live.filter((e) => e.type === "dir" || e.file_id !== null);
+    const synced = live.filter((e) => !notSynced(e) && (e.type === "dir" || e.file_id !== null));
+    const resume = es.filter((e) => notSynced(e) && (e.type === "dir" || !e.deleted));
+    const stop = es.filter(canStop);
     const label = countLabel(es.map((e) => e.name));
     const scope: Scope = {
       paths: es.filter((e) => e.type === "dir").map((e) => e.path),
@@ -665,7 +670,12 @@ export function MainWindow() {
       "separator",
       { label: t("从 Canvas 同步"), disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
       { label: t("恢复原版…"), onSelect: () => setRestoring({ scope, label }) },
-      { label: t("停止同步（保留文件）"), disabled: syncBusy || !synced.length, onSelect: () => void untrack(synced.map((e) => e.path), synced.map((e) => e.name)) },
+      ...(resume.length
+        ? [{ label: t("恢复同步 {n} 项", { n: resume.length }), disabled: syncBusy, onSelect: () => void track(resume.map((e) => e.path), resume.map((e) => e.name)) }]
+        : []),
+      ...(stop.length || !resume.length
+        ? [{ label: t("停止同步 {n} 项（保留文件）", { n: stop.length }), disabled: syncBusy || !stop.length, onSelect: () => void untrack(stop.map((e) => e.path), stop.map((e) => e.name)) }]
+        : []),
       "separator",
       {
         label: t("把 {what} 移到{trash}…", { what: countLabel(live.map((e) => e.name)), trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy || !live.length,
