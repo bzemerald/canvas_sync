@@ -32,7 +32,7 @@ const VIEW_WORDS: Record<ViewName, string[]> = {
   overview: ["概览"], // i18n-ignore
   modules: ["模块", "当前模块"], // i18n-ignore
   announcements: ["公告", "最新公告"], // i18n-ignore
-  discussion: ["讨论", "讨论区"], // i18n-ignore
+  discussion: ["讨论", "讨论区", "帖子"], // i18n-ignore
   assignments: ["作业", "近期截止"], // i18n-ignore
   grades: ["成绩"], // i18n-ignore
   files: ["文件", "最近新增的文件"], // i18n-ignore
@@ -47,6 +47,7 @@ const KIND_WORDS: Record<string, string> = {
   announcement: "公告", // i18n-ignore
   assignment: "作业", // i18n-ignore
   page: "页面@@card", // i18n-ignore
+  post: "帖子", // i18n-ignore
   module: "模块@@card", // i18n-ignore
   tool: "外部工具", // i18n-ignore
   link: "链接", // i18n-ignore
@@ -57,7 +58,7 @@ const KIND_WORDS: Record<string, string> = {
 };
 // The words a query says a kind of thing by (both languages, as the app says them; one word each).
 const KIND_SAID: Record<KindId, string[]> = {
-  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], post: ["帖子", "讨论"], module: ["模块", "模块@@card"], // i18n-ignore
+  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], post: ["帖子", "讨论", "thread"], module: ["模块", "模块@@card"], // i18n-ignore
   tool: ["外部工具", "工具"], link: ["链接"], note: ["备忘录"], search: ["智能文件夹"], file: ["文件", "文件@@card"], folder: ["文件夹"], // i18n-ignore
 };
 const KINDS: Record<string, KindId> = Object.fromEntries(

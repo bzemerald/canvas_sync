@@ -154,6 +154,7 @@ const W = {
   here: 0.4, // of the course you were last in
   dueSoon: 0.3, // due within the week, and not handed in
   fresh: 0.2, // new in the last two weeks (less as it ages)
+  post: 1, // a post on Ed: what's said about a thing, after the thing itself
 };
 
 /** How well `word` matches each item's values (`values`, then `others`: a little less), by item;
@@ -238,6 +239,7 @@ function bonus(p: Prepared, { catalog, usage, picks, now, here }: Context): numb
   if (pick > 0) b += W.picked + Math.min(pick, 3);
   if (e.type === "course") b += W.course;
   else if (e.type === "view") b += W.view;
+  else if (e.type === "doc" && e.kind === "post") b -= W.post;
   if (p.term && p.term === catalog.latestTerm) b += W.term; // (what was last term's is seldom what you're after)
   if (here !== null && p.course === here) b += W.here;
   const due = e.due ? Date.parse(e.due) - now : NaN;

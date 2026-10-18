@@ -1,5 +1,5 @@
 """Everything search can go to by name: the courses, the views they have something in, their
-announcements, assignments, pages, modules and tools, the files and folders synced for them, and
+announcements, assignments, pages, posts on Ed (what's pinned and staff's), modules and tools, the files and folders synced for them, and
 what you put in places (web links, notes, smart folders). Each is a thing (see things.py), with
 what it's called and when it's from; the text inside is the index's (search.py). Courses you hid
 aren't in it, nor anything of theirs.
@@ -26,7 +26,7 @@ from .things import Entry, Thing, course_thing, view
 if TYPE_CHECKING:
     from .engine import Engine
 
-DOC_KINDS = ("announcement", "assignment", "page")
+DOC_KINDS = ("announcement", "assignment", "page", "post")
 
 
 def catalog(e: Engine) -> list[dict[str, Any]]:
@@ -48,7 +48,8 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
     has: dict[int, set[str]] = {c.id: {"overview", "files", "tools", "canvas"} for c in courses}
     for cid, kind, n in e.state.db.execute("SELECT course_id, kind, count(*) FROM documents GROUP BY course_id, kind"):
         if cid in has and n:
-            has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages"}.get(kind, ""))
+            has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages",
+                          "post": "discussion"}.get(kind, ""))
     for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM modules"):
         if cid in has:
             has[cid].add("modules")
@@ -77,8 +78,11 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             continue
         if kind not in DOC_KINDS:
             continue
+        ed = raw.get("ed") or {}
+        if kind == "post" and not (ed.get("pinned") or ed.get("staff")):
+            continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's)
         fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
-        if kind == "announcement":
+        if kind in ("announcement", "post"):
             fields["date"] = raw.get("posted_at")
         elif kind == "assignment":
             status = content.submission(raw)["status"]
@@ -90,7 +94,8 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                        "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{row['id']}"}
         add(Thing("doc", course=cid, kind=kind, id=row["id"]), **fields)
     for c in courses:
-        for v in ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages", "tools", "canvas"):
+        for v in ("overview", "modules", "announcements", "discussion", "assignments", "grades", "files", "syllabus", "pages",
+                  "tools", "canvas"):
             if v in has[c.id]:
                 add(view(c.id, v))
 

@@ -11,6 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from canvas_sync import Engine, content, ed, server
+from canvas_sync.catalog import catalog
+from canvas_sync.places import Place
+from canvas_sync.things import Thing
 from canvas_sync.config import Account, Settings, set_ed_courses
 from canvas_sync.models import Course
 from fake_canvas import BASE, FakeCanvas, pull, wait_for_sync
@@ -262,3 +265,30 @@ def test_ed_posts_are_the_courses_discussion(root, tmp_path, linked, web):
     assert [r for r in linked.requests if "/api/threads/" in r] == ["edstem.org/api/threads/9001"]
     with Engine(root) as e:
         assert len(content.item(e.state, e.root, 1, "post", "ed-9001")["replies"]) == 2
+
+
+def test_ed_posts_are_found_and_go_anywhere_in_their_course(root, tmp_path, linked):
+    linked.thread(501, 9001, "HW 3 megathread", user=1, is_megathread=True, is_pinned=True, category="Homework")
+    linked.thread(501, 9002, "HW 3 question", category="Homework")
+    linked.thread(501, 9003, "Grading", body='<document version="2.0"><paragraph>How are labs graded?</paragraph></document>')
+    linked.reply(501, 9001, "Q4 uses the RMS voltage", user=1)
+    ed_sync(root)
+    with Engine(root) as e:
+        e.reindex()
+        assert [h.title for h in e.search("rms voltage")] == ["HW 3 megathread"]  # what staff answered
+        assert [h.title for h in e.search("homework", kinds=["post"])] == ["HW 3 megathread", "HW 3 question"]  # its category
+        assert [h.title for h in e.search("hw 3", kinds=["post"])] == ["HW 3 megathread", "HW 3 question"]  # (students' after)
+        found = {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e)}
+        assert ("doc", "post", "HW 3 megathread") in found and ("doc", "post", "HW 3 question") not in found
+        assert ("view", None, None) in {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e) if x.get("view") == "discussion"}
+
+    # A post is the course's: it can be a tab of it, and pinned; not another course's.
+    post = {"type": "doc", "course": 1, "kind": "post", "id": "ed-9001"}
+    with client(root, tmp_path) as api:
+        tabs = api.get("/api/courses/1/layout").json()["tabs"]
+        api.put("/api/courses/1/layout/tabs", json={"entries": [*tabs, {**post, "title": "HW 3 Q&A", "hidden": False}]})
+        tab = api.get("/api/courses/1/layout").json()["tabs"][-1]
+        assert (tab["id"], tab["title"], tab["name"], tab["exists"]) == ("ed-9001", "HW 3 Q&A", "HW 3 megathread", True)
+        api.put("/api/pinned", json={"entries": [{**post, "title": "", "hidden": False}]})
+        assert api.get("/api/pinned").json()[0]["name"] == "HW 3 megathread"
+    assert Place("tabs", 2, [], []).holds(Thing("doc", course=1, kind="post", id="ed-9001")) is False

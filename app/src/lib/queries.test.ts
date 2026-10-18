@@ -23,7 +23,7 @@ const course = (id: number, name: string, term: string, aliases: string[], keys:
   entry({ type: "course", course: id }, id, { name, term, aliases, keys });
 const views = (c: number, ...vs: ViewName[]) => vs.map((v) => entry({ type: "view", course: c, view: v }, c));
 let ids = 0;
-const doc = (c: number, kind: "announcement" | "assignment" | "page", name: string, fields: Partial<CatalogEntry>) =>
+const doc = (c: number, kind: "announcement" | "assignment" | "page" | "post", name: string, fields: Partial<CatalogEntry>) =>
   entry({ type: "doc", course: c, kind, id: String(++ids) }, c, { name, ...fields });
 const ann = (c: number, name: string, ago: number) => doc(c, "announcement", name, { date: day(-ago) });
 const hw = (c: number, name: string, due: number, status: SubmissionStatus) => doc(c, "assignment", name, { due: day(due), date: day(due), status });
@@ -41,7 +41,9 @@ const things: CatalogEntry[] = [
   course(CS61A, "CS 61A", "Fall 2025", ["Structure and Interpretation of Computer Programs"], ["61a", "cs61a"]),
   course(M54, "MATH 54", "Spring 2026", ["MATH 54-LEC-002", "Linear Algebra and Differential Equations"], ["54", "math54"]),
 
-  ...views(EE, "overview", "announcements", "assignments", "grades", "files", "syllabus"),
+  ...views(EE, "overview", "announcements", "discussion", "assignments", "grades", "files", "syllabus"),
+  // On Ed (what's pinned and staff's posts are in the catalog; the questions are the index's).
+  doc(EE, "post", "HW 4 megathread", { date: day(-12), source: "ed" }), doc(EE, "post", "Lab 2 Clarification", { date: day(-5), source: "ed" }),
   ann(EE, "HW3 Released", 20), ann(EE, "HW4 Released", 12), ann(EE, "Midterm 1 Logistics", 6), ann(EE, "Prelab 3 Released", 1),
   ...files(EE, "Files/HW/EE16A_FA26_HW3.pdf", "Files/HW/EE16A_FA26_HW3_Sol.pdf", "Files/HW/EE16A_FA26_HW4.pdf",
     "Files/Lectures/EE16A FA26 Lecture9.pdf", "Files/Lectures/EE16A FA26 Lecture10.pdf", "Files/Labs/EE16A_FA26_Lab2.pdf",
@@ -87,7 +89,7 @@ const things: CatalogEntry[] = [
 // As the app has it (Found.tsx): names as shown, other names, kind words.
 const VIEW: Record<ViewName, string[]> = {
   overview: ["Overview", "概览"], modules: ["Modules", "模块"], announcements: ["Announcements", "公告"], // i18n-ignore
-  discussion: ["Discussion", "讨论"], // i18n-ignore
+  discussion: ["Discussion", "讨论", "Post", "帖子"], // i18n-ignore
   assignments: ["Assignments", "作业"], grades: ["Grades", "成绩"], files: ["Files", "文件"], syllabus: ["Syllabus", "大纲"], // i18n-ignore
   pages: ["Pages", "页面"], tools: ["Tools and links", "工具与链接"], canvas: ["Open in Canvas"], // i18n-ignore
 };
@@ -111,7 +113,7 @@ const ABBR: Record<string, string[]> = {
 const KINDS: Record<string, KindId> = {
   公告: "announcement", announcement: "announcement", 作业: "assignment", assignment: "assignment", 页面: "page", page: "page", // i18n-ignore
   模块: "module", module: "module", 文件: "file", file: "file", 文件夹: "folder", folder: "folder", 课程: "course", course: "course", // i18n-ignore
-  链接: "link", link: "link", 备忘录: "note", note: "note", tool: "tool", // i18n-ignore
+  链接: "link", link: "link", 备忘录: "note", note: "note", tool: "tool", 帖子: "post", post: "post", 讨论: "post", discussion: "post", // i18n-ignore
 };
 const catalog = prepare(things, describe_, ABBR);
 const vocab = vocabulary(catalog, KINDS);
@@ -213,6 +215,22 @@ describe("by name", () => {
   });
   it("sync ee16a: the thing to do", () => {
     expect(search("sync ee16a").top).toBe("sync:1");
+  });
+});
+
+describe("on Ed", () => {
+  it("ee16a hw4: the megathread too, after the homework itself", () => {
+    const { all } = search("ee16a hw4");
+    expect(all).toContain("HW 4 megathread");
+    expect(all.indexOf("HW 4 megathread")).toBeGreaterThan(all.indexOf("EE16A_FA26_HW4.pdf"));
+  });
+  it("ee16a 帖子: the course's discussion, then its posts", () => { // i18n-ignore
+    const r = search("ee16a 帖子"); // i18n-ignore
+    expect(r.top).toBe("EE 16A discussion");
+    expect(r.all).toEqual(expect.arrayContaining(["Lab 2 Clarification", "HW 4 megathread"]));
+  });
+  it("lab 2 clarification: the post by its name", () => {
+    expect(search("lab 2 clarification").top).toBe("Lab 2 Clarification");
   });
 });
 

@@ -653,8 +653,8 @@ export function indexQuery(r: Reading, abbr: Record<string, string[]>): IndexQue
     ...(when && Number.isFinite(when.to) ? { until: iso(when.to) } : {}),
   };
 }
-const INDEXED: KindId[] = ["announcement", "assignment", "page", "file"]; // (what the index has)
-type IndexedKind = "announcement" | "assignment" | "page" | "file";
+const INDEXED: KindId[] = ["announcement", "assignment", "page", "post", "file"]; // (what the index has)
+type IndexedKind = "announcement" | "assignment" | "page" | "post" | "file";
 export interface IndexQuery { q: string; courses: number[]; kinds?: IndexedKind[]; since?: string; until?: string }
 
 /** The reading with misspelled words taken for those meant (`fixes`, from the index: "midtrem":
