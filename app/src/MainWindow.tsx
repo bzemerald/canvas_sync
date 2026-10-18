@@ -1,8 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, MoreHorizontal, Plus, RefreshCw, Search, Settings as SettingsIcon,
-  Sparkles,
+  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
+  Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
@@ -102,6 +102,13 @@ const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "di
 const VIEW_FINDS: Partial<Record<ViewName, KindId>> = {
   announcements: "announcement", assignments: "assignment", pages: "page", discussion: "post", modules: "module", files: "file",
 };
+// A course's 文件 shows its Files folder as itself (what Canvas's Files has), and the folders of
+// what's from elsewhere in the course first, saying what they are.
+const inlineOf = (c: Course, tab: Thing | null) => (tab && isView(tab, "files") ? c.source_dirs.files : undefined);
+const sourceMarks = (c: Course) => ({
+  ...(c.source_dirs.modules ? { [c.source_dirs.modules]: { icon: ListChecks, note: t("模块里的文件") } } : {}),
+  ...(c.source_dirs.attachments ? { [c.source_dirs.attachments]: { icon: Paperclip, note: t("页面、作业、公告附带的文件") } } : {}),
+});
 const kindShown = (tab: Thing | null): KindId | undefined =>
   !tab ? undefined : isView(tab) ? VIEW_FINDS[tab.view] : tab.type === "doc" ? tab.kind : tab.type === "module" ? "module" : tab.type === "folder" ? "file" : undefined;
 
@@ -293,6 +300,7 @@ export function MainWindow() {
     if (!c) return go({ kind: "browse", path, select });
     // (In 文件, or a folder tab that has it: it stays there.)
     const stay = cv && cv.id === c.id && tab && (isView(tab, "files") || (tab.type === "folder" && under(path, tab.path)));
+    if (stay && path === inlineOf(c, tab)) path = c.dir; // (it's shown as the course's own)
     go({ kind: "course", id: c.id, tab: stay ? tab : { type: "folder", path }, path, select });
   };
   /** Go into a folder from the one showing: 全部文件 stays 全部文件, even in a course's folder. */
@@ -938,8 +946,11 @@ export function MainWindow() {
     if (tab.type === "search") return null; // (its results: below)
     return (
       <FileBrowser
-        path={cv.path}
+        path={cv.path === inlineOf(course, tab) ? course.dir : cv.path}
         root={course.dir}
+        inline={inlineOf(course, tab)}
+        missing={course.excluded ? t("这门课没有同步，所以这里没有文件。") : t("这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。")}
+        marked={isView(tab, "files") ? sourceMarks(course) : undefined}
         select={cv.select}
         version={version}
         mode={mode}
@@ -1091,6 +1102,7 @@ export function MainWindow() {
               <Breadcrumb
                 path={filesTab ? cv.path : course.dir}
                 root={{ path: course.dir, label: course.label, icon: <CourseIcon course={course} /> }}
+                inline={inlineOf(course, tab)}
                 onGo={(p) => (p === course.dir && !filesTab ? openCourse(course) : goPath(p))}
               />
             )}
@@ -1503,14 +1515,16 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
 }
 
 /** Where you are. In a course it starts at the course (its name, not where its files live). */
-function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, onGo }: {
+function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inline, onGo }: {
   path: string;
   root?: { path: string; label: string; icon?: React.ReactNode };
+  inline?: string; // a folder shown as the root itself (a course's Files, in 文件): not a step
   onGo: (p: string) => void;
 }) {
   const rest = path.slice(root.path.length).replace(/^\//, "");
-  const parts = rest ? rest.split("/") : [];
   const prefix = root.path ? root.path + "/" : "";
+  const parts = (rest ? rest.split("/") : []).map((name, i, all) => ({ name, path: prefix + all.slice(0, i + 1).join("/") }))
+    .filter((p) => p.path !== inline);
   return (
     <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
       <button onClick={() => onGo(root.path)} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
@@ -1521,10 +1535,10 @@ function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, onGo 
         <span key={i} className="flex min-w-0 items-center gap-0.5">
           <ChevronRight className="size-3.5 shrink-0 text-muted" />
           <button
-            onClick={() => onGo(prefix + parts.slice(0, i + 1).join("/"))}
+            onClick={() => onGo(p.path)}
             className={`truncate rounded px-1.5 py-0.5 hover:bg-chip ${i === parts.length - 1 ? "font-medium" : "text-muted"}`}
           >
-            {p}
+            {p.name}
           </button>
         </span>
       ))}

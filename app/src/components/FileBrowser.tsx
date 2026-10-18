@@ -21,6 +21,9 @@ type SortKey = "name" | "date" | "size";
 interface Props {
   path: string;
   root: string; // don't go above this (a course's own folder, or "" for everything)
+  inline?: string; // a folder in `root` shown as `root` itself: its contents there, in its place
+  missing?: string; // what to say when `root` isn't there (a course with no files)
+  marked?: Record<string, { icon: React.ComponentType<{ className?: string }>; note: string }>; // folders listed first, with what they are
   version: number; // bump to reload (after a sync, a restore, or the window regaining focus)
   mode: ViewMode;
   showChanges: boolean; // what you changed: deleted files, and badges for your changes
@@ -68,7 +71,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, version, mode, showChanges, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
+  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const dragThing = useDragThing(); // (置顶 is in their menus)
@@ -104,11 +107,19 @@ export function FileBrowser({
     setMissing(false);
     box.current?.focus();
   }, [path]);
+  const merged = inline !== undefined && path === root ? inline : null; // (its contents are the root's)
   useEffect(() => {
     void load(path);
+    if (merged !== null) void load(merged);
     expanded.forEach((d) => void load(d));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, version, load]);
+  }, [path, version, load, merged]);
+  const listed = useCallback(
+    (dir: string) => (dir === path && merged !== null && listings[path]
+      ? [...listings[path].filter((e) => e.path !== merged || e.deleted), ...(listings[merged] ?? [])]
+      : listings[dir]),
+    [listings, path, merged],
+  );
 
   const sorted = useCallback(
     (entries: Entry[]) => {
@@ -119,23 +130,24 @@ export function FileBrowser({
           : collator.compare(a.name, b.name);
         return (sort.desc ? -v : v) || collator.compare(a.name, b.name);
       };
-      return [...visible].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || cmp(a, b));
+      const rank = (e: Entry) => (marked?.[e.path] ? 0 : e.type === "dir" ? 1 : 2);
+      return [...visible].sort((a, b) => rank(a) - rank(b) || cmp(a, b));
     },
-    [showChanges, sort],
+    [showChanges, sort, marked],
   );
 
   // The rows on screen, in order: expanded folders' children follow them (list view only).
   const rows = useMemo(() => {
     const out: { entry: Entry; depth: number }[] = [];
     const walk = (dir: string, depth: number) => {
-      for (const entry of sorted(listings[dir] ?? [])) {
+      for (const entry of sorted(listed(dir) ?? [])) {
         out.push({ entry, depth });
         if (mode === "list" && entry.type === "dir" && !entry.deleted && expanded.has(entry.path)) walk(entry.path, depth + 1);
       }
     };
     walk(path, 0);
     return out;
-  }, [listings, path, expanded, mode, sorted]);
+  }, [listed, path, expanded, mode, sorted]);
 
   const keys = useMemo(() => rows.map((r) => r.entry.path), [rows]);
   const byPath = useMemo(() => new Map(rows.map((r) => [r.entry.path, r.entry])), [rows]);
@@ -185,7 +197,7 @@ export function FileBrowser({
     const picked = chosen();
     let handled = true;
     if (command === "open") picked.forEach(activate);
-    else if (command === "parent") path !== root && path && onNavigate(parentOf(path));
+    else if (command === "parent") path !== root && path && onNavigate(parentOf(path) === inline ? root : parentOf(path));
     else if (command === "selectAll") sel.all();
     else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
     else if (command === "rename") cur && canRename(cur.entry) ? onStartRename(cur.entry) : (handled = false);
@@ -251,7 +263,7 @@ export function FileBrowser({
         {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("这个文件夹是空的")}</p>}
         {missing && !error && (
           <p className="px-3 py-10 text-center text-sm text-muted">
-            {path === root && root ? t("这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。") : t("找不到这个文件夹了")}
+            {path === root && missingNote ? missingNote : t("找不到这个文件夹了")}
           </p>
         )}
 
@@ -283,13 +295,14 @@ export function FileBrowser({
                       {e.new && <NewDot label={e.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} />}
                     </span>
                   )}
-                  <FileIcon name={e.name} dir={e.type === "dir"} />
+                  <MarkedIcon e={e} marked={marked} className="size-4" />
                   {renaming === e.path ? (
                     <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="flex-1 text-sm" />
                   ) : (
-                    <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
+                    <span className={`truncate ${e.deleted ? "line-through" : ""} ${marked?.[e.path] || (showChanges && e.renamed_from) ? "max-w-[50%] shrink-0" : ""}`}>{e.name}</span>
                   )}
-                  {showChanges && e.renamed_from && <WasNamed name={e.renamed_from} className="min-w-0 shrink truncate text-xs" />}
+                  {showChanges && e.renamed_from && <WasNamed name={e.renamed_from} className="min-w-0 shrink-[100] truncate text-xs" />}
+                  {marked?.[e.path] && <span className="min-w-0 shrink-[100] truncate text-xs text-muted">{marked[e.path].note}</span>}
                   {e.link && (
                     <span title={t("快捷方式，原文件在 {link}", { link: e.link })}>
                       <CornerUpRight className="size-3 shrink-0 text-muted" aria-label={t("快捷方式")} />
@@ -314,7 +327,7 @@ export function FileBrowser({
               >
                 <div className="relative">
                   {e.type === "dir" ? (
-                    <div className="flex size-18 items-center justify-center"><FileIcon name={e.name} dir className="size-14" /></div>
+                    <div className="flex size-18 items-center justify-center"><MarkedIcon e={e} marked={marked} className="size-14" /></div>
                   ) : (
                     <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
                   )}
@@ -334,6 +347,12 @@ export function FileBrowser({
       </div>
     </div>
   );
+}
+
+/** A file's or folder's icon; a marked folder's own. */
+function MarkedIcon({ e, marked, className }: { e: Entry; marked: Props["marked"]; className: string }) {
+  const Icon = marked?.[e.path]?.icon;
+  return Icon ? <Icon className={`${className} shrink-0 text-type-folder`} /> : <FileIcon name={e.name} dir={e.type === "dir"} className={className} />;
 }
 
 /** What Canvas calls a folder you renamed, struck through. */

@@ -133,6 +133,7 @@ def test_api_rename_and_pin(api, root):
     [course] = api.get("/api/courses").json()
     assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "Linear Algebra" and course["renamed"]
     assert course["default_name"] == "MATH 221" and course["term_label"] == "Fall 2026"
+    assert course["source_dirs"]["modules"] == "Fall 2026/Linear Algebra/Modules"
     assert api.get("/api/pinned").json()[0]["path"] == "Fall 2026/Linear Algebra/Modules/Week One"
     # Search results call the course by its new name too.
     assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"Linear Algebra"}

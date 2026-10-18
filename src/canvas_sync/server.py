@@ -482,6 +482,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     "renamed": d.name != canonical.name,         # you gave it a name
                     "default_name": canonical.name,              # renaming to this undoes that
                     "term_label": d.parent.name if term_renamed else c.term,
+                    # Where what's from each part of Canvas goes (files, modules, attachments).
+                    "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
                     "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
                     "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
                     "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search

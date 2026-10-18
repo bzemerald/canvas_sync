@@ -180,6 +180,7 @@ export interface Course {
   renamed: boolean;
   default_name: string; // renaming to this gives it its original name back
   term_label: string | null; // the term, as you named it
+  source_dirs: Partial<Record<"files" | "modules" | "attachments", string>>; // where what's from each part of Canvas goes
   new: number; // things in it you haven't opened yet
   icon: { icon?: string; color?: string; emoji?: string } | null; // chosen; null: the app picks one
   hidden: boolean; // you hid it: not in the sidebar's terms, search or what's new
