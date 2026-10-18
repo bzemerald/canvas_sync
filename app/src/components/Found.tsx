@@ -32,6 +32,7 @@ const VIEW_WORDS: Record<ViewName, string[]> = {
   overview: ["概览"], // i18n-ignore
   modules: ["模块", "当前模块"], // i18n-ignore
   announcements: ["公告", "最新公告"], // i18n-ignore
+  discussion: ["讨论", "讨论区"], // i18n-ignore
   assignments: ["作业", "近期截止"], // i18n-ignore
   grades: ["成绩"], // i18n-ignore
   files: ["文件", "最近新增的文件"], // i18n-ignore
@@ -56,7 +57,7 @@ const KIND_WORDS: Record<string, string> = {
 };
 // The words a query says a kind of thing by (both languages, as the app says them; one word each).
 const KIND_SAID: Record<KindId, string[]> = {
-  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], module: ["模块", "模块@@card"], // i18n-ignore
+  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], post: ["帖子", "讨论"], module: ["模块", "模块@@card"], // i18n-ignore
   tool: ["外部工具", "工具"], link: ["链接"], note: ["备忘录"], search: ["智能文件夹"], file: ["文件", "文件@@card"], folder: ["文件夹"], // i18n-ignore
 };
 const KINDS: Record<string, KindId> = Object.fromEntries(
@@ -77,7 +78,7 @@ export const describeEntry = (courses: Course[]): Describe => (e) => {
 
 // Where a course's views are on Canvas.
 const VIEW_PATH: Record<ViewName, string> = {
-  overview: "", modules: "/modules", announcements: "/announcements", assignments: "/assignments", grades: "/grades",
+  overview: "", modules: "/modules", announcements: "/announcements", discussion: "", assignments: "/assignments", grades: "/grades",
   files: "/files", syllabus: "/assignments/syllabus", pages: "/pages", tools: "", canvas: "",
 };
 
@@ -252,12 +253,13 @@ export function FoundSearch({ input, query, onQuery, catalog, vocab, usage, name
 
 const STATUS_LABEL = { todo: t("未提交"), missing: t("缺交"), overdue: t("逾期未交"), submitted: t("已提交"), graded: t("已评分") };
 const KIND_LABEL: Record<KindId, string> = {
-  course: t("课程"), announcement: t("公告"), assignment: t("作业"), page: t("页面"), module: t("模块"), tool: t("外部工具"),
+  course: t("课程"), announcement: t("公告"), assignment: t("作业"), page: t("页面"), post: t("帖子"), module: t("模块"), tool: t("外部工具"),
   link: t("链接"), note: t("备忘录"), search: t("智能文件夹"), file: t("文件"), folder: t("文件夹"),
 };
 const KIND_THING: Record<KindId, Thing> = {
   course: { type: "course", course: -1 }, announcement: { type: "view", course: -1, view: "announcements" },
   assignment: { type: "view", course: -1, view: "assignments" }, page: { type: "view", course: -1, view: "pages" },
+  post: { type: "view", course: -1, view: "discussion" },
   module: { type: "module", course: -1, module: -1 }, tool: { type: "tool", course: -1, tool: -1 }, link: { type: "link", url: "" },
   note: { type: "note", course: -1, id: "" }, search: { type: "search", query: "", courses: [], kinds: [], content: false },
   file: { type: "view", course: -1, view: "files" }, folder: { type: "folder", path: "" },

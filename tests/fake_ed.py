@@ -17,6 +17,7 @@ class FakeEd:
         self.user = {"id": 7, "name": "Ann Ed"}
         self.courses: list[dict] = []
         self.threads: dict[int, list[dict]] = {}  # course -> its threads, newest first
+        self.replies: dict[int, list[dict]] = {}  # thread -> its answers and comments
         self.users: dict[int, dict] = {1: {"id": 1, "name": "Prof Ed", "course_role": "admin"},
                                         2: {"id": 2, "name": "Stu Dent", "course_role": "student"}}
         self.status = 200  # e.g. 500, to fail every request
@@ -35,6 +36,14 @@ class FakeEd:
         self.threads.setdefault(course, []).insert(0, t)
         return t
 
+    def reply(self, course: int, tid: int, text: str, user: int = 1, answer: bool = True) -> None:
+        """An answer (or comment) on a thread: its reply count goes up, as Ed's list says."""
+        self.replies.setdefault(tid, []).append({
+            "id": len(self.replies[tid]) + 1, "type": "answer" if answer else "comment", "user_id": user,
+            "content": f'<document version="2.0"><paragraph>{text}</paragraph></document>',
+            "created_at": "2026-10-16T10:00:00+10:00", "is_endorsed": False, "is_anonymous": False, "comments": []})
+        next(t for t in self.threads[course] if t["id"] == tid)["reply_count"] += 1
+
     def handle(self, req: httpx.Request) -> httpx.Response:
         self.requests.append(f"{req.url.host}{req.url.path}")
         if not req.headers.get("user-agent"):
@@ -50,4 +59,10 @@ class FakeEd:
             page = self.threads.get(int(m[1]), [])[offset:offset + limit]
             users = [self.users[u] for u in {t["user_id"] for t in page} if u in self.users]
             return httpx.Response(200, json={"threads": page, "users": users, "sort_key": ""})
+        if m := re.fullmatch(r"/api/threads/(\d+)", req.url.path):
+            replies = self.replies.get(int(m[1]), [])
+            return httpx.Response(200, json={
+                "thread": {"id": int(m[1]), "answers": [r for r in replies if r["type"] == "answer"],
+                           "comments": [r for r in replies if r["type"] == "comment"]},
+                "users": list(self.users.values())})
         return httpx.Response(404, json={"code": "not_found"})

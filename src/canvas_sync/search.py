@@ -404,7 +404,8 @@ def relative_url(url: str | None) -> str | None:
     return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
-DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body"}
+DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body",
+            "post": "message"}
 
 
 def doc_url(raw: dict[str, Any]) -> str | None:

@@ -566,9 +566,12 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             return content.items(e.state, e.root, course_id, kind)
 
     @api.get("/courses/{course_id}/items/{kind}/{doc_id}")
-    def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
-        """One item in full. Opening it is reading it: it's no longer new."""
+    async def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
+        """One item in full. Opening it is reading it: it's no longer new. One from Ed comes
+        with its replies as they are now (fetched, when there are new ones)."""
         with engine() as e:
+            if doc_id.startswith("ed-") and account.ed_region and (ed_token := account.ed_token()):
+                await ed.fetch_replies(e, ed_token, account.ed_region, course_id, kind, doc_id)
             found = content.item(e.state, e.root, course_id, kind, doc_id)
             if found is not None:
                 e.state.mark_seen(course_id, [(kind, doc_id)])

@@ -5,7 +5,7 @@
 // tabs); drag something of the course onto the overview and it's a card where you let go (a tool
 // or a link goes into 工具与链接). Right-click a card to rename it, hide it or take it away;
 // right-click between the cards (or 自定义概览) for the overview as a whole.
-import { FolderOpen, Plus } from "lucide-react";
+import { FolderOpen, Pin, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, DocKind, Hit, Module, Overview } from "../lib/api";
@@ -82,7 +82,7 @@ function nearest(boxes: { left: number; top: number; width: number; height: numb
   return best;
 }
 const LOADING = "px-2 py-3 text-sm"; // (as Empty)
-type Kinds = ("announcement" | "assignment" | "file")[];
+type Kinds = ("announcement" | "assignment" | "file" | "post")[];
 
 /** Things with a card of their own; the rest (a tool, a link, a course...) go into 工具与链接. */
 const hasCard = (e: Thing) =>
@@ -166,7 +166,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       : e.view === "modules" ? !!overview?.current_modules.length
         : e.view === "grades" ? !!overview?.counts.grades
           : e.view === "syllabus" ? !!overview?.counts.syllabus
-            : true;
+            : e.view === "discussion" ? !!overview?.counts.posts
+              : true;
   const shown = all.filter((e) => !e.hidden && available(e));
   const add = (entry: Shown, index = all.length) => {
     setFresh(thingKey(entry));
@@ -223,8 +224,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   useFlip(grid, placed);
 
   if (!overview || !cards) return <Loading />;
-  const { upcoming, announcements, new_files, counts, grades, tools, current_modules } = overview;
-  const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus;
+  const { upcoming, announcements, posts, new_files, counts, grades, tools, current_modules } = overview;
+  const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus && !counts.posts;
   if (empty && all.every((e) => e.hidden || isOwn(e))) {
     return (
       <div className="mx-auto max-w-md px-6 py-16 text-sm text-fg-soft">
@@ -324,6 +325,21 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
                 </div>
                 {a.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{a.preview}</p>}
+              </Row>
+            )),
+          };
+        case "discussion":
+          return {
+            more: more("discussion"), action: markRead(overview.new.posts, ["post"]),
+            body: posts.length === 0 ? <Empty>{t("没有置顶或教师发的帖子")}</Empty> : posts.map((p) => (
+              <Row key={p.id} onClick={() => things.open(docThing(course.id, p))} thing={docThing(course.id, p)}>
+                <div className="flex items-center gap-2">
+                  {p.new && <NewDot />}
+                  {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+                  <span className={`truncate ${p.new ? "font-medium" : ""}`}>{p.title}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
+                </div>
+                {p.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{p.preview}</p>}
               </Row>
             )),
           };

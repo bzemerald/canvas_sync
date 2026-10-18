@@ -6,7 +6,8 @@
 import type { DocKind, Hit, Kind, ModuleItem } from "./api";
 
 export type ViewName =
-  | "overview" | "modules" | "announcements" | "assignments" | "grades" | "files" | "syllabus" | "pages" | "tools" | "canvas";
+  | "overview" | "modules" | "announcements" | "discussion" | "assignments" | "grades" | "files" | "syllabus" | "pages"
+  | "tools" | "canvas"; // (discussion: its posts on Ed)
 export type DocThingKind = Exclude<DocKind, "syllabus">; // (the syllabus is a view)
 
 export type Thing =
@@ -87,8 +88,8 @@ export function ofCourse(t: Thing, course: { id: number; dir: string }): boolean
 /** What each of a course's places has of its own (as places.py has it): hidden, never taken away.
  * The rest was put there, and can be taken away again. */
 const OWN_VIEWS: Record<"tabs" | "overview" | "links", ViewName[]> = {
-  tabs: ["overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages"],
-  overview: ["assignments", "announcements", "modules", "files", "grades", "tools", "syllabus"],
+  tabs: ["overview", "modules", "announcements", "discussion", "assignments", "grades", "files", "syllabus", "pages"],
+  overview: ["assignments", "announcements", "discussion", "modules", "files", "grades", "tools", "syllabus"],
   links: ["syllabus", "canvas"], // (and the course's tools)
 };
 export function ownIn(place: "tabs" | "overview" | "links", t: Thing, course: number): boolean {

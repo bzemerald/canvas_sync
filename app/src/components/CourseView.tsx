@@ -2,12 +2,12 @@
 // announcements, assignments, pages and the syllabus, modules, grades. The 文件 tab is the file
 // browser, rendered by the main window. A blue dot marks what's new to you; opening it clears it.
 import {
-  Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessagesSquare, Paperclip,
+  Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessageCircle, MessagesSquare, Paperclip, Pin,
   AppWindow, BookOpen, ClipboardList,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, NewCounts, Overview, Total } from "../lib/api";
+import type { Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, NewCounts, Overview, Reply, Total } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
 import { useLoaded } from "../lib/useLoaded";
@@ -28,10 +28,10 @@ import { t } from "../lib/i18n";
 
 /** Where each kind of document is listed. */
 export const KIND_VIEW: Record<DocKind, ViewName> = {
-  announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus",
+  announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus", post: "discussion",
 };
 export const VIEW_KIND: Partial<Record<ViewName, DocKind>> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus",
+  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", discussion: "post",
 };
 
 /** The overview, loaded once per course and version (it also says which tabs to show).
@@ -63,13 +63,13 @@ export function useItemOpener(course: number) {
   return { activate, pending };
 }
 
-export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files : 0);
+export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files + n.posts : 0);
 
 /** The views of a course with something in them (the rest aren't shown as tabs). */
 export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   const c = overview?.counts;
   const has: Record<ViewName, boolean> = {
-    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, assignments: !!c?.assignments,
+    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, discussion: !!c?.posts, assignments: !!c?.assignments,
     grades: !!c?.grades, files: true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
   };
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
@@ -103,7 +103,7 @@ export function CourseTabs({
   const n = overview?.new;
   const has = viewsWithContent(overview);
   const fresh: Partial<Record<ViewName, number>> = {
-    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages,
+    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages, discussion: n?.posts,
   };
   const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
   const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
@@ -549,7 +549,8 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
         {searching && !found.loading && <li><FilterNote n={list?.length ?? 0} onWiden={onWiden} /></li>}
         {list === null && <li><Loading className="px-2 py-3 text-sm" /></li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
-        {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
+        {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} />
+          : kind === "post" ? <PostList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
           <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
       </ul>
@@ -587,6 +588,91 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
     </li>
   );
 }
+
+// -- 讨论 (Ed) ------------------------------------------------------------------------------
+
+type PostFilter = "all" | "pinned" | "staff" | "new" | "watched";
+const POST_FILTERS: [PostFilter, string][] = [
+  ["all", t("全部")], ["pinned", t("置顶@@heading")], ["staff", t("教师")], ["new", t("未读")], ["watched", t("关注")],
+];
+const keeps: Record<PostFilter, (p: ItemSummary) => boolean> = {
+  all: () => true, pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
+  watched: (p) => !!(p.ed?.watched || p.ed?.starred),
+};
+
+/** A course's posts on Ed, pinned ones first then newest, as Ed lists them; narrowed to what's
+ * pinned, staff's, new or watched, and to one category. */
+function PostList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
+  const thing = useThing();
+  const [filter, setFilter] = usePref<PostFilter>("discussion.filter", "all");
+  const [category, setCategory] = useState("");
+  const categories = useMemo(() => [...new Set(list.map((p) => p.ed?.category ?? "").filter(Boolean))].sort(), [list]);
+  const shown = list.filter((p) => keeps[filter](p) && (!category || p.ed?.category === category));
+  return (
+    <>
+      <li className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 flex flex-wrap items-center gap-1 border-b border-line bg-bg px-2 py-2">
+        {POST_FILTERS.map(([f, label]) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`rounded-full px-2 py-0.5 text-xs ${filter === f ? "bg-selected font-medium text-accent" : "text-muted hover:bg-chip"}`}>
+            {label}
+          </button>
+        ))}
+        {categories.length > 1 && (
+          <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t("分类")}
+            className="ml-auto max-w-28 rounded-md border border-line bg-bg px-1 py-0.5 text-xs">
+            <option value="">{t("所有分类")}</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+      </li>
+      {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("没有这样的帖子")}</li>}
+      {shown.map((p) => (
+        <li key={p.id}>
+          <button onClick={() => onSelect(p.id)} {...thing(docThing(course, p))}
+            className={`block w-full rounded-md px-2.5 py-2 text-left ${p.id === current ? "bg-selected" : "hover:bg-chip"}`}>
+            <div className="flex items-center gap-2">
+              {p.new && <NewDot />}
+              {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+              <span className={`truncate text-sm ${p.new ? "font-medium" : ""}`}>{p.title}</span>
+              <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
+            </div>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
+              {p.ed?.staff && <StaffTag />}
+              <span className="truncate">{[p.ed?.category, p.author ?? t("匿名")].filter(Boolean).join(" · ")}</span>
+              {!!p.ed?.replies && <span className="flex shrink-0 items-center gap-0.5"><MessageCircle className="size-3" />{p.ed.replies}</span>}
+              {p.ed?.type === "question" && p.ed.answered && <Check className="size-3 shrink-0 text-ok" aria-label={t("已解答")} />}
+            </p>
+          </button>
+        </li>
+      ))}
+    </>
+  );
+}
+
+const StaffTag = () => <span className="shrink-0 rounded bg-selected px-1 text-[10px] text-accent">{t("教师")}</span>;
+
+/** An answer or comment on Ed, and the comments on it (indented). */
+function ReplyView({ r }: { r: Reply }) {
+  return (
+    <div className={`rounded-lg px-3 py-2.5 ${r.staff ? "bg-selected/50" : ""}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+        <span className="font-medium text-fg-soft">{r.author ?? t("匿名")}</span>
+        {r.staff && <StaffTag />}
+        {r.answer && <span>{t("回答")}</span>}
+        {r.endorsed && <span className="flex items-center gap-0.5 text-ok"><Check className="size-3" />{t("被认可")}</span>}
+        <span>{shortDate(r.date)}</span>
+      </div>
+      {r.html.trim() && <RichText html={r.html} files={{}} className="text-sm" />}
+      {r.replies.length > 0 && (
+        <div className="mt-2 space-y-1 border-l-2 border-line pl-3">
+          {r.replies.map((x) => <ReplyView key={x.id} r={x} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const countReplies = (rs: Reply[]): number => rs.reduce((n, r) => n + 1 + countReplies(r.replies), 0);
 
 function AssignmentList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
   const thing = useThing();
@@ -662,6 +748,15 @@ function ItemView({ course, kind, id, version, onLoaded }: {
         <h1 className="selectable text-xl font-semibold">{kind === "syllabus" ? t("课程大纲") : it.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
           {kind === "announcement" && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span><SourceTag source={it.source} /></>}
+          {kind === "post" && (
+            <>
+              <span className="flex items-center gap-1.5">{it.author ?? t("匿名")}{it.ed?.staff && <StaffTag />}</span>
+              <span>{shortDate(it.date)}</span>
+              {it.ed?.category && <span>{[it.ed.category, it.ed.subcategory].filter(Boolean).join(" / ")}</span>}
+              {it.ed?.private && <span className="flex items-center gap-1"><Lock className="size-3" />{t("私密")}</span>}
+              <SourceTag source={it.source} />
+            </>
+          )}
           {kind === "assignment" && (
             <>
               <Due iso={it.due_at} />
@@ -713,6 +808,16 @@ function ItemView({ course, kind, id, version, onLoaded }: {
         <RichText html={it.html} files={it.files} />
       ) : (
         <p className="text-sm text-muted">{t("没有正文。")}</p>
+      )}
+      {it.ed && (it.replies ? it.replies.length > 0 : it.ed.replies > 0) && (
+        <section className="mt-6 border-t border-line pt-4">
+          <h2 className="mb-2 text-sm font-medium text-muted">{t("{n} 条回复", { n: it.replies ? countReplies(it.replies) : it.ed.replies })}</h2>
+          {it.replies ? (
+            <div className="space-y-2">{it.replies.map((r) => <ReplyView key={r.id} r={r} />)}</div>
+          ) : (
+            <p className="text-sm text-muted">{t("回复还没下载：连上网后再打开就有了。")}</p>
+          )}
+        </section>
       )}
     </article>
   );

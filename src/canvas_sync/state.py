@@ -13,7 +13,7 @@ from .models import Course, Document, RemoteFile
 
 META_DIR = ".canvas"
 # What can be new to you (see `arrivals`).
-NEWS_KINDS = ("announcement", "assignment", "page", "file")
+NEWS_KINDS = ("announcement", "assignment", "page", "file", "post")
 # The first time a course is synced, what Canvas dates within this many days is still news.
 RECENT_DAYS = 7
 

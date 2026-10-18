@@ -91,6 +91,26 @@ class EdClient:
             raise EdError(CHANGED)
         return data
 
+    async def replies(self, thread: int) -> list[dict[str, Any]]:
+        """A thread's answers and comments (and theirs), as the app shows them. (Fetching them
+        doesn't mark the thread read on Ed.)"""
+        data = await self.get(f"threads/{thread}")
+        t = data.get("thread")
+        if not isinstance(t, dict) or not all(isinstance(t.get(k, []), list) for k in ("answers", "comments")):
+            raise EdError(CHANGED)
+        users = {u["id"]: u for u in data.get("users") or [] if isinstance(u, dict) and "id" in u}
+
+        def one(c: dict[str, Any]) -> dict[str, Any]:
+            who = users.get(c.get("user_id") or 0) or {}
+            anonymous = bool(c.get("is_anonymous")) or not who
+            return {"id": c.get("id"), "answer": c.get("type") == "answer", "author": None if anonymous else who.get("name"),
+                    "staff": not anonymous and who.get("course_role") not in (None, "student"),
+                    "endorsed": bool(c.get("is_endorsed")), "date": _utc(c.get("created_at")),
+                    "html": to_html(str(c.get("content") or "")),
+                    "replies": [one(x) for x in c.get("comments") or [] if isinstance(x, dict)]}
+
+        return [one(c) for c in [*(t.get("answers") or []), *(t.get("comments") or [])] if isinstance(c, dict)]
+
     async def threads(self, course: int) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]]]:
         """All of a course's threads, newest first, as listed (their replies aren't), and who
         wrote them (id -> name, course_role)."""
@@ -174,8 +194,12 @@ def _attr(v: str | None) -> str:
     return html.escape(v or "", quote=True)
 
 
+def _text(v: str | None) -> str:
+    return html.escape(v or "", quote=False)
+
+
 def _html(el: ET.Element) -> str:
-    inner = html.escape(el.text or "") + "".join(_html(c) + html.escape(c.tail or "") for c in el)
+    inner = _text(el.text) + "".join(_html(c) + _text(c.tail) for c in el)
     tag = el.tag
     if tag == "heading":
         level = min(max(int(el.get("level") or 1) + 1, 2), 6)  # (Ed's 1 is the post's biggest; the page has a title)
@@ -188,11 +212,11 @@ def _html(el: ET.Element) -> str:
     if tag == "image":
         return f'<img src="{_attr(el.get("src"))}" alt="">'
     if tag == "file":
-        return f'<p><a href="{_attr(el.get("url"))}">{html.escape(el.get("filename") or el.get("url") or "")}</a></p>'
+        return f'<p><a href="{_attr(el.get("url"))}">{_text(el.get("filename") or el.get("url"))}</a></p>'
     if tag in ("pre", "snippet"):
-        return f"<pre><code>{html.escape(''.join(el.itertext()))}</code></pre>"
+        return f"<pre><code>{_text(''.join(el.itertext()))}</code></pre>"
     if tag == "math":
-        return f"<code>${html.escape(''.join(el.itertext()))}$</code>"
+        return f"<code>${_text(''.join(el.itertext()))}$</code>"
     if tag == "spoiler":
         return f"<details><summary>…</summary>{inner}</details>"
     if tag == "break":
@@ -207,7 +231,7 @@ def to_html(content: str) -> str:
     try:
         root = ET.fromstring(content)
     except ET.ParseError:
-        return "".join(f"<p>{html.escape(line)}</p>" for line in content.splitlines() if line.strip())
+        return "".join(f"<p>{_text(line)}</p>" for line in content.splitlines() if line.strip())
     return _html(root)
 
 
@@ -236,12 +260,14 @@ def document(t: dict[str, Any], users: dict[int, dict[str, Any]], course: int, e
     return Document(course, kind, f"ed-{t['id']}", t["title"] or f"#{t.get('number')}", raw["posted_at"] or "", raw)
 
 
-KINDS = ("announcement",)  # what's kept of a course's threads
+PREFETCH = 40  # threads per course whose replies a sync fetches (the rest: when opened)
 
 
 def news(d: Document) -> bool:
-    """Whether it's news when it shows up: announcements, and what staff post or pin."""
-    return d.kind == "announcement" or d.raw["ed"]["staff"] or d.raw["ed"]["pinned"]
+    """Whether it's news when it shows up: announcements, and what staff post or pin (unless
+    it's a Canvas announcement too: that one is the news)."""
+    ed = d.raw["ed"]
+    return not ed.get("on_canvas") and (d.kind == "announcement" or ed["staff"] or ed["pinned"])
 
 
 SAME_WITHIN = timedelta(days=2)  # an announcement posted on Canvas and Ed both, a little apart
@@ -269,21 +295,74 @@ def _canvas_copies(e: Engine, course: int) -> dict[str, list[datetime]]:
 
 
 def _on_canvas(d: Document, canvas: dict[str, list[datetime]]) -> bool:
-    """An Ed announcement that's also one of the course's Canvas announcements (many are posted
-    in both): the same title, posted about the same time."""
+    """A thread on Ed that's also one of the course's Canvas announcements (many are posted in
+    both): the same title, posted about the same time."""
     when = _time(d.raw["posted_at"])
     return when is not None and any(abs(when - t) <= SAME_WITHIN for t in canvas.get(_title(d.title), []))
+
+
+def _stale(d: Document) -> bool:
+    """Whether its replies need fetching: not fetched yet, or there are more (or fewer) now."""
+    thread = d.raw["ed"].get("thread")
+    return thread is None or thread["count"] != d.raw["ed"]["replies"]
+
+
+def _with_replies(raw: dict[str, Any], replies: list[dict[str, Any]]) -> None:
+    raw["ed"]["thread"] = {"replies": replies, "count": raw["ed"]["replies"]}
 
 
 async def _course(e: Engine, client: EdClient, course: int, ed_course: int) -> None:
     threads, users = await client.threads(ed_course)
     canvas = _canvas_copies(e, course)
-    docs = [d for d in (document(t, users, course, ed_course, client.region) for t in threads)
-            if d.kind in KINDS and not (d.kind == "announcement" and _on_canvas(d, canvas))]
-    first = not e.state.has_documents(course, SOURCE)
+    docs = []
+    for d in (document(t, users, course, ed_course, client.region) for t in threads):
+        if _on_canvas(d, canvas):  # the same as a Canvas announcement: it isn't one again
+            if d.kind == "announcement":
+                continue
+            d.raw["ed"]["on_canvas"] = True
+        docs.append(d)
+    # Replies fetched before, while there are as many; none to fetch where there are none; and
+    # the ones most worth having offline (pinned, megathreads, staff's), up to PREFETCH.
+    before = {(r[0], r[1]): json.loads(r[2]) for r in e.state.db.execute(
+        "SELECT kind, id, raw FROM documents WHERE course_id = ? AND source = ?", (course, SOURCE))}
+    for d in docs:
+        if old := before.get((d.kind, d.id), {}).get("ed", {}).get("thread"):
+            d.raw["ed"]["thread"] = old
+        if d.raw["ed"]["replies"] == 0:
+            _with_replies(d.raw, [])
+    worth = sorted((d for d in docs if _stale(d) and (d.kind == "announcement" or d.raw["ed"]["pinned"]
+                                                      or d.raw["ed"]["megathread"] or d.raw["ed"]["staff"])),
+                   key=lambda d: (not d.raw["ed"]["pinned"], not d.raw["ed"]["megathread"], d.raw["posted_at"] or ""))
+    for d in worth[:PREFETCH]:
+        _with_replies(d.raw, await client.replies(int(d.id.removeprefix("ed-"))))
+    # The first time for each kind, only what's recent is news (as for a course).
+    first = {k: not any(kind == k for kind, _ in before) for k in ("announcement", "post")}
     e.state.save_documents(course, docs, SOURCE)
-    e.state.record_arrivals(course, [(d.kind, d.id, d.raw["posted_at"]) for d in docs if news(d)], first=first)
+    for kind in first:
+        e.state.record_arrivals(course, [(d.kind, d.id, d.raw["posted_at"]) for d in docs if d.kind == kind and news(d)],
+                                first=first[kind])
     e.state.commit()
+
+
+async def fetch_replies(e: Engine, token: str, region: str, course: int, kind: str, doc_id: str) -> bool:
+    """A document from Ed with its replies as they are now, if they weren't (opening it). Whether
+    it changed; when Ed can't be asked, it stays as it was."""
+    row = e.state.db.execute("SELECT title, updated_at, raw FROM documents WHERE course_id = ? AND kind = ? AND id = ? AND source = ?",
+                             (course, kind, doc_id, SOURCE)).fetchone()
+    if row is None:
+        return False
+    d = Document(course, kind, doc_id, row[0], row[1], json.loads(row[2]))
+    if not _stale(d):
+        return False
+    try:
+        async with EdClient(token, region) as client:
+            _with_replies(d.raw, await client.replies(int(doc_id.removeprefix("ed-"))))
+    except EdError:
+        return False
+    e.state.db.execute("UPDATE documents SET raw = ? WHERE course_id = ? AND kind = ? AND id = ?",
+                       (json.dumps(d.raw), course, kind, doc_id))
+    e.state.commit()
+    return True
 
 
 async def refresh(e: Engine, client: EdClient) -> list[dict[str, Any]]:

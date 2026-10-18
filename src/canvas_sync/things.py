@@ -19,9 +19,11 @@ from urllib.parse import urlsplit
 
 # A course's views: what its built-in tabs and cards show. `tools` is its tools and links (工具与
 # 链接); `canvas` the course on Canvas.
-VIEWS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages", "tools", "canvas")
-DOC_KINDS = ("announcement", "assignment", "page")  # (the syllabus is a view)
-SEARCH_KINDS = ("file", "page", "assignment", "announcement", "syllabus")
+# `discussion` is its posts on Ed (讨论).
+VIEWS = ("overview", "modules", "announcements", "discussion", "assignments", "grades", "files", "syllabus", "pages",
+         "tools", "canvas")
+DOC_KINDS = ("announcement", "assignment", "page", "post")  # (the syllabus is a view; a post is on Ed)
+SEARCH_KINDS = ("file", "page", "assignment", "announcement", "syllabus", "post")
 NOTE_ID = re.compile(r"[a-z0-9-]{1,40}")
 
 # By type, the fields that say which one a thing is.

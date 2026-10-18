@@ -87,10 +87,11 @@ without the Canvas website or Finder.
   - `i18n-ignore` on a line exempts it from the check.
 - **Comments are short and plain:** what something is, or why. Match the file's density.
 - **Things and places** (the model everything is built on):
-  - A *thing* is `{type, ...}`: course, folder, file, doc (announcement / assignment / page),
-    module, tool, link, search (a smart folder is a search pinned), note, view (one of a
-    course's views: overview, modules, announcements, assignments, grades, files, syllabus,
-    pages, tools = 工具与链接, canvas). Same fields in config.toml, the API and the app.
+  - A *thing* is `{type, ...}`: course, folder, file, doc (announcement / assignment / page; post,
+    on Ed; Ed's ids are `ed-<id>`), module, tool, link, search (a smart folder is a search pinned),
+    note, view (one of a course's views: overview, modules, announcements, discussion = 讨论 (its
+    Ed posts), assignments, grades, files, syllabus, pages, tools = 工具与链接, canvas). Same
+    fields in config.toml, the API and the app.
   - A *place* is a list of entries: a thing, `title` (your name for it there; "" = its own),
     `hidden`. Places: `pinned` (anything), and per course `tabs`, `overview`, `links`, which
     hold only the course's things (`Place.holds`, `ofCourse` in the app): its views, documents,

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { LangPref } from "./i18n";
 import type { Placed, Shown } from "./things";
 
-export type Kind = "file" | "page" | "assignment" | "announcement" | "syllabus";
+export type Kind = "file" | "page" | "assignment" | "announcement" | "syllabus" | "post"; // (post: on Ed)
 
 export interface Hit {
   kind: Kind;
@@ -18,7 +18,7 @@ export interface Hit {
   doc_id: string | null; // pages, assignments, announcements, syllabus: which one
 }
 
-export type DocKind = "announcement" | "assignment" | "page" | "syllabus";
+export type DocKind = "announcement" | "assignment" | "page" | "syllabus" | "post"; // (post: on Ed)
 
 /** Where you are with an assignment. null: Canvas can't tell (handed in on Gradescope, on paper…). */
 export type SubmissionStatus = "graded" | "submitted" | "missing" | "excused" | "unsubmitted" | null;
@@ -49,6 +49,37 @@ export interface ItemSummary {
   score?: number | null;
   grade?: string | null;
   tool?: { assignment_id: number; name: string | null }; // handed in on an external tool (Gradescope…)
+  ed?: EdInfo; // from Ed: where it is there, who wrote it, how it's going
+}
+
+/** An announcement or post on Ed, as the app knows it (see ed.py: document). */
+export interface EdInfo {
+  number: number | null; // #12 in its course
+  type: string; // post, question, announcement
+  category: string;
+  subcategory: string;
+  pinned: boolean;
+  megathread: boolean;
+  private: boolean;
+  answered: boolean;
+  staff_answered: boolean;
+  replies: number;
+  watched: boolean;
+  starred: boolean;
+  staff: boolean; // written by the course's staff
+  anonymous: boolean;
+}
+
+/** An answer or comment on Ed, and the comments on it. */
+export interface Reply {
+  id: number;
+  answer: boolean;
+  author: string | null; // null: anonymous
+  staff: boolean;
+  endorsed: boolean;
+  date: string | null;
+  html: string;
+  replies: Reply[];
 }
 
 /** An external tool in the course's menu (Gradescope, Ed, Zoom…). */
@@ -83,11 +114,13 @@ export interface NewCounts {
   assignments: number;
   pages: number;
   files: number;
+  posts: number;
 }
 
 /** One in full: its HTML, and local copies of the Canvas files it refers to. */
 export interface Item extends ItemSummary {
   html: string;
+  replies: Reply[] | null; // on Ed: its answers and comments (null: not fetched yet)
   files: Record<string, { path: string; name: string }>;
   attachments: { id: number; name: string; path: string | null }[];
 }
@@ -123,13 +156,15 @@ export interface Module {
 export interface Overview {
   upcoming: ItemSummary[];
   announcements: ItemSummary[];
+  posts: ItemSummary[]; // on Ed: what's pinned, then what staff posted
   new_files: { file_id: number; path: string; name: string; date: string | null; new: boolean; updated: boolean }[];
   grades: { total: Total | null; recent: ItemSummary[] };
   tools: Tool[];
   current_modules: Module[]; // this week's (newest upload, next deadline)
   new: NewCounts;
   counts: {
-    modules: number; announcements: number; assignments: number; pages: number; files: number; syllabus: boolean; grades: boolean;
+    modules: number; announcements: number; assignments: number; pages: number; posts: number; files: number; syllabus: boolean;
+    grades: boolean;
   };
 }
 
@@ -331,7 +366,7 @@ export const item = (course: number, kind: DocKind, id: string) =>
   api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);
 export const grades = (course: number) => api<Grades>(`/courses/${course}/grades`);
 /** Mark everything new in a course as seen (or only some kinds of things). */
-export const markSeen = (course: number, kinds?: ("announcement" | "assignment" | "page" | "file")[]) =>
+export const markSeen = (course: number, kinds?: ("announcement" | "assignment" | "page" | "file" | "post")[]) =>
   api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ kinds: kinds ?? null }) });
 
 /** An image in a page (needs the Canvas login, or is on another site), as an object URL. */

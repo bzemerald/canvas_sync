@@ -55,7 +55,7 @@ def test_overview(root, course):
     assert [a["title"] for a in o["announcements"]] == ["Midterm room", "Welcome"]
     assert o["announcements"][0]["author"] == "Prof"
     assert [f["name"] for f in o["new_files"]] == ["hw6.pdf", "lec1.pdf"]  # newest upload first
-    assert o["counts"] == {"modules": 1, "announcements": 2, "assignments": 4, "pages": 2, "files": 2, "syllabus": True,
+    assert o["counts"] == {"modules": 1, "announcements": 2, "assignments": 4, "pages": 2, "posts": 0, "files": 2, "syllabus": True,
                            "grades": False}
 
 
@@ -202,7 +202,7 @@ def test_whats_new(api, course, root, monkeypatch):
     wait_for_sync(api)
 
     o = api.get("/api/courses/1/overview").json()
-    assert o["new"] == {"announcements": 1, "assignments": 1, "pages": 1, "files": 2}
+    assert o["new"] == {"announcements": 1, "assignments": 1, "pages": 1, "files": 2, "posts": 0}
     assert [a["title"] for a in o["announcements"] if a["new"]] == ["Exam moved"]  # not the one read on Canvas
     assert {f["name"]: f["updated"] for f in o["new_files"] if f["new"]} == {"lec2.pdf": False, "lec1.pdf": True}
     assert next(c for c in api.get("/api/courses").json() if c["id"] == 1)["new"] == 5
@@ -214,10 +214,10 @@ def test_whats_new(api, course, root, monkeypatch):
     api.post("/api/open", json={"path": f"{COURSE}/Files/lec2.pdf"})
     api.post("/api/open", json={"path": f"{COURSE}/Modules/01 Week 1/lec1.pdf", "reveal": True})  # only showing it
     o = api.get("/api/courses/1/overview").json()
-    assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1}
+    assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "posts": 0}
     assert api.post("/api/courses/1/seen", json={"kinds": ["page"]}).json()["pages"] == 0
     assert api.post("/api/courses/1/seen", json={"kinds": ["movie"]}).status_code == 400
-    assert api.post("/api/courses/1/seen").json() == {"announcements": 0, "assignments": 0, "pages": 0, "files": 0}
+    assert api.post("/api/courses/1/seen").json() == {"announcements": 0, "assignments": 0, "pages": 0, "files": 0, "posts": 0}
 
     # Handing it in on Canvas also makes it old news.
     course.assignments.append({"id": 22, "name": "HW 8", "submission_types": ["online_upload"]})

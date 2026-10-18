@@ -59,7 +59,7 @@ def test_a_place_follows_the_default_until_arranged():
     # The default is what you made it: hidden, renamed, in another order.
     default = [Entry(view(None, "files"), "Files"), Entry(view(None, "pages"), hidden=True)]
     tabs = Place("tabs", 1, [], default)
-    assert tabs.arranged([]) == [*TABS[:5], Entry(view(1, "files"), "Files"), TABS[6], Entry(view(1, "pages"), hidden=True)]
+    assert tabs.arranged([]) == [*TABS[:6], Entry(view(1, "files"), "Files"), TABS[7], Entry(view(1, "pages"), hidden=True)]
 
     overview = Place("overview", 1, [], usual("overview"))
     assert [(e.thing.view, e.hidden) for e in overview.arranged([])][-2:] == [("tools", False), ("syllabus", True)]
@@ -169,17 +169,17 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
         return [(e["type"], e.get("view") or e.get("path") or e.get("id") or e.get("url") or e.get("tool"), e["title"])
                 for e in r[place] if not e["hidden"]]
     assert shown("tabs") == [("view", "overview", ""), ("folder", f"{COURSE}/Modules", "files"), ("view", "files", ""),
-                             ("view", "assignments", ""), ("view", "announcements", ""), ("view", "syllabus", ""),
-                             ("view", "pages", "")]
+                             ("view", "assignments", ""), ("view", "announcements", ""), ("view", "discussion", ""),
+                             ("view", "syllabus", ""), ("view", "pages", "")]  # (讨论, new since: after 公告, as by default)
     assert shown("overview") == [("view", "files", ""), ("note", "n1", ""), ("doc", "course-policies", "Course Policies"),
-                                 ("search", None, ""), ("view", "tools", "")]
+                                 ("search", None, ""), ("view", "tools", ""), ("view", "discussion", "")]
     assert [e["courses"] for e in r["overview"] if e["type"] == "search"] == [[1]]  # (it searched this course)
     assert shown("links") == [("view", "canvas", ""), ("link", "https://math.test", "Course website")]
     assert r["own"] == {"tabs": True, "overview": True, "links": True}
     # The syllabus card, added to a course following the default: shown, the rest as the default has them.
     assert [(e["view"], e["hidden"]) for e in other["overview"]] == [
-        ("files", False), ("announcements", False), ("tools", False), ("assignments", True), ("modules", True),
-        ("grades", True), ("syllabus", False)]
+        ("files", False), ("announcements", False), ("discussion", False), ("tools", False), ("assignments", True),
+        ("modules", True), ("grades", True), ("syllabus", False)]
     # 置顶: a pinned page's old title was what it was called then; links' and smart folders' are names.
     assert [(p["type"], p["title"]) for p in pinned] == [
         ("search", "Midterm"), ("folder", ""), ("doc", ""), ("link", "Course website"), ("search", "Old")]

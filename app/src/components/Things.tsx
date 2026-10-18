@@ -3,7 +3,7 @@
 // overview, 工具与链接), or right-click it. The main window provides the doing (ThingsContext).
 import {
   AppWindow, Award, BookOpen, ClipboardList, ExternalLink, FileText, Folder, FolderOpen, GraduationCap, LayoutDashboard,
-  Link as LinkIcon, ListChecks, Megaphone, NotebookPen, ScrollText, Sparkles,
+  Link as LinkIcon, ListChecks, Megaphone, MessagesSquare, NotebookPen, ScrollText, Sparkles,
 } from "lucide-react";
 import { createContext, createElement, useContext } from "react";
 import type { Course } from "../lib/api";
@@ -79,17 +79,17 @@ export function sections(...parts: MenuItem[][]): MenuItem[] {
 
 /** A course's views, as tabs. */
 export const VIEW_LABEL: Record<ViewName, string> = {
-  overview: t("概览"), modules: t("模块"), announcements: t("公告"), assignments: t("作业"), grades: t("成绩"),
+  overview: t("概览"), modules: t("模块"), announcements: t("公告"), discussion: t("讨论"), assignments: t("作业"), grades: t("成绩"),
   files: t("文件"), syllabus: t("大纲"), pages: t("页面"), tools: t("工具与链接"), canvas: t("在 Canvas 中打开"),
 };
 /** A course's views, as cards on its overview. */
 export const CARD_LABEL: Partial<Record<ViewName, string>> = {
-  assignments: t("近期截止"), announcements: t("最新公告"), modules: t("当前模块"), files: t("最近新增的文件"),
-  syllabus: t("课程大纲"),
+  assignments: t("近期截止"), announcements: t("最新公告"), discussion: t("讨论区"), modules: t("当前模块"),
+  files: t("最近新增的文件"), syllabus: t("课程大纲"),
 };
 /** As a row (in the sidebar, in 工具与链接). */
 const ROW_LABEL: Partial<Record<ViewName, string>> = { syllabus: t("课程大纲") };
-const DOC_LABEL = { announcement: t("公告"), assignment: t("作业"), page: t("页面@@card") };
+const DOC_LABEL = { announcement: t("公告"), assignment: t("作业"), page: t("页面@@card"), post: t("帖子") };
 
 export type Where = "tab" | "card" | "row";
 
@@ -122,10 +122,10 @@ export function ownName(e: Shown, courses: Course[], where: Where = "row"): stri
 }
 
 const VIEW_ICON: Record<ViewName, typeof Megaphone> = {
-  overview: LayoutDashboard, modules: ListChecks, announcements: Megaphone, assignments: ClipboardList, grades: Award,
+  overview: LayoutDashboard, modules: ListChecks, announcements: Megaphone, discussion: MessagesSquare, assignments: ClipboardList, grades: Award,
   files: FolderOpen, syllabus: ScrollText, pages: BookOpen, tools: AppWindow, canvas: ExternalLink,
 };
-const DOC_ICON = { announcement: Megaphone, assignment: ClipboardList, page: BookOpen };
+const DOC_ICON = { announcement: Megaphone, assignment: ClipboardList, page: BookOpen, post: MessagesSquare };
 
 export function ThingIcon({ thing, courses, className = "size-4" }: { thing: Thing; courses?: Course[]; className?: string }) {
   if (thing.type === "file") return <FileIcon name={thing.path} />;

@@ -87,6 +87,7 @@ const things: CatalogEntry[] = [
 // As the app has it (Found.tsx): names as shown, other names, kind words.
 const VIEW: Record<ViewName, string[]> = {
   overview: ["Overview", "概览"], modules: ["Modules", "模块"], announcements: ["Announcements", "公告"], // i18n-ignore
+  discussion: ["Discussion", "讨论"], // i18n-ignore
   assignments: ["Assignments", "作业"], grades: ["Grades", "成绩"], files: ["Files", "文件"], syllabus: ["Syllabus", "大纲"], // i18n-ignore
   pages: ["Pages", "页面"], tools: ["Tools and links", "工具与链接"], canvas: ["Open in Canvas"], // i18n-ignore
 };

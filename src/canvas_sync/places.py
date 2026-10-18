@@ -26,8 +26,8 @@ from .things import PLACES, Entry, Thing, at_home, course_thing, view
 if TYPE_CHECKING:
     from .engine import Engine
 
-TAB_VIEWS = ("overview", "modules", "announcements", "assignments", "grades", "files", "syllabus", "pages")
-CARD_VIEWS = ("assignments", "announcements", "modules", "files", "grades", "tools", "syllabus")
+TAB_VIEWS = ("overview", "modules", "announcements", "discussion", "assignments", "grades", "files", "syllabus", "pages")
+CARD_VIEWS = ("assignments", "announcements", "discussion", "modules", "files", "grades", "tools", "syllabus")
 LINK_VIEWS = ("syllabus", "canvas")
 USUALLY_HIDDEN = {"overview": ("syllabus",)}
 

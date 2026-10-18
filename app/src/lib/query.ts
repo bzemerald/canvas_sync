@@ -15,7 +15,7 @@
 // Nothing here says anything (no i18n): the words are what people type; the app's own names for
 // courses and kinds come in `Vocabulary`.
 
-export type KindId = "course" | "announcement" | "assignment" | "page" | "module" | "tool" | "link" | "note" | "search" | "file" | "folder";
+export type KindId = "course" | "announcement" | "assignment" | "page" | "post" | "module" | "tool" | "link" | "note" | "search" | "file" | "folder";
 export type Status = "todo" | "missing" | "overdue" | "submitted" | "graded";
 export type Span = readonly [number, number];
 

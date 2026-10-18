@@ -519,7 +519,7 @@ export function MainWindow() {
         ];
       case "doc": {
         if (fromEd(x)) return [openIt, { label: t("在 Ed 中打开"), onSelect: () => void api.item(x.course, x.kind, x.id).then((it) => it.url && api.openUrl(it.url)) }];
-        const where = { page: "pages", assignment: "assignments", announcement: "discussion_topics" }[x.kind];
+        const where = ({ page: "pages", assignment: "assignments", announcement: "discussion_topics" } as Record<string, string>)[x.kind];
         return [openIt, { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${x.course}/${where}/${encodeURIComponent(x.id)}`) }];
       }
       default:

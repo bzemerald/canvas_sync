@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardList, FileText, Megaphone, ScrollText, type LucideIcon } from "lucide-react";
+import { BookOpen, ClipboardList, FileText, Megaphone, MessagesSquare, ScrollText, type LucideIcon } from "lucide-react";
 import type { Hit, Kind } from "../lib/api";
 import { locale, t } from "../lib/i18n";
 
@@ -8,6 +8,7 @@ export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
   assignment: { icon: ClipboardList, label: t("作业") },
   announcement: { icon: Megaphone, label: t("公告") },
   syllabus: { icon: ScrollText, label: t("大纲") },
+  post: { icon: MessagesSquare, label: t("Ed 帖子") },
 };
 
 export { fileManager, isMac } from "../lib/keys";

@@ -158,6 +158,7 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
     # Posted on Canvas and Ed both: it's one announcement (Canvas's).
     linked.thread(501, 9003, "welcome!", type="announcement", user=1, created="2026-10-10T12:00:00+10:00")
     linked.thread(501, 9004, "Welcome", type="announcement", user=1, created="2026-09-01T09:00:00+10:00")  # (another)
+    linked.thread(501, 9005, "Welcome", user=1, created="2026-10-10T12:00:00+10:00", is_pinned=True)  # (pinned, as a post)
     assert ed_sync(root) is None
 
     with Engine(root) as e:
@@ -170,6 +171,9 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
         it = content.item(e.state, e.root, 1, "announcement", "ed-9001")
         assert it["html"] == ('<p>HW 3 is due <strong>Friday</strong>; see '
                               '<a href="https://x.edu/hw3">the spec</a>.</p>')
+        # The pinned post is in the discussion, but not news: the Canvas announcement is.
+        assert [p["id"] for p in content.items(e.state, e.root, 1, "post")] == ["ed-9005", "ed-9002"]
+        assert "ed-9005" not in content.news(e.state, e.root, 1)["post"]
         e.reindex()
         assert [h.title for h in e.search("deadline moved")] == ["HW 3 deadline moved"]
 
@@ -216,3 +220,45 @@ def test_to_html():
     assert ed.to_html(xml) == ('<h2>Exam</h2><ol><li><p>Bring <code>id</code> &amp; a pen</p></li></ol>'
                                '<pre><code>if a &lt; b: pass</code></pre><img src="https://static.edstem.org/a.png" alt="">')
     assert ed.to_html("not <xml") == "<p>not &lt;xml</p>"
+
+
+def test_ed_posts_are_the_courses_discussion(root, tmp_path, linked, web):
+    linked.thread(501, 9001, "HW 3 megathread", user=1, created=ago(5), is_pinned=True, is_megathread=True, category="Homework")
+    linked.thread(501, 9002, "Office hours moved", user=1, created=ago(3))
+    linked.thread(501, 9003, "Is lecture recorded?", created=ago(2), category="Lectures")
+    linked.reply(501, 9001, "Q2 has a typo: it's x^2")
+    linked.reply(501, 9003, "Yes, on bCourses")
+    ed_sync(root)
+    replies_fetched = [r for r in linked.requests if "/api/threads/" in r]
+    assert replies_fetched == ["edstem.org/api/threads/9001"]  # (the pinned megathread's; the question's: when opened)
+
+    with Engine(root) as e:
+        posts = content.items(e.state, e.root, 1, "post")
+        assert [p["title"] for p in posts] == ["HW 3 megathread", "Is lecture recorded?", "Office hours moved"]  # pinned first
+        assert posts[0]["ed"]["category"] == "Homework" and posts[0]["ed"]["staff"] and posts[0]["ed"]["replies"] == 1
+        o = content.overview(e.state, e.root, 1)
+        assert [p["title"] for p in o["posts"]] == ["HW 3 megathread", "Office hours moved"]  # pinned, then staff's
+        assert o["counts"]["posts"] == 3
+        # What's new: staff's and what's pinned, not every question.
+        assert set(content.news(e.state, e.root, 1)["post"]) == {"ed-9001", "ed-9002"}
+        it = content.item(e.state, e.root, 1, "post", "ed-9001")
+        assert [(r["author"], r["staff"], r["html"]) for r in it["replies"]] == [("Prof Ed", True, "<p>Q2 has a typo: it's x^2</p>")]
+
+    web["edstem:au"] = TOKEN
+    app = server.create_app(Account(BASE, root, "Test", ed_region="au"), "s", prefs_path=tmp_path / "prefs.toml")
+    with TestClient(app, headers={"Authorization": "Bearer s"}) as api:
+        it = api.get("/api/courses/1/items/post/ed-9003").json()  # opened: its replies are fetched
+        assert [r["html"] for r in it["replies"]] == ["<p>Yes, on bCourses</p>"]
+        n = len(linked.requests)
+        api.get("/api/courses/1/items/post/ed-9003")
+        assert len(linked.requests) == n  # (none new since: not again)
+
+    # Replies kept through syncs, fetched again only when there are more.
+    linked.requests.clear()
+    ed_sync(root)
+    assert [r for r in linked.requests if "/api/threads/" in r] == []
+    linked.reply(501, 9001, "Due date extended to Monday")
+    ed_sync(root)
+    assert [r for r in linked.requests if "/api/threads/" in r] == ["edstem.org/api/threads/9001"]
+    with Engine(root) as e:
+        assert len(content.item(e.state, e.root, 1, "post", "ed-9001")["replies"]) == 2

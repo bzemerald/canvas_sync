@@ -23,7 +23,7 @@ from .search import DOC_BODY, doc_url, relative_url
 from .state import NEWS_KINDS, State
 from .text import html_to_text
 
-KINDS = ("announcement", "assignment", "page", "syllabus")
+KINDS = ("announcement", "assignment", "page", "syllabus", "post")
 
 # Ways of handing in that Canvas itself sees. Elsewhere (Gradescope, on paper) it can't
 # tell whether you did, so it isn't "not submitted".
@@ -111,7 +111,9 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
     out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": doc_url(raw), "new": new}
     if raw.get("source"):
         out["source"] = raw["source"]  # (from elsewhere: Ed)
-    if kind == "announcement":
+    if "ed" in raw:  # where it is on Ed, who wrote it, how it's going (see ed.document)
+        out["ed"] = {k: v for k, v in raw["ed"].items() if k != "thread"}
+    if kind in ("announcement", "post"):
         text = html_to_text(raw.get("message"))
         out |= {
             "date": raw.get("posted_at"),
@@ -141,8 +143,8 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
 
 
 def _still_new(kind: str, raw: dict[str, Any]) -> bool:
-    if kind == "announcement":
-        return raw.get("read_state") != "read"  # read on Canvas
+    if kind in ("announcement", "post"):  # read on Canvas (or Ed); or a copy of a Canvas announcement
+        return raw.get("read_state") != "read" and not (raw.get("ed") or {}).get("on_canvas")
     if kind == "assignment":
         return submission(raw)["status"] not in HANDED_IN
     return True
@@ -167,7 +169,7 @@ def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]
 
 def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:
     return {"announcements": len(n["announcement"]), "assignments": len(n["assignment"]),
-            "pages": len(n["page"]), "files": len(n["file"])}
+            "pages": len(n["page"]), "files": len(n["file"]), "posts": len(n["post"])}
 
 
 def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -185,6 +187,8 @@ def items(state: State, root: Path, course_id: int, kind: str, now: datetime | N
         out.sort(key=order)
     elif kind == "page":
         out.sort(key=lambda p: (not p["front_page"], p["title"].casefold()))
+    elif kind == "post":
+        out.sort(key=lambda p: (not p["ed"]["pinned"], _desc(p.get("date"))))
     else:
         out.sort(key=lambda a: a.get("date") or "", reverse=True)
     return out
@@ -208,7 +212,9 @@ def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> di
         attached = [a for a in raw.get("attachments") or [] if a.get("id")]
         refs = list(dict.fromkeys([*file_refs(html, course_id), *(a["id"] for a in attached)]))
         local = _local_files(state, root, refs)
+        thread = (raw.get("ed") or {}).get("thread")
         return _summary(course_id, k, i, title, raw, i in news(state, root, course_id).get(kind, {})) | {
+            "replies": thread["replies"] if thread else None,  # (on Ed: its answers and comments, once fetched)
             "html": html,
             "files": local,  # Canvas file id -> local copy
             "attachments": [
@@ -237,6 +243,10 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement"),
         key=lambda a: a.get("date") or "", reverse=True,
     )
+    # Of the posts on Ed: what's pinned, then what staff posted, newest first.
+    posts = [_summary(course_id, k, i, t, raw, i in new["post"]) for k, i, t, raw in docs if k == "post"]
+    staff_posts = sorted((p for p in posts if p["ed"]["pinned"] or p["ed"]["staff"]),
+                         key=lambda p: (not p["ed"]["pinned"], _desc(p.get("date"))))
     total = _total(state, course_id)
     graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
 
@@ -257,6 +267,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
     return {
         "upcoming": upcoming[:8],
         "announcements": announcements[:5],
+        "posts": staff_posts[:5],
         "new_files": shown,
         "grades": {"total": total, "recent": graded[:3]},
         "tools": tools(state, course_id),
@@ -266,11 +277,18 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "announcements": count["announcement"],
             "assignments": count["assignment"],
             "pages": count["page"],
+            "posts": count["post"],
             "files": len(files),
             "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
             "grades": total is not None or bool(graded),
         },
     }
+
+
+def _desc(iso: str | None) -> float:
+    """Newest first, as a sort key."""
+    t = _when(iso)
+    return -t.timestamp() if t else 0.0
 
 
 def _total(state: State, course_id: int) -> dict[str, Any] | None:
