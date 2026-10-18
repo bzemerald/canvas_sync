@@ -101,6 +101,9 @@ def test_connect_and_link(root, tmp_path, fake, fake_ed, web):
         info = api.put("/api/ed/link", json={"ed": 502, "course": 1}).json()
         assert {c["id"]: c["course"] for c in info["courses"]} == {501: None, 502: 1}
         assert api.put("/api/ed/link", json={"ed": 502, "course": 99}).status_code == 404
+        # Another Ed course set to none leaves its match's own link alone.
+        api.put("/api/ed/link", json={"ed": 501, "course": None})
+        assert links(root) == {1: 502}
 
         api.post("/api/ed/disconnect")
         assert api.get("/api/ed").json()["connected"] is False

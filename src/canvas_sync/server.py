@@ -454,8 +454,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     raise HTTPException(404, "no such course")
                 changes[req.course] = req.ed
             else:
-                for cid, eid in ed.match([x for x in e.state.ed_courses() if x["id"] == req.ed], e.state.courses()).items():
-                    changes.setdefault(cid, 0)  # (its match, which isn't linked yet: not later either)
+                for cid in ed.match([x for x in e.state.ed_courses() if x["id"] == req.ed], e.state.courses()):
+                    if cid not in e.settings.ed_courses:  # (its match, which isn't linked yet: not later either)
+                        changes[cid] = 0
             set_ed_courses(e.root / META_DIR / "config.toml", changes)
         return ed_info()
 
