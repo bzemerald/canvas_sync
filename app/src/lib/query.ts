@@ -9,7 +9,8 @@
 //              "graded" / "已评分": where you are with an assignment
 //   a number   "hw3", "hw 3", "homework #3", "problem set 3", "2nd midterm", "第三次作业", "期中2":
 //              one of a series, whatever its course calls the series (see `sameSeries`)
-// Or said outright: in:cs70, kind:file, due:friday, date:10/20, is:missing; "in quotes": only as
+//   a source   "ed": only what's from there (Ed's announcements and posts, and its 讨论)
+// Or said outright: in:cs70, kind:file, due:friday, date:10/20, is:missing, from:ed; "in quotes": only as
 // text. Each part keeps where it was typed, to be shown as a chip (and taken back, or taken as text).
 //
 // Nothing here says anything (no i18n): the words are what people type; the app's own names for
@@ -17,6 +18,7 @@
 
 export type KindId = "course" | "announcement" | "assignment" | "page" | "post" | "module" | "tool" | "link" | "note" | "search" | "file" | "folder";
 export type Status = "todo" | "missing" | "overdue" | "submitted" | "graded";
+export type Source = "ed"; // where something came from, besides Canvas
 export type Span = readonly [number, number];
 
 /** When, as it was said: a day (its start), a week (0: this one, 1: next...), a month (0: this
@@ -44,6 +46,7 @@ export type Part = Said & (
   | { role: "kind"; kind: KindId }
   | { role: "when"; when: When }
   | { role: "status"; status: Status }
+  | { role: "source"; source: Source }
 );
 export type PartOf<R extends Part["role"]> = Extract<Part, { role: R }>;
 
@@ -164,7 +167,9 @@ interface Tok {
   nth?: boolean; // "第 3": the third
 }
 
-const SYNTAX = /^(in|kind|type|due|date|on|is)[:：]/i;
+const SYNTAX = /^(in|kind|type|due|date|on|is|from)[:：]/i;
+// The words a source is said by.
+const SOURCES: Record<string, Source> = { ed: "ed", edstem: "ed" };
 const NUMERAL = /^[一二两三四五六七八九十]+$/; // i18n-ignore
 
 /** 一 to 九十九, as a number. */
@@ -512,6 +517,7 @@ export function read(query: string, v: Vocabulary = NO_VOCABULARY, now = Date.no
         push({ role: "course", courses: coursesOf(t.low) ?? loose, spans, text }, 1);
       } else if (t.syntax === "kind" && kindOf(t.low)) push({ role: "kind", kind: kindOf(t.low)!, spans, text }, 1);
       else if (t.syntax === "is" && status) push({ role: "status", status, spans, text }, 1);
+      else if (t.syntax === "from" && SOURCES[t.low]) push({ role: "source", source: SOURCES[t.low], spans, text }, 1);
       else if (t.syntax === "due" || t.syntax === "date") {
         const got = time(tokens(t.low, v), 0, now, true);
         const due = t.syntax === "due";
@@ -591,8 +597,9 @@ export function read(query: string, v: Vocabulary = NO_VOCABULARY, now = Date.no
       continue;
     }
 
-    // A kind of thing; or just a word.
+    // Where it's from; a kind of thing; or just a word.
     if (STOP_ZH.has(t.low)) i++;
+    else if (SOURCES[t.low]) push({ role: "source", source: SOURCES[t.low], ...said(1) }, 1);
     else if (kindOf(t.low)) push({ role: "kind", kind: kindOf(t.low)!, ...said(1) }, 1);
     else push({ role: "word", quoted: false, ...said(1) }, 1);
   }
@@ -644,18 +651,20 @@ export function indexQuery(r: Reading, abbr: Record<string, string[]>): IndexQue
   if (!words.length) return null;
   const courses = [...new Set(r.parts.flatMap((p) => (p.role === "course" ? p.courses : [])))];
   const when = r.parts.find((p): p is PartOf<"when"> => p.role === "when")?.when;
+  const source = r.parts.find((p): p is PartOf<"source"> => p.role === "source")?.source;
   const iso = (t: number) => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
   return {
     q: words.join(" "),
     courses,
     ...(kinds.length ? { kinds } : {}),
+    ...(source ? { source } : {}),
     ...(when && Number.isFinite(when.from) ? { since: iso(when.from) } : {}),
     ...(when && Number.isFinite(when.to) ? { until: iso(when.to) } : {}),
   };
 }
 const INDEXED: KindId[] = ["announcement", "assignment", "page", "post", "file"]; // (what the index has)
 type IndexedKind = "announcement" | "assignment" | "page" | "post" | "file";
-export interface IndexQuery { q: string; courses: number[]; kinds?: IndexedKind[]; since?: string; until?: string }
+export interface IndexQuery { q: string; courses: number[]; kinds?: IndexedKind[]; source?: Source; since?: string; until?: string }
 
 /** The reading with misspelled words taken for those meant (`fixes`, from the index: "midtrem":
  * midterm). Not words in quotes: those are as they are. */

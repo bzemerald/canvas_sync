@@ -199,9 +199,9 @@ class Meaning:
 
     def search(self, query: str, embed: Embed, codes: dict[int, str], course_ids: list[int] | None = None,
                kinds: list[str] | None = None, since: str | None = None, until: str | None = None,
-               limit: int = 20) -> list[Hit]:
+               limit: int = 20, source: str | None = None) -> list[Hit]:
         """What has passages nearest to `query` (at least NEAR), nearest first; the passage is the
-        snippet. Narrowed as Index.search is (courses, kinds, dates)."""
+        snippet. Narrowed as Index.search is (courses, kinds, dates, source)."""
         from .search import Hit
 
         rowids, items, vecs = self._vectors()
@@ -214,6 +214,9 @@ class Meaning:
         if kinds:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
             args += kinds
+        if source:
+            where.append("source = ?")
+            args.append(source)
         if since:
             where.append("date >= ?")
             args.append(since)
@@ -239,5 +242,5 @@ class Meaning:
             hits.append(Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
                             title=r["title"], path=r["path"], url=r["url"], date=r["date"],
                             snippet=[(passage[:240] + ("…" if len(passage) > 240 else ""), False)], match="meaning",
-                            doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None))
+                            doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None, source=r["source"]))
         return hits

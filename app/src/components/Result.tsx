@@ -1,6 +1,7 @@
 import { BookOpen, ClipboardList, FileText, Megaphone, MessagesSquare, ScrollText, type LucideIcon } from "lucide-react";
 import type { Hit, Kind } from "../lib/api";
 import { locale, t } from "../lib/i18n";
+import { SourceTag } from "./Things";
 
 export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
   file: { icon: FileText, label: t("文件") },
@@ -40,6 +41,7 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
         <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
           {showCourse && <span className="shrink-0 rounded bg-chip px-1.5 py-px text-fg-soft">{hit.course}</span>}
           <span className="shrink-0">{label}</span>
+          <SourceTag source={hit.source} />
           {hit.date && <span className="shrink-0">· {formatDate(hit.date)}</span>}
           {folder && <span className="truncate">· {folder}</span>}
         </div>

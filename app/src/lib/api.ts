@@ -16,6 +16,7 @@ export interface Hit {
   snippet: { text: string; match: boolean }[];
   match: "name" | "content" | "meaning"; // name: title or folder matched; content: only the text inside; meaning: what it means (meaning.py)
   doc_id: string | null; // pages, assignments, announcements, syllabus: which one
+  source: "canvas" | "ed"; // where it came from
 }
 
 export type DocKind = "announcement" | "assignment" | "page" | "syllabus" | "post"; // (post: on Ed)
@@ -346,10 +347,11 @@ export interface FoundInText {
   hits: Hit[];
   corrected: Record<string, string>; // words taken for others, misspelled ("midtrem": midterm)
 }
-export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; since?: string; until?: string; limit?: number } = {}): Promise<FoundInText> {
+export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; source?: "ed"; since?: string; until?: string; limit?: number } = {}): Promise<FoundInText> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 40) });
   for (const c of opts.courses ?? []) params.append("course", String(c));
   for (const k of opts.kinds ?? []) params.append("kind", k);
+  if (opts.source) params.set("source", opts.source);
   if (opts.since) params.set("since", opts.since);
   if (opts.until) params.set("until", opts.until);
   return api<FoundInText>(`/find?${params}`);

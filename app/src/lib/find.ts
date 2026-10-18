@@ -13,9 +13,9 @@
 // Nothing here draws or says anything (no i18n): what things are called comes from `describe`.
 import { matchSorterWithRankInfo, rankings } from "match-sorter";
 import type { CatalogEntry, Hit, Usage } from "./api";
-import { CJK, type KindId, type Part, type PartOf, type Reading, type Status, type Vocabulary, little, seriesIn, seriesNear, singular, spaced } from "./query";
+import { CJK, type KindId, type Part, type PartOf, type Reading, type Source, type Status, type Vocabulary, little, seriesIn, seriesNear, singular, spaced } from "./query";
 import { termRank } from "./terms";
-import { thingKey, thingOfHit } from "./things";
+import { type ViewName, isView, thingKey, thingOfHit } from "./things";
 
 export { spaced } from "./query";
 
@@ -73,6 +73,8 @@ export interface Catalog {
 
 const CAP: Record<GroupId, number> = { courses: 3, places: 5, assignments: 4, announcements: 4, files: 5, actions: 3, inside: 5, related: 5 };
 const MOST = 50; // shown in a group asked for all
+// Where each source's things are listed: what "ed" finds besides them.
+const SOURCE_VIEWS: Record<Source, ViewName[]> = { ed: ["discussion"] };
 const DAY = 24 * 3600 * 1000;
 
 const variants = (s: string) => [...new Set([s, spaced(s)].filter(Boolean))];
@@ -278,7 +280,8 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   let only: Set<number> | null = courseParts.length ? new Set(courseParts.flatMap((p) => p.courses)) : null;
   const when = parts.filter((p): p is PartOf<"when"> => p.role === "when").at(-1)?.when;
   const statuses = parts.flatMap((p) => (p.role === "status" ? [p.status] : []));
-  const narrowed = !!when || statuses.length > 0;
+  const sources = parts.flatMap((p) => (p.role === "source" ? [p.source] : []));
+  const narrowed = !!when || statuses.length > 0 || sources.length > 0;
   let terms: Term[] = parts.filter(isTerm);
   // Little words ("can I get an extension") needn't match when there's more to go by.
   if (terms.some(little) && (terms.some((t) => !little(t)) || narrowed || courseParts.length)) terms = terms.filter((t) => !little(t));
@@ -295,6 +298,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   /** Whether it's in what the reading narrows things down to. */
   const within = (p: Prepared) => {
     if (only && (p.course === null || !only.has(p.course))) return false;
+    if (sources.length && !sources.some((s) => p.entry.source === s || isView(p.entry) && SOURCE_VIEWS[s].includes(p.entry.view))) return false;
     if (when) {
       const date = when.due ? p.entry.due : p.entry.due ?? p.entry.date;
       const t = date ? Date.parse(date) : NaN;
@@ -348,10 +352,12 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
 
   for (const p of entries) {
     if (!terms.length) {
-      // Narrowed down only (a time, a status): all of it, nearest in time first.
+      // Narrowed down only (a time, a status, a source): all of it, nearest in time first; a view
+      // that's left is the list of it ("ee64 ed": its 讨论), first.
       const date = p.entry.due ?? p.entry.date;
       const days = date ? Math.abs(Date.parse(date) - now) / DAY : 30;
-      found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: W.listed - Math.min(days, 30) / 15 + bonus(p, ctx) });
+      const score = p.entry.type === "view" ? W.listed + 1 : W.listed - Math.min(days, 30) / 15;
+      found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: score + bonus(p, ctx) });
       continue;
     }
     let total = 0;

@@ -44,6 +44,7 @@ const things: CatalogEntry[] = [
   ...views(EE, "overview", "announcements", "discussion", "assignments", "grades", "files", "syllabus"),
   // On Ed (what's pinned and staff's posts are in the catalog; the questions are the index's).
   doc(EE, "post", "HW 4 megathread", { date: day(-12), source: "ed" }), doc(EE, "post", "Lab 2 Clarification", { date: day(-5), source: "ed" }),
+  doc(EE, "announcement", "Lab Extensions", { date: day(-4), source: "ed" }),
   ann(EE, "HW3 Released", 20), ann(EE, "HW4 Released", 12), ann(EE, "Midterm 1 Logistics", 6), ann(EE, "Prelab 3 Released", 1),
   ...files(EE, "Files/HW/EE16A_FA26_HW3.pdf", "Files/HW/EE16A_FA26_HW3_Sol.pdf", "Files/HW/EE16A_FA26_HW4.pdf",
     "Files/Lectures/EE16A FA26 Lecture9.pdf", "Files/Lectures/EE16A FA26 Lecture10.pdf", "Files/Labs/EE16A_FA26_Lab2.pdf",
@@ -231,6 +232,20 @@ describe("on Ed", () => {
   });
   it("lab 2 clarification: the post by its name", () => {
     expect(search("lab 2 clarification").top).toBe("Lab 2 Clarification");
+  });
+  it("ee16a ed: the course's discussion, then what's from Ed, newest first; nothing else", () => {
+    const r = search("ee16a ed");
+    expect(r.top).toBe("EE 16A discussion");
+    expect(r.all.slice(1)).toEqual(["Lab Extensions", "Lab 2 Clarification", "HW 4 megathread"]);
+  });
+  it("ed: only what's from Ed, in any course", () => {
+    const r = search("ed");
+    expect(r.found.every((f) => f.type === "thing" && (f.entry.source === "ed" || f.entry.type === "view"))).toBe(true);
+    expect(r.all).toContain("Lab Extensions");
+    expect(r.all).not.toContain("Ed Discussion"); // (the tool on Canvas: not what's on Ed)
+  });
+  it("ed lab 2: what's from Ed, by its name", () => {
+    expect(search("ed lab 2").top).toBe("Lab 2 Clarification");
   });
 });
 

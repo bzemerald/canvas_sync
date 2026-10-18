@@ -70,7 +70,7 @@ const run = (q: string, usage = none, hits: Hit[] = [], actions: Action[] = [], 
 const ask = (q: string) => run(q, none, [], [], known);
 
 function hit(fields: Partial<Hit>): Hit {
-  return { kind: "file", course_id: 70, course: "CS 70", title: "", path: null, url: null, date: null, snippet: [], match: "name", doc_id: null, ...fields };
+  return { kind: "file", course_id: 70, course: "CS 70", title: "", path: null, url: null, date: null, snippet: [], match: "name", doc_id: null, source: "canvas", ...fields };
 }
 
 describe("finding things by name", () => {

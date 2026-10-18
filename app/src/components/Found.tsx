@@ -5,7 +5,7 @@
 // part that narrows it down. Shared by the search window and the main window's 搜索 page, inside a
 // cmdk <Command> (arrows move, enter opens).
 import { Command } from "cmdk";
-import { AppWindow, CalendarDays, CircleCheck, RefreshCw, Settings as SettingsIcon, Sparkles, X } from "lucide-react";
+import { AppWindow, CalendarDays, CircleCheck, MessagesSquare, RefreshCw, Settings as SettingsIcon, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, Usage } from "../lib/api";
@@ -19,7 +19,7 @@ import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
 import { KIND, ResultBody, Snippet, formatDate } from "./Result";
-import { ThingIcon, thingName, useThing } from "./Things";
+import { SourceTag, ThingIcon, thingName, useThing } from "./Things";
 
 /** One of the app's words as it's said in each language (en.ts has the English). */
 function inBoth(zh: string): string[] {
@@ -145,7 +145,7 @@ export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabu
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
   const asked = useMemo(() => indexQuery(typed, catalog?.abbreviations ?? {}), [typed, catalog]);
   const { answer, error, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
-    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
+    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, source: asked.source, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
   // Misspelled words (the index has nothing they start) are taken for the nearest there are.
   const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
   const hits = answer.hits;
@@ -291,6 +291,7 @@ function partLabel(p: Part, names: Map<number, string>): string {
     case "kind": return KIND_LABEL[p.kind];
     case "when": return whenLabel(p);
     case "status": return STATUS_LABEL[p.status];
+    case "source": return "Ed"; // (a name)
     default: return p.text;
   }
 }
@@ -305,7 +306,7 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
   onQuery: (q: string) => void;
   className?: string;
 }) {
-  const shown = reading.parts.filter((p) => p.role === "course" || p.role === "kind" || p.role === "when" || p.role === "status");
+  const shown = reading.parts.filter((p) => p.role === "course" || p.role === "kind" || p.role === "when" || p.role === "status" || p.role === "source");
   const fixed = reading.parts.filter((p): p is PartOf<"word" | "series"> => (p.role === "word" || p.role === "series") && !!p.was);
   if (!shown.length && !fixed.length) return null;
   return (
@@ -353,6 +354,7 @@ function PartIcon({ part, courses }: { part: Part; courses: Course[] }) {
   }
   if (part.role === "kind") return <ThingIcon thing={KIND_THING[part.kind]} className={icon} />;
   if (part.role === "when") return <CalendarDays className={icon} aria-hidden />;
+  if (part.role === "source") return <MessagesSquare className={icon} aria-hidden />;
   return <CircleCheck className={icon} aria-hidden />;
 }
 
@@ -446,6 +448,7 @@ function FoundRow({ f, courses, names, top }: { f: Found; courses: Course[]; nam
           <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
             {course && <span className="shrink-0 rounded bg-chip px-1.5 py-px text-fg-soft">{course}</span>}
             {what && <span className="truncate">{what}</span>}
+            <SourceTag source={e.source} />
             {due && <span className={`shrink-0 ${due.urgent ? "font-medium text-warn" : ""}`}>· {due.text}</span>}
             {date && <span className="shrink-0">· {date}</span>}
           </div>

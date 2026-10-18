@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS items (
     date TEXT,
     stamp TEXT,                 -- everything above + content_stamp; unchanged = skip
     content_stamp TEXT,         -- unchanged = keep the extracted text
-    quiet INTEGER NOT NULL DEFAULT 0  -- what students asked on Ed: found after the rest that matches as well
+    quiet INTEGER NOT NULL DEFAULT 0,  -- what students asked on Ed: found after the rest that matches as well
+    source TEXT NOT NULL DEFAULT 'canvas'  -- where it came from (canvas, ed)
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
     title, folder, body, tokenize = 'unicode61 remove_diacritics 2'
@@ -147,6 +148,7 @@ class Hit:
     snippet: list[tuple[str, bool]] = field(default_factory=list)  # (text, is_match)
     match: str = "name"   # name: the title or a folder matched; content: only the text inside
     doc_id: str | None = None  # pages, assignments, announcements: their id in the course
+    source: str = "canvas"  # where it came from (canvas, ed)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -394,9 +396,11 @@ class _Item:
     content_stamp: str
     body: Callable[[], str]
     quiet: bool = False
+    source: str = "canvas"
 
     def stamp(self) -> str:
-        return json.dumps([self.title, self.path, self.url, self.date, self.folder, self.content_stamp, self.quiet])
+        return json.dumps([self.title, self.path, self.url, self.date, self.folder, self.content_stamp, self.quiet,
+                           self.source])
 
 
 def relative_url(url: str | None) -> str | None:
@@ -435,8 +439,11 @@ class Index:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)
-        if "quiet" not in {r[1] for r in self.db.execute("PRAGMA table_info(items)")}:  # (from before Ed)
+        columns = {r[1] for r in self.db.execute("PRAGMA table_info(items)")}  # (from before Ed)
+        if "quiet" not in columns:
             self.db.execute("ALTER TABLE items ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0")
+        if "source" not in columns:
+            self.db.execute("ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'canvas'")
 
     def close(self) -> None:
         self.db.commit()
@@ -469,7 +476,7 @@ class Index:
                 content_stamp=f"{st.st_size}:{st.st_mtime_ns}" if st else "",
                 body=(lambda p=local: extract(p)) if st else (lambda: ""),
             )
-        for row in state.db.execute("SELECT course_id, kind, id, title, updated_at, raw FROM documents"):
+        for row in state.db.execute("SELECT course_id, kind, id, title, updated_at, raw, source FROM documents"):
             raw = json.loads(row["raw"] or "{}")
             html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
             cid, kind = row["course_id"], row["kind"]
@@ -491,6 +498,7 @@ class Index:
                 content_stamp=hashlib.sha1("".join([html, *said]).encode()).hexdigest(),
                 body=lambda h=html, more=said: "\n".join(html_to_text(x) for x in [h, *more]),
                 quiet=kind == "post" and not (ed.get("staff") or ed.get("pinned")),
+                source=row["source"],
             )
 
     def sync(self, state: State, root: Path, on_progress: ProgressHandler | None = None) -> IndexStats:
@@ -515,17 +523,17 @@ class Index:
                 body = _prep(item.body())
                 stats.extracted += item.kind == "file" and bool(item.path)
             values = (item.course_id, item.kind, item.title, item.path, item.url, item.date,
-                      item.stamp(), item.content_stamp, item.quiet)
+                      item.stamp(), item.content_stamp, item.quiet, item.source)
             if old:
                 rowid = old[0]
                 self.db.execute(
                     """UPDATE items SET course_id=?, kind=?, title=?, path=?, url=?, date=?, stamp=?,
-                       content_stamp=?, quiet=? WHERE id=?""", (*values, rowid))
+                       content_stamp=?, quiet=?, source=? WHERE id=?""", (*values, rowid))
                 self.db.execute("DELETE FROM fts WHERE rowid = ?", (rowid,))
             else:
                 rowid = self.db.execute(
-                    """INSERT INTO items (course_id, kind, title, path, url, date, stamp, content_stamp, quiet, key)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*values, item.key)).lastrowid
+                    """INSERT INTO items (course_id, kind, title, path, url, date, stamp, content_stamp, quiet, source, key)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*values, item.key)).lastrowid
             self.db.execute("INSERT INTO fts (rowid, title, folder, body) VALUES (?, ?, ?, ?)",
                             (rowid, _prep(item.title), _prep(item.folder), body))
             stats.indexed += 1
@@ -590,13 +598,15 @@ class Index:
     def search(self, query: str, courses: list[Course], settings: Settings, limit: int = 50,
                course_ids: list[int] | None = None, kinds: list[str] | None = None,
                names_only: bool = False, under: str | None = None, also: list[str] = (),
-               literal: bool = False, since: str | None = None, until: str | None = None) -> list[Hit]:
+               literal: bool = False, since: str | None = None, until: str | None = None,
+               source: str | None = None) -> list[Hit]:
         """`course_ids` restricts the search to those courses, whatever the query says;
         `kinds` to those kinds of item. With either, an empty query lists everything in them.
         `names_only` skips items where only the text inside matches. `under`: only files in
         that folder (or at the paths in `also`: files a view link in it points to). `literal`:
         the query is only words (no courses in it: see parse_words). `since`/`until`: only
-        items from then (ISO times; an assignment's is when it's due)."""
+        items from then (ISO times; an assignment's is when it's due). `source`: only what came
+        from there (ed)."""
         abbreviations = {**DEFAULT_ABBREVIATIONS, **settings.abbreviations}
         numbered = re.search(r"[^\W\d_][\s_#-]*\d", query)
         series = self.series(course_ids) if numbered else set()
@@ -614,6 +624,9 @@ class Index:
         if kinds:
             where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
             args += kinds
+        if source:
+            where.append("i.source = ?")
+            args.append(source)
         if since:
             where.append("i.date >= ?")
             args.append(since)
@@ -652,7 +665,7 @@ class Index:
                 title=r["title"], path=r["path"], url=r["url"], date=r["date"],
                 snippet=_segments(r["snip"]) if r["snip"] and _HIT_START in r["snip"] else [],
                 match="name" if r["in_name"] else "content",
-                doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None)
+                doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None, source=r["source"])
             for r in self.db.execute(sql, args)
         ]
 

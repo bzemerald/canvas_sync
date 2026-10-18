@@ -504,10 +504,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/find")
     def find(q: str = "", limit: int = 40, course: list[int] = Query(default=[]), kind: list[str] = Query(default=[]),
-             since: str = "", until: str = "") -> dict[str, Any]:
+             since: str = "", until: str = "", source: str = "") -> dict[str, Any]:
         """The app's search as you type (its find.ts), in the index: `q` is only words to find
-        (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind` and
-        `since`/`until`: what the app read as narrowing it down. `corrected`: words taken for
+        (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind`,
+        `since`/`until` and `source` (ed): what the app read as narrowing it down. `corrected`: words taken for
         others, misspelled ("midtrem": midterm)."""
         with engine() as e:
             if not course and e.settings.hidden:  # (as /search)
@@ -518,14 +518,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             corrected = e.index.corrections(q, abbreviations(e))
             q = e.index.corrected(q, corrected)
             hits = e.index.search(q, e.state.courses(), e.settings, min(limit, 500), course or None, kind or None,
-                                  literal=True, since=since or None, until=until or None)
+                                  literal=True, since=since or None, until=until or None, source=source or None)
             # By meaning too (when it's on), for what's said in a few words: what the words alone
             # didn't find.
             if len(q.split()) >= 2 and prefs().meaning and meaning.downloaded(home):
                 codes = {c.id: course_label(c, e.settings) for c in e.state.courses()}
                 had = {(h.kind, h.course_id, h.path or h.url or h.title) for h in hits}
                 hits += [h for h in Meaning(e.index).search(q, meaning.embedder(home), codes, course or None, kind or None,
-                                                            since or None, until or None)
+                                                            since or None, until or None, source=source or None)
                          if (h.kind, h.course_id, h.path or h.url or h.title) not in had]
             return {"hits": [h.to_dict() for h in hits], "corrected": corrected}
 

@@ -281,6 +281,12 @@ def test_ed_posts_are_found_and_go_anywhere_in_their_course(root, tmp_path, link
         assert [h.title for h in e.search("rms voltage")] == ["HW 3 megathread"]  # what staff answered
         assert [h.title for h in e.search("homework", kinds=["post"])] == ["HW 3 megathread", "HW 3 question"]  # its category
         assert [h.title for h in e.search("hw 3", kinds=["post"])] == ["HW 3 megathread", "HW 3 question"]  # (students' after)
+        # "ed": only what came from Ed (not the Canvas announcement that says the same words).
+        e.state.db.execute("INSERT INTO documents (course_id, kind, id, title, updated_at, raw) VALUES (1, 'announcement', '7', 'HW 3 out', '', '{}')")
+        e.reindex()
+        assert {h.source for h in e.search("hw 3")} == {"canvas", "ed"}
+        assert {(h.title, h.source) for h in e.index.search("hw 3", e.state.courses(), e.settings, source="ed")} == {
+            ("HW 3 megathread", "ed"), ("HW 3 question", "ed")}
         found = {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e)}
         assert ("doc", "post", "HW 3 megathread") in found and ("doc", "post", "HW 3 question") not in found
         assert ("view", None, None) in {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e) if x.get("view") == "discussion"}

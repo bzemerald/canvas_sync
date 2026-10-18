@@ -38,6 +38,7 @@ function short(p: Part): string {
     case "series": return `series:${p.name} ${p.n}`;
     case "kind": return `kind:${p.kind}`;
     case "status": return `status:${p.status}`;
+    case "source": return `source:${p.source}`;
     case "word": return p.quoted ? `"${p.text}"` : `word:${p.text}`;
     case "when": return `when:${new Date(p.when.from).toDateString()}${Number.isFinite(p.when.to) ? `..${new Date(p.when.to).toDateString()}` : ".."}${p.when.due ? " due" : ""}`;
   }
@@ -45,6 +46,18 @@ function short(p: Part): string {
 const said = (q: string) => parts(q).map(short);
 const day = (m: number, d: number, due = false) => `when:${new Date(at(m, d)).toDateString()}..${new Date(at(m, d + 1)).toDateString()}${due ? " due" : ""}`;
 const days = (m: number, d: number, m2: number, d2: number, due = false) => `when:${new Date(at(m, d)).toDateString()}..${new Date(at(m2, d2)).toDateString()}${due ? " due" : ""}`;
+
+describe("a source", () => {
+  it("is ed, or from:ed, wherever it's said", () => {
+    expect(said("cs70 ed")).toEqual(["course:70", "source:ed"]);
+    expect(said("ed announcements")).toEqual(["source:ed", "kind:announcement"]);
+    expect(said("from:ed lab")).toEqual(["source:ed", "word:lab"]);
+    expect(said("edited")).toEqual(["word:edited"]); // (only the word itself)
+  });
+  it("narrows what the index is asked for", () => {
+    expect(indexQuery(read("cs70 ed midterm", vocab, NOW), ABBR)).toMatchObject({ q: "midterm", courses: [70], source: "ed" });
+  });
+});
 
 describe("a course", () => {
   it("is its code or number, in one word or two", () => {
