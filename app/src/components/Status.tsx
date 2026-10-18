@@ -12,6 +12,13 @@ const LABEL: Record<string, { text: string; className: string; hint: string }> =
   untracked: { text: t("不再同步"), className: "bg-chip text-muted", hint: t("你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它") },
 };
 const SKIPPED_HINT = t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载");
+/** Why a file in a folder that isn't synced says so (one you stopped syncing says why itself). */
+const skippedHint = (e: Entry) =>
+  e.type === "dir" ? SKIPPED_HINT
+    : e.link ? t("它所在的文件夹不再同步；这是快捷方式，原文件照常同步")
+      : t("它所在的文件夹不再同步：Canvas 以后在这里新增的文件不会下载");
+/** In a folder that isn't synced, and doesn't say so already (a file you deleted says that). */
+const quietlySkipped = (e: Entry) => e.skipped && !e.states.includes("untracked") && !(e.type === "file" && e.deleted);
 // Shown always: what Canvas did, and what isn't synced (that's how it is now, not a change to
 // undo). The rest is what you did, shown only with 显示改动.
 const ALWAYS = new Set(["remote_deleted", "untracked"]);
@@ -30,8 +37,8 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
           </span>
         ) : null,
       )}
-      {entry.type === "dir" && entry.skipped && (
-        <span title={SKIPPED_HINT} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
+      {quietlySkipped(entry) && (
+        <span title={skippedHint(entry)} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
           {t("不再同步")}
         </span>
       )}
@@ -85,7 +92,7 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
     <>
       {entry.new_inside > 0 && <Count n={entry.new_inside} label={t("里面有你还没打开过的新文件")} />}
       {showChanges && <Tallies entry={entry} />}
-      {entry.skipped && <NotSynced label={SKIPPED_HINT} />}
+      {quietlySkipped(entry) && <NotSynced label={skippedHint(entry)} />}
     </>
   ) : (
     <>
@@ -94,7 +101,7 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
       {(mine("missing") || mine("ignored")) && <Pill icon={<Trash2 />} label={LABEL.ignored.hint} className="bg-danger text-on-accent" />}
       {mine("modified") && <Pill icon={<Pencil />} label={LABEL.modified.hint} className="bg-warn text-on-accent" />}
       {mine("moved") && <Pill icon={<FolderInput />} label={LABEL.moved.hint} className="bg-info text-on-accent" />}
-      {s.includes("untracked") && <NotSynced label={LABEL.untracked.hint} />}
+      {s.includes("untracked") ? <NotSynced label={LABEL.untracked.hint} /> : quietlySkipped(entry) && <NotSynced label={skippedHint(entry)} />}
     </>
   );
   return <span className="absolute -top-1 -right-1 flex gap-0.5 [&>*]:ring-2 [&>*]:ring-bg">{marks}</span>;

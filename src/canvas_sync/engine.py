@@ -217,12 +217,15 @@ class Engine:
             return True
         return any(_under(row[0], folder) for row in self.state.db.execute("SELECT path FROM links"))
 
-    def _stop_syncing(self, files: dict[int, str]) -> None:
-        """Mark files as not synced. Their view links go: they'd point at a file we no
-        longer manage. A file you moved is recorded where it is now."""
+    def _stop_syncing(self, files: dict[int, str], keep_links_in: list[str] = ()) -> None:  # type: ignore[assignment]
+        """Mark files as not synced. Their view links go: sync won't put them there any more.
+        But not those in folders you keep without syncing (`keep_links_in`, and folders
+        already not synced): they stay, pointing at the file. A file you moved is recorded
+        where it is now."""
         for fid, now in files.items():
             for path, linked in list(self.state.db.execute("SELECT path, file_id FROM links")):
-                if linked == fid:
+                kept = any(_under(path, k) for k in keep_links_in)
+                if linked == fid and not kept and not self.layout.skipped(PurePosixPath(self.layout.canonical(path))):
                     if (self.root / path).is_symlink():
                         (self.root / path).unlink()
                     self.state.remove_link(path)
@@ -281,11 +284,12 @@ class Engine:
 
     def untrack(self, rels: list[str]) -> int:
         """Stop syncing these files and folders but keep them, as your own files. Files
-        Canvas adds to the folders later aren't downloaded. Returns how many files."""
+        Canvas adds to the folders later aren't downloaded. View links in the folders
+        stay. Returns how many files."""
         rels = [self._checked(r) for r in rels]
         files, folders = self._affected(rels)
         skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)]
-        self._stop_syncing(files)
+        self._stop_syncing(files, keep_links_in=folders)
         self.state.commit()
         if skip:
             update_skip_folders(self.meta / "config.toml", add=skip)

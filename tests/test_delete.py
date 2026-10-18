@@ -211,6 +211,23 @@ def test_resuming_one_file_in_a_folder_not_synced(root, fake):
     assert kinds(pull(root, fake)) == [("link", LINK), ("update", MOD)]
 
 
+def test_links_in_a_folder_not_synced_stay(root, fake):
+    pull(root, fake)
+    with Engine(root) as e:
+        e.untrack([LECTURES])
+    assert pull(root, fake).actions == [] and os.path.islink(root / LINK)
+    assert listing(root, LECTURES)["lec1.pdf"]["skipped"]
+    with Engine(root) as e:
+        e.untrack([COURSE])  # its links stay too, now pointing at a file of yours
+    assert os.path.islink(root / LINK) and (root / LINK).read_bytes() == b"v1"
+    assert pull(root, fake).actions == []
+    assert listing(root, LECTURES)["lec1.pdf"]["states"] == ["untracked"]
+    with Engine(root) as e:
+        e.track([COURSE])
+    fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
+    assert kinds(pull(root, fake)) == [("update", MOD)] and (root / LINK).read_bytes() == b"v2"
+
+
 def test_restoring_a_file_in_a_deleted_folder_syncs_it_again(root, fake):
     pull(root, fake)
     with Engine(root) as e:

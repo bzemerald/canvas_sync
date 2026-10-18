@@ -11,7 +11,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import Settings
@@ -254,6 +254,15 @@ class Planner:
             if placement is not None and fid in final:
                 for link in placement.links:
                     want[link.as_posix()] = (fid, final[fid])
+        # A link in a folder you stopped syncing stays (it's in what you kept), still
+        # pointing at its file: where sync puts it, or where you kept it if it isn't synced.
+        for path, fid in self.state.links_for_course(cid).items():
+            if path in want or fid not in snap.files or not self.layout.skipped(PurePosixPath(self.layout.canonical(path))):
+                continue
+            rec = self.state.get(fid)
+            kept = rec.path if rec and rec.ignored and rec.path and is_regular(self.root / rec.path) else None
+            if target := final.get(fid, kept):
+                want[path] = (fid, target)
         for path, (fid, target) in want.items():
             name = snap.files[fid].name
             if self._link_ok(path, target):

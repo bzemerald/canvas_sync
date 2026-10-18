@@ -60,6 +60,8 @@ export const en: Record<string, string | [string, string]> = {
   "从 Canvas 同步此文件夹": "Sync this folder from Canvas",
   "恢复此文件夹的原版…": "Restore this folder's originals…",
   "恢复同步此文件夹": "Sync this folder again",
+  "它所在的文件夹不再同步；这是快捷方式，原文件照常同步": "Its folder isn't synced any more; it's a shortcut, and the file it points to still syncs",
+  "它所在的文件夹不再同步：Canvas 以后在这里新增的文件不会下载": "Its folder isn't synced any more: files Canvas adds here later won't download",
   "停止同步此文件夹（保留文件）": "Stop syncing this folder (keep the files)",
   "快速预览": "Quick Look",
   "显示原始文件": "Show original file",

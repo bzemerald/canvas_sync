@@ -582,6 +582,8 @@ export function MainWindow() {
     label: t("移到{trash}…", { trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy, onSelect: () => askDelete([e.path], [e.name]),
   });
   const restoreScope = (e: Entry): Scope => (e.type === "dir" ? { paths: [e.path] } : { file_ids: [e.file_id!] });
+  /** Not synced: a file you stopped syncing, or anything in a folder you stopped syncing. */
+  const notSynced = (e: Entry) => e.skipped || e.states.includes("untracked");
 
   const entryMenu = (e: Entry): MenuItem[] => {
     if (e.deleted) {
@@ -615,7 +617,7 @@ export function MainWindow() {
     if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
     if (e.link) items.push({ label: t("显示原始文件"), onSelect: () => goPath(parentOf(e.link!), e.link!) });
     items.push("separator", pinOf({ type: "file", path: e.path }));
-    if (e.states.includes("untracked")) {
+    if (notSynced(e)) {
       items.push("separator", { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
     } else if (e.file_id !== null) {
       items.push(
