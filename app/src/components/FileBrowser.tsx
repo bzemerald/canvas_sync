@@ -188,6 +188,7 @@ export function FileBrowser({
   const onKeyDown = (ev: React.KeyboardEvent) => {
     const i = rows.findIndex((r) => r.entry.path === sel.cursor);
     const cur = i >= 0 ? rows[i] : null;
+    const focused = cur && sel.has(cur.entry.path) ? cur.entry : null; // (deselected: nothing to rename or preview)
     const go = (j: number) => {
       const r = rows[Math.max(0, Math.min(rows.length - 1, j))];
       if (r) sel.moveTo(r.entry.path, ev.shiftKey);
@@ -200,8 +201,8 @@ export function FileBrowser({
     else if (command === "parent") path !== root && path && onNavigate(parentOf(path) === inline ? root : parentOf(path));
     else if (command === "selectAll") sel.all();
     else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
-    else if (command === "rename") cur && canRename(cur.entry) ? onStartRename(cur.entry) : (handled = false);
-    else if (command === "preview") cur && cur.entry.type === "file" && !cur.entry.deleted ? onPreview(cur.entry) : (handled = false);
+    else if (command === "rename") focused && canRename(focused) ? onStartRename(focused) : (handled = false);
+    else if (command === "preview") focused?.type === "file" && !focused.deleted && onPreview(focused); // (else nothing, not a scroll)
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
     else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
     else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);

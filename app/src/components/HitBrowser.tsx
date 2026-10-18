@@ -43,12 +43,12 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
     };
     const command = fileCommand(ev);
     const picked = chosen();
-    const cur = byKey.get(sel.cursor ?? "");
+    const cur = sel.has(sel.cursor ?? "") ? byKey.get(sel.cursor!) : undefined; // (deselected: nothing to act on)
     let handled = true;
     if (command === "open") picked.forEach(onOpen);
     else if (command === "selectAll") sel.all();
     else if (command === "delete" && picked.some((h) => h.path)) onDelete(picked.filter((h) => h.path));
-    else if (command === "preview" && cur?.path) void api.openPath(cur.path, { preview: true });
+    else if (command === "preview") cur?.path && void api.openPath(cur.path, { preview: true }); // (else nothing, not a scroll)
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
     else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
     else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);
