@@ -47,8 +47,11 @@ class Placement:
 
 
 class Layout:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, courses: Iterable[Course] = ()):
         self.s = settings
+        # The courses' folders as Canvas names make them: a rename that none of them goes through
+        # (an old one, left over) renames nothing, and mustn't be taken as having happened.
+        self.course_dirs = [self.canonical_course_dir(c).as_posix() for c in courses]
 
     def course_dir(self, course: Course) -> PurePosixPath:
         """The course's folder as it is on disk (after any rename)."""
@@ -70,9 +73,17 @@ class Layout:
             out[-1] = names["/".join(parts)]
         return PurePosixPath(*out)
 
+    def live_names(self) -> dict[str, str]:
+        """The folder renames that apply: of a course's folder, its term's, or what's in it."""
+        dirs = self.course_dirs
+        if not dirs:
+            return self.s.folder_names
+        return {k: v for k, v in self.s.folder_names.items()
+                if any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in dirs)}
+
     def canonical(self, path: str) -> str:
         """Undo `renamed`: the Canvas-derived path of a folder as it is on disk now."""
-        names = self.s.folder_names
+        names = self.live_names()
         by_new_name = {(posixpath.dirname(k), v): posixpath.basename(k) for k, v in names.items()}
         canon: list[str] = []
         for seg in [p for p in path.split("/") if p]:

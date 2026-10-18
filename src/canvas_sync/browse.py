@@ -78,14 +78,8 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     def skipped(path: str) -> bool:
         return layout.skipped(PurePosixPath(layout.canonical(path)))
 
-    # Folders you renamed, where they are now -> what Canvas calls them. (Worked out forwards, from
-    # the renames of a course's folders, its term's or what's in it: an old rename that no course's
-    # folder goes through renames nothing.)
-    canon_dirs = [layout.canonical_course_dir(c).as_posix() for c in state.courses()]
-    was_named = {
-        layout.renamed(PurePosixPath(k)).as_posix(): posixpath.basename(k) for k in layout.s.folder_names
-        if any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in canon_dirs)
-    }
+    # Folders you renamed, where they are now -> what Canvas calls them.
+    was_named = {layout.renamed(PurePosixPath(k)).as_posix(): posixpath.basename(k) for k in layout.live_names()}
 
     def renamed_from(path: str) -> str | None:
         was = was_named.get(path)

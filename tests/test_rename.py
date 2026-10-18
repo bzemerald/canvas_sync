@@ -72,6 +72,18 @@ def test_rename_the_folder_links_point_into_and_its_parents(root, fake):
         assert [h.title for h in e.search("线性代数 lec1")] == ["lec1.pdf"]  # the new name is a course alias
 
 
+def test_a_rename_no_course_goes_through_changes_nothing(root, fake):
+    # (Left over: a term folder renamed "fa26" from a name no course has, then back.)
+    pull(root, fake)
+    cfg = root / ".canvas/config.toml"
+    cfg.write_text(cfg.read_text().replace("[folder_names]\n", '[folder_names]\nfa26 = "Fall 2026"\n'))
+    assert rename(root, MOD, "课件") == f"{COURSE}/课件"
+    assert names(root) == {"fa26": "Fall 2026", MOD: "课件"}  # (not under "fa26/")
+    with Engine(root) as e:
+        assert {x.name: x.renamed_from for x in e.list_dir(COURSE)}["课件"] == "Modules"
+    assert pull(root, fake).actions == []
+
+
 def test_renaming_back_forgets_the_rename(root, fake):
     pull(root, fake)
     rename(root, WEEK1, "W1")

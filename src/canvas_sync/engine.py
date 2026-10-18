@@ -42,8 +42,8 @@ class Engine:
         if not (self.meta / "config.toml").exists():
             raise NotInitialized(f"{self.root} is not set up yet (run `canvas init`)")
         self.settings = Settings.load(self.meta / "config.toml")
-        self.layout = Layout(self.settings)
         self.state = State(self.meta / "state.db")
+        self.layout = Layout(self.settings, self.state.courses())
         self.client = client
         self._index: Index | None = None
 
@@ -354,7 +354,7 @@ class Engine:
 
     def _reload(self) -> None:
         self.settings = Settings.load(self.meta / "config.toml")
-        self.layout = Layout(self.settings)
+        self.layout = Layout(self.settings, self.state.courses())
 
     def restorable(self, scope: Scope) -> list[FileStatus]:
         """Files in `scope` that `restore_files` would put back: edited or deleted by you."""
