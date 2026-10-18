@@ -288,6 +288,8 @@ export function MainWindow() {
     const stay = cv && cv.id === c.id && tab && (isView(tab, "files") || (tab.type === "folder" && under(path, tab.path)));
     go({ kind: "course", id: c.id, tab: stay ? tab : { type: "folder", path }, path, select });
   };
+  /** Go into a folder from the one showing: 全部文件 stays 全部文件, even in a course's folder. */
+  const goFolder = (path: string) => (view.kind === "browse" ? go({ kind: "browse", path }) : goPath(path));
   /** A course opens on its first tab (概览, unless that course's 概览 is hidden). */
   const openCourse = (c: Course) => go({ kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true });
   const launchTool = (x: ThingOf<"tool">) => {
@@ -590,7 +592,7 @@ export function MainWindow() {
     }
     if (e.type === "dir") {
       return [
-        { label: t("打开"), hint: shortcut.open, onSelect: () => goPath(e.path) },
+        { label: t("打开"), hint: shortcut.open, onSelect: () => goFolder(e.path) },
         { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
@@ -1046,7 +1048,7 @@ export function MainWindow() {
             <ToolButton title={t("前进 ({forward})", { forward: shortcut.forward })} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>
           </div>
           <div className="min-w-0 flex-1">
-            {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goPath} />}
+            {view.kind === "browse" && <Breadcrumb path={view.path} onGo={goFolder} />}
             {cv && course && (
               <Breadcrumb
                 path={filesTab ? cv.path : course.dir}
@@ -1119,7 +1121,7 @@ export function MainWindow() {
             version={version}
             mode={mode}
             showChanges={showChanges}
-            onNavigate={goPath}
+            onNavigate={goFolder}
             onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}
             onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
