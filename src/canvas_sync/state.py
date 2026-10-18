@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS picks (
     query TEXT, key TEXT, count INTEGER NOT NULL, last TEXT NOT NULL,
     PRIMARY KEY (query, key)
 );
+-- Your courses on Ed, as Ed last listed them (which Canvas course each is: config.toml's [ed]).
+CREATE TABLE IF NOT EXISTS ed_courses (id INTEGER PRIMARY KEY, raw TEXT);
+-- Where things come from besides Canvas (Ed): when it last worked, and what went wrong since.
+CREATE TABLE IF NOT EXISTS sources (name TEXT PRIMARY KEY, ok_at TEXT, error TEXT);
 """
 
 KEEP_OPENED = 2000  # rows of `opened` (and of `picks`) kept: the oldest go
@@ -236,6 +240,27 @@ class State:
     def tabs(self, course_id: int) -> list[dict]:
         row = self.db.execute("SELECT raw FROM tabs WHERE course_id = ?", (course_id,)).fetchone()
         return json.loads(row[0]) if row else []
+
+    # -- other sources ----------------------------------------------------------------
+
+    def save_ed_courses(self, courses: list[dict]) -> None:
+        self.db.execute("DELETE FROM ed_courses")
+        self.db.executemany("INSERT INTO ed_courses VALUES (?, ?)", [(c["id"], json.dumps(c)) for c in courses])
+
+    def ed_courses(self) -> list[dict]:
+        return [json.loads(r[0]) for r in self.db.execute("SELECT raw FROM ed_courses ORDER BY id")]
+
+    def record_source(self, name: str, error: str | None = None) -> None:
+        """How fetching from a source went just now: fine (None), or what went wrong."""
+        if error is None:
+            self.db.execute("INSERT OR REPLACE INTO sources VALUES (?, ?, NULL)", (name, _now()))
+        else:
+            self.db.execute("INSERT INTO sources VALUES (?, NULL, ?) ON CONFLICT(name) DO UPDATE SET error = excluded.error",
+                            (name, error))
+
+    def source(self, name: str) -> dict[str, str | None]:
+        row = self.db.execute("SELECT ok_at, error FROM sources WHERE name = ?", (name,)).fetchone()
+        return {"ok_at": row[0], "error": row[1]} if row else {"ok_at": None, "error": None}
 
     # -- what's new -------------------------------------------------------------------
 

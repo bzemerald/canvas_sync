@@ -217,6 +217,7 @@ export interface SyncState {
   warnings: string[];
   finished_at: string | null;
   last_synced?: string | null; // when a sync last finished, this run of the app or before
+  ed_error: EdError | null; // Ed went wrong (the rest synced anyway)
 }
 
 /** The app's preferences (this computer's), and which courses the sync folder syncs. */
@@ -446,6 +447,25 @@ export const checkAccount = () => api<{ ok: boolean; user?: string; error?: stri
 export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
 export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
 export const signOut = () => post<AccountInfo>("/account/signout", {});
+/** What went wrong with Ed (see errors.ts: edSaying). */
+export type EdError = "token rejected" | "can't reach Ed" | "Ed changed";
+
+/** Ed: whether it's connected, how fetching from it went, and which course each Ed course is. */
+export interface EdState {
+  connected: boolean;
+  user: string | null; // your name on Ed
+  token_page: string; // where Ed makes tokens
+  ok_at: string | null; // when it last worked
+  error: EdError | null; // what went wrong since
+  courses: { id: number; code: string; name: string; term: string; archived: boolean; course: number | null }[];
+  canvas: { id: number; label: string; term: string | null }[]; // the courses one can be
+}
+export const ed = () => api<EdState>("/ed");
+/** Connect Ed with a token (or a new one); then a sync brings what's on it. */
+export const connectEd = (token: string) => post<EdState>("/ed/connect", { token });
+export const disconnectEd = () => post<EdState>("/ed/disconnect", {});
+/** Which course an Ed course is (null: none). */
+export const linkEd = (edCourse: number, course: number | null) => put<EdState>("/ed/link", { ed: edCourse, course });
 /** The sync folder's config.toml, in a text editor. */
 export const openConfig = () => post<{ opened: string }>("/open/config", {});
 

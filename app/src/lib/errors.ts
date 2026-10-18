@@ -26,3 +26,12 @@ export function friendly(message: string): string {
   const said = SAYINGS.find(([re]) => re.test(message));
   return said ? said[1] : message;
 }
+
+const ED_SAYS: Record<string, string> = {
+  "token rejected": t("Ed 不认这个令牌：可能填错了，或者已经被撤销。请在 Ed 上重新生成一个。"),
+  "can't reach Ed": t("连不上 Ed。检查一下网络连接。"),
+  "Ed changed": t("Ed 改了它的接口，暂时读不懂。已经同步的内容都还在。"),
+};
+
+/** What went wrong with Ed (EdError), said the way the app talks. */
+export const edSaying = (reason: string) => ED_SAYS[reason] ?? reason;

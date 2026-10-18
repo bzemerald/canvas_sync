@@ -37,6 +37,8 @@ without the Canvas website or Finder.
   - `cli.py`: the `canvas` command.
   - `engine.py`, `plan.py`, `execute.py`: sync.
   - `discover.py`: finding files through modules and pages.
+  - `ed.py`: Ed (edstem.org): its unofficial API (read-only, a token from Ed's settings), which
+    Canvas course each Ed course is.
   - `state.py`: `.canvas/state.db` (SQLite).
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
@@ -118,11 +120,13 @@ without the Canvas website or Finder.
     - `[course_layouts.<id>]`: `tabs`, `overview`, `links`, each a list of entries (the
       course's own things leave out `course`).
     - `[course_icons]`, `[sidebar]` order, hidden courses.
+    - `[ed.courses]`: each course's Ed course (0: none, as chosen).
   - Notes typed on an overview: `<sync folder>/.canvas/notes/<course>/<id>.md`.
   - `~/.config/canvas-sync/app.toml`: app prefs (language, auto sync, the default `tabs` and
     `overview`: views of no course). Tests must never touch the real one (conftest.py points
     `CANVAS_SYNC_HOME` elsewhere).
-  - The Canvas token is in the keychain.
+  - The Canvas token is in the keychain; so is Ed's (`edstem:<region>`), its region and your name
+    there in `~/.config/canvas-sync/config.toml`.
 
 ## Checking the app's UI (macOS)
 

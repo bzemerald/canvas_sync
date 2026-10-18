@@ -208,6 +208,7 @@ class Settings:
     skip_folders: list[str] = field(default_factory=list)
     term_order: list[str] = field(default_factory=list)   # the sidebar, as you arranged it
     course_order: list[int] = field(default_factory=list)
+    ed_courses: dict[int, int] = field(default_factory=dict)  # a course's Ed course (0: none, as you chose)
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -252,6 +253,7 @@ class Settings:
             skip_folders=[str(x).strip("/") for x in layout.get("skip_folders", [])],
             term_order=[str(x) for x in sidebar.get("term_order", [])],
             course_order=[int(x) for x in sidebar.get("course_order", [])],
+            ed_courses={int(k): int(v) for k, v in data.get("ed", {}).get("courses", {}).items()},
         )
         for name, allowed in CHOICES.items():
             if getattr(s, name) not in allowed:
@@ -462,6 +464,16 @@ def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> 
     path.write_text(tomlkit.dumps(doc))
 
 
+@_writes
+def set_ed_courses(path: Path, links: dict[int, int]) -> None:
+    """Which Ed course is each of these courses' ([ed.courses]; 0: none)."""
+    doc = tomlkit.parse(path.read_text())
+    courses = doc.setdefault("ed", tomlkit.table()).setdefault("courses", tomlkit.table())
+    for course_id, ed_id in links.items():
+        courses[str(course_id)] = ed_id
+    path.write_text(tomlkit.dumps(doc))
+
+
 def _put_place(doc: Any, course_id: int, place: str, items: list[Entry]) -> None:
     layouts = doc.setdefault("course_layouts", tomlkit.table(is_super_table=True))
     key = str(course_id)
@@ -616,6 +628,8 @@ class Account:
     base_url: str
     root: Path
     user: str | None = None  # your name on Canvas, as of signing in
+    ed_region: str | None = None  # where your Ed account is (us, au, eu), once connected
+    ed_user: str | None = None  # your name on Ed
 
     @classmethod
     def load(cls) -> Account | None:
@@ -626,15 +640,17 @@ class Account:
         root = os.environ.get("CANVAS_ROOT") or data.get("root")
         if not url or not root:
             return None
-        return cls(url.rstrip("/"), Path(root).expanduser(), data.get("user") or None)
+        return cls(url.rstrip("/"), Path(root).expanduser(), data.get("user") or None,
+                   data.get("ed_region") or None, data.get("ed_user") or None)
 
     def save(self) -> None:
         ACCOUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
         doc["base_url"] = self.base_url
         doc["root"] = str(self.root)
-        if self.user:
-            doc["user"] = self.user
+        for key in ("user", "ed_region", "ed_user"):
+            if getattr(self, key):
+                doc[key] = getattr(self, key)
         ACCOUNT_FILE.write_text(tomlkit.dumps(doc))
 
     def token(self) -> str | None:
@@ -649,3 +665,20 @@ class Account:
             keyring.delete_password(KEYRING_SERVICE, self.base_url)
         except keyring.errors.PasswordDeleteError:
             pass
+
+    def ed_token(self) -> str | None:
+        if os.environ.get("ED_TOKEN"):
+            return os.environ["ED_TOKEN"]
+        return keyring.get_password(KEYRING_SERVICE, f"edstem:{self.ed_region}") if self.ed_region else None
+
+    def set_ed_token(self, region: str, token: str) -> None:
+        self.clear_ed_token()
+        keyring.set_password(KEYRING_SERVICE, f"edstem:{region}", token)
+
+    def clear_ed_token(self) -> None:
+        """Disconnect Ed: forget its token (what came from it stays, as do the courses linked)."""
+        if self.ed_region:
+            try:
+                keyring.delete_password(KEYRING_SERVICE, f"edstem:{self.ed_region}")
+            except keyring.errors.PasswordDeleteError:
+                pass

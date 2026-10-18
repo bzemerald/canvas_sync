@@ -41,7 +41,7 @@ import {
   view as viewOf, without,
 } from "./lib/things";
 import { useTrafficLights } from "./lib/window";
-import { friendly } from "./lib/errors";
+import { edSaying, friendly } from "./lib/errors";
 import { t, tx } from "./lib/i18n";
 
 // A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually).
@@ -436,7 +436,7 @@ export function MainWindow() {
     try {
       setSync(await api.startSync(scope));
     } catch (e) {
-      setSync({ phase: "failed", scope: [], running: false, errors: [String((e as Error).message)], warnings: [], total: 0, done: 0, current: "", changes: {}, finished_at: null });
+      setSync({ phase: "failed", scope: [], running: false, errors: [String((e as Error).message)], warnings: [], total: 0, done: 0, current: "", changes: {}, finished_at: null, ed_error: null });
     }
   };
   const syncBusy = !!sync?.running;
@@ -1700,6 +1700,9 @@ function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: str
       ))}
       {sync.errors.some((e) => /401|token/i.test(e)) && (
         <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌可能过期了，到设置里更换")}</button>
+      )}
+      {!sync.running && sync.ed_error && (
+        <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>
       )}
     </div>
   );

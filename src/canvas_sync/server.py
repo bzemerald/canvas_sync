@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from . import meaning
+from . import ed, meaning
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
 from .content import news, news_counts
@@ -42,7 +42,7 @@ from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, migrate, needs_migration, save_course_place, save_pinned,
-    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden,
+    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_ed_courses,
 )
 from .engine import Engine
 from .local import open_path
@@ -83,6 +83,7 @@ class SyncJob:
     changes: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    ed_error: str | None = None  # Ed went wrong (see ed.py); the rest synced anyway
 
     @property
     def running(self) -> bool:
@@ -149,6 +150,11 @@ class SetupRequest(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class EdLinkRequest(BaseModel):
+    ed: int  # an Ed course
+    course: int | None  # the course it is (None: none)
 
 
 class PlaceRequest(BaseModel):
@@ -382,6 +388,76 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(409, "wait for the sync to finish")
         account.clear_token()
         return account_info()
+
+    # -- Ed (ed.py) ---------------------------------------------------------------------------
+
+    def ed_info() -> dict[str, Any]:
+        assert account is not None
+        with engine() as e:
+            links = {eid: cid for cid, eid in e.settings.ed_courses.items() if eid}
+            return {
+                "connected": bool(account.ed_token()), "user": account.ed_user,
+                "token_page": ed.TOKEN_PAGE.format(region=account.ed_region or "us"),
+                **e.state.source(ed.SOURCE),  # ok_at, error: how it went last
+                "courses": [{**x, "course": links.get(x["id"])} for x in e.state.ed_courses()],
+                "canvas": [{"id": c.id, "label": course_label(c, e.settings), "term": c.term} for c in e.state.courses()],
+            }
+
+    @api.get("/ed")
+    def get_ed() -> dict[str, Any]:
+        return ed_info()
+
+    @api.post("/ed/connect")
+    async def connect_ed(req: TokenRequest) -> dict[str, Any]:
+        """Connect Ed with a token made in its settings (or a new one): which region's it is, who
+        you are there, your courses there, each linked to its Canvas course. Then a sync brings
+        what's on them."""
+        assert account is not None
+        new_token = req.token.strip()
+        try:
+            region, me = await ed.find(new_token)
+        except ed.EdError as err:
+            raise HTTPException(400, err.reason)
+        account.set_ed_token(region, new_token)
+        account.ed_region, account.ed_user = region, me["user"].get("name") or None
+        account.save()
+        with engine() as e:
+            try:
+                async with ed.EdClient(new_token, region) as client:
+                    await ed.refresh(e, client)
+                e.state.record_source(ed.SOURCE)
+            except ed.EdError as err:
+                e.state.record_source(ed.SOURCE, err.reason)
+            e.state.commit()
+        try:
+            start_sync(SyncRequest())
+        except HTTPException:
+            pass  # one's running (the next brings Ed), or signed out of Canvas
+        return ed_info()
+
+    @api.post("/ed/disconnect")
+    def disconnect_ed() -> dict[str, Any]:
+        """Forget the Ed token. What came from Ed stays, and which course each Ed course is."""
+        assert account is not None
+        account.clear_ed_token()
+        account.ed_region = account.ed_user = None
+        account.save()
+        return ed_info()
+
+    @api.put("/ed/link")
+    def link_ed(req: EdLinkRequest) -> dict[str, Any]:
+        """Which course an Ed course is; None: none (and it isn't matched again)."""
+        with engine() as e:
+            changes = {cid: 0 for cid, eid in e.settings.ed_courses.items() if eid == req.ed}
+            if req.course is not None:
+                if all(c.id != req.course for c in e.state.courses()):
+                    raise HTTPException(404, "no such course")
+                changes[req.course] = req.ed
+            else:
+                for cid, eid in ed.match([x for x in e.state.ed_courses() if x["id"] == req.ed], e.state.courses()).items():
+                    changes.setdefault(cid, 0)  # (its match, which isn't linked yet: not later either)
+            set_ed_courses(e.root / META_DIR / "config.toml", changes)
+        return ed_info()
 
     @api.post("/open/config")
     def open_config() -> dict[str, str]:
@@ -1077,6 +1153,9 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
                 # Even with nothing to download: this is what stores new announcements,
                 # assignments, pages and modules.
                 await e.apply(plan, on_event)
+                if scope is None and account.ed_region and (ed_token := account.ed_token()):
+                    job.current = "Ed"
+                    job.ed_error = await ed.sync(e, ed_token, account.ed_region)
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 

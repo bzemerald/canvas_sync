@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo, Prefs, SyncState } from "../lib/api";
 import { shortDate } from "../lib/dates";
-import { friendly } from "../lib/errors";
+import { edSaying, friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
 import { shortcut } from "../lib/keys";
+import { termRank } from "../lib/terms";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { SignInForm, inputClass } from "./SignIn";
@@ -128,6 +129,8 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
           )}
         </Section>
 
+        {account?.set_up && <EdSection syncing={!!sync?.running} />}
+
         <Section title={t("同步")}>
           {prefs && (
             <>
@@ -224,6 +227,110 @@ function AccountStatus({ account, check }: { account: AccountInfo; check: { ok: 
       <CircleAlert className="size-3.5" />
       {/token/.test(check.error ?? "") ? t("令牌已失效") : t("连不上 Canvas")}
     </span>
+  );
+}
+
+/** Ed: connecting it (a token made on Ed), how it's going, and which course each Ed course is. */
+function EdSection({ syncing }: { syncing: boolean }) {
+  const [state, setState] = useState<api.EdState | null>(null);
+  const [token, setToken] = useState<string | null>(null); // connecting
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    if (!syncing) void api.ed().then(setState, () => {}); // (again after a sync: how it went)
+  }, [syncing]);
+  if (!state) return null;
+
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setState(await api.connectEd(token ?? ""));
+      setToken(null);
+    } catch (e) {
+      setError(edSaying((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const act = (call: Promise<api.EdState>) => void call.then(setState, (e) => setError(friendly((e as Error).message)));
+  // Newest term first; of those not matched, ones still going on first.
+  const courses = [...state.courses].sort((a, b) => termRank(b.term) - termRank(a.term));
+  const linked = courses.filter((c) => c.course !== null);
+  const others = courses.filter((c) => c.course === null).sort((a, b) => Number(a.archived) - Number(b.archived));
+  const canvas = [...state.canvas].sort((a, b) => termRank(b.term) - termRank(a.term));
+
+  return (
+    <Section title="Ed">
+      {state.connected && token === null ? (
+        <>
+          <div className="flex items-center gap-3 px-4 py-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-selected text-sm font-semibold text-accent">
+              {(state.user ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{state.user ?? t("Ed 用户")}</p>
+              <p className="truncate text-xs text-muted">
+                {state.error ? <span className="text-danger">{edSaying(state.error)}</span>
+                  : state.ok_at ? t("上次同步 {when}", { when: shortDate(state.ok_at) }) : "edstem.org"}
+              </p>
+            </div>
+            {state.error
+              ? <span className="flex shrink-0 items-center gap-1 text-xs text-danger"><CircleAlert className="size-3.5" />{t("出错了")}</span>
+              : <span className="flex shrink-0 items-center gap-1 text-xs text-ok"><CheckCircle2 className="size-3.5" />{t("已连接")}</span>}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
+            <Button onClick={() => setToken("")}>{t("更换令牌…")}</Button>
+            <Button onClick={() => act(api.disconnectEd())}>{t("断开")}</Button>
+          </div>
+        </>
+      ) : token === null ? (
+        <Row label="Ed Discussion" hint={t("连上之后，每门课在 Ed 上的公告和帖子会出现在这门课里。只读：不会替你发帖，也不会标成已读。")}>
+          <Button onClick={() => setToken("")}>{t("连接…")}</Button>
+        </Row>
+      ) : (
+        <div className="px-4 py-3">
+          <p className="mb-2 text-xs text-muted">{t("在 Ed 的“Settings → API Tokens”页面生成一个令牌，粘贴到这里。")}</p>
+          <div className="flex gap-2">
+            <input type="password" autoFocus value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("粘贴令牌")}
+              autoComplete="off" spellCheck={false} className={inputClass} onKeyDown={(e) => e.key === "Enter" && !busy && void connect()} />
+            <Button onClick={() => (setToken(null), setError(null))}>{t("取消")}</Button>
+            <Button primary disabled={!token.trim() || busy} onClick={() => void connect()}>{busy ? t("正在连接…") : t("连接")}</Button>
+          </div>
+          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+          <button onClick={() => void api.openExternal(state.token_page)} className="mt-2 text-xs text-accent hover:underline">
+            {t("打开 Ed 的令牌页")}
+          </button>
+        </div>
+      )}
+      {state.courses.length > 0 && (
+        <div className="px-4 py-3">
+          <p className="text-sm">{t("课程@@ed")}</p>
+          <p className="mt-0.5 mb-2 text-xs leading-relaxed text-muted">{t("每个 Ed 课程是哪门课：按课号和学期自动对上，也可以改。")}</p>
+          <div className="space-y-1.5">
+            {[...linked, ...(showAll ? others : [])].map((c) => (
+              <div key={c.id} className={`flex items-center gap-3 ${c.archived && c.course === null ? "opacity-60" : ""}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{c.code || c.name}</p>
+                  <p className="truncate text-xs text-muted">{[c.code && c.name !== c.code ? c.name : "", c.term].filter(Boolean).join(" · ")}</p>
+                </div>
+                <select value={c.course ?? ""} onChange={(e) => act(api.linkEd(c.id, e.target.value ? Number(e.target.value) : null))}
+                  className="max-w-56 min-w-0 shrink rounded-md border border-line bg-bg px-2 py-1 text-sm">
+                  <option value="">{t("不属于任何课程")}</option>
+                  {canvas.map((x) => <option key={x.id} value={x.id}>{x.term ? `${x.label} · ${x.term}` : x.label}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {others.length > 0 && (
+            <button onClick={() => setShowAll(!showAll)} className="mt-2 text-xs text-accent hover:underline">
+              {showAll ? t("只看已对上的") : t("还有 {n} 个没对上课程的 Ed 课程", { n: others.length })}
+            </button>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }
 
