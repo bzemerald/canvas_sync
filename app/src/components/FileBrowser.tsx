@@ -11,7 +11,7 @@ import { thingOfEntry, useDragThing, useThings } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import { FileIcon } from "./FileIcon";
 import { RenameInput } from "./RenameInput";
-import { NewDot, StatusBadges, StatusDot } from "./Status";
+import { IconMarks, NewDot, StatusBadges } from "./Status";
 import { Thumb } from "./Thumb";
 import { locale, t } from "../lib/i18n";
 
@@ -284,7 +284,7 @@ export function FileBrowser({
                     </span>
                   )}
                 </span>
-                <StatusBadges entry={e} showChanges={showChanges} />
+                <span className="min-w-0 overflow-hidden"><StatusBadges entry={e} showChanges={showChanges} /></span>
                 <span className="truncate text-xs text-muted">{formatTime(e.mtime)}</span>
                 <span className="text-right text-xs text-muted tabular-nums">{e.type === "file" ? formatSize(e.size) : ""}</span>
               </li>
@@ -307,13 +307,13 @@ export function FileBrowser({
                     <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
                   )}
                   {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label={t("快捷方式")} />}
+                  <IconMarks entry={e} showChanges={showChanges} />
                 </div>
                 {renaming === e.path ? (
                   <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="w-full text-center text-xs" />
                 ) : (
                   <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
                 )}
-                <StatusDot entry={e} showChanges={showChanges} />
               </div>
             ))}
           </div>

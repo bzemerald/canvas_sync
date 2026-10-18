@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CloudOff, FolderInput, Pencil, Trash2 } from "lucide-react";
 import type { Entry } from "../lib/api";
 import { t } from "../lib/i18n";
 
@@ -42,37 +43,56 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
           {t("{n} 个新文件", { n: entry.new_inside })}
         </span>
       )}
-      {showChanges && entry.type === "dir" && entry.deleted_inside > 0 && (
-        <span title={t("里面有你删除的文件")} className="rounded bg-danger-soft px-1.5 py-px text-[11px] whitespace-nowrap text-danger">
-          {t("{n} 个已删除", { n: entry.deleted_inside })}
-        </span>
-      )}
-      {showChanges && entry.type === "dir" && entry.modified_inside > 0 && (
-        <span title={t("里面有你改过的文件")} className="rounded bg-warn-soft px-1.5 py-px text-[11px] whitespace-nowrap text-warn">
-          {t("{n} 个已修改", { n: entry.modified_inside })}
-        </span>
-      )}
+      {showChanges && <Tallies entry={entry} />}
     </span>
   );
 }
 
-/** A small dot for the icon view, where there's no room for words. */
-export function StatusDot({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
+/** A folder's count of what you deleted and changed below it: an icon and a number, small
+ * enough to sit beside its other badges (the words are in the tooltip). */
+function Tallies({ entry }: { entry: Entry }) {
+  if (entry.type !== "dir") return null;
+  return (
+    <>
+      {entry.deleted_inside > 0 && (
+        <Pill icon={<Trash2 />} n={entry.deleted_inside} label={t("里面有 {n} 个你删除的文件", { n: entry.deleted_inside })} className="bg-danger text-on-accent" />
+      )}
+      {entry.modified_inside > 0 && (
+        <Pill icon={<Pencil />} n={entry.modified_inside} label={t("里面有 {n} 个你改过的文件", { n: entry.modified_inside })} className="bg-warn text-on-accent" />
+      )}
+    </>
+  );
+}
+
+function Pill({ icon, n, label, className }: { icon?: React.ReactNode; n?: number; label: string; className: string }) {
+  return (
+    <span title={label} aria-label={label} className={`flex h-4 min-w-4 shrink-0 items-center justify-center gap-0.5 rounded-full px-1 text-[10px] leading-none font-medium tabular-nums whitespace-nowrap [&>svg]:size-2.5 ${className}`}>
+      {icon}
+      {n !== undefined && (n > 99 ? "99+" : n)}
+    </span>
+  );
+}
+
+/** The icon view's marks, on the icon's corner: a folder's counts (new, and with `showChanges`
+ * what you deleted and changed); a file's state as an icon. Hover says what each is. */
+export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
   const s = entry.states;
-  const color = s.includes("remote_deleted")
-    ? "bg-danger"
-    : entry.new || entry.new_inside > 0
-      ? "bg-accent"
-      : !showChanges
-        ? null
-        : s.includes("ignored") || s.includes("missing") || entry.deleted_inside > 0
-          ? "bg-danger"
-          : s.includes("modified") || entry.modified_inside > 0
-            ? "bg-warn"
-            : s.includes("moved")
-              ? "bg-info"
-              : null;
-  return color ? <span className={`size-2 rounded-full ${color}`} /> : null;
+  const mine = (x: string) => showChanges && s.includes(x);
+  const marks = entry.type === "dir" ? (
+    <>
+      {entry.new_inside > 0 && <Count n={entry.new_inside} label={t("里面有你还没打开过的新文件")} />}
+      {showChanges && <Tallies entry={entry} />}
+    </>
+  ) : (
+    <>
+      {entry.new && <Pill label={entry.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} className="bg-accent text-on-accent" />}
+      {s.includes("remote_deleted") && <Pill icon={<CloudOff />} label={LABEL.remote_deleted.hint} className="bg-danger text-on-accent" />}
+      {(mine("missing") || mine("ignored")) && <Pill icon={<Trash2 />} label={LABEL.ignored.hint} className="bg-danger text-on-accent" />}
+      {mine("modified") && <Pill icon={<Pencil />} label={LABEL.modified.hint} className="bg-warn text-on-accent" />}
+      {mine("moved") && <Pill icon={<FolderInput />} label={LABEL.moved.hint} className="bg-info text-on-accent" />}
+    </>
+  );
+  return <span className="absolute -top-1 -right-1 flex gap-0.5 [&>*]:ring-2 [&>*]:ring-bg">{marks}</span>;
 }
 
 /** How many new things there are. */

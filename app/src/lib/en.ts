@@ -351,10 +351,8 @@ export const en: Record<string, string | [string, string]> = {
   "你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载": "You deleted this folder or stopped syncing it: files Canvas adds here later won't download",
   "Canvas 上有新版本，已经更新到这里；你还没打开过": "Canvas had a new version, now here too; you haven't opened it yet",
   "里面有你还没打开过的新文件": "Has new files you haven't opened yet",
-  "里面有你删除的文件": "Has files you deleted",
-  "里面有你改过的文件": "Has files you changed",
-  "{n} 个已删除": ["1 deleted", "{n} deleted"],
-  "{n} 个已修改": ["1 modified", "{n} modified"],
+  "里面有 {n} 个你删除的文件": ["Has 1 file you deleted", "Has {n} files you deleted"],
+  "里面有 {n} 个你改过的文件": ["Has 1 file you changed", "Has {n} files you changed"],
   "新的": "New",
 
   // -- dates
