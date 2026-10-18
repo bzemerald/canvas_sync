@@ -252,6 +252,8 @@ export const en: Record<string, string | [string, string]> = {
     "If unchecked, the folder comes back with any new files on the next sync (the deleted ones don't).",
   "改回原版": "Restore",
   "重新放回": "Put back",
+  "其中 {n} 个会重新放回": ["1 of them is put back", "{n} of them are put back"],
+  "其中 {n} 个会改回原版": ["1 of them is restored", "{n} of them are restored"],
   "恢复 {label} 的 Canvas 原版": "Restore Canvas originals in {label}",
   "恢复 {n} 个文件": ["Restore 1 file", "Restore {n} files"],
   "这里没有你修改或删除过的 Canvas 文件，不需要恢复。": "Nothing from Canvas here has been changed or deleted; there's nothing to restore.",

@@ -64,7 +64,7 @@ function Tallies({ entry }: { entry: Entry }) {
   );
 }
 
-function Pill({ icon, n, label, className }: { icon?: React.ReactNode; n?: number; label: string; className: string }) {
+export function Pill({ icon, n, label, className }: { icon?: React.ReactNode; n?: number; label: string; className: string }) {
   return (
     <span title={label} aria-label={label} className={`flex h-4 min-w-4 shrink-0 items-center justify-center gap-0.5 rounded-full px-1 text-[10px] leading-none font-medium tabular-nums whitespace-nowrap [&>svg]:size-2.5 ${className}`}>
       {icon}
