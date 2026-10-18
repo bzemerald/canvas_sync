@@ -130,6 +130,7 @@ export const en: Record<string, string | [string, string]> = {
   "已同步": "Synced",
   "同步失败": "Sync failed",
   "{n} 个新文件": ["1 new file", "{n} new files"],
+  "{n} 个未读": ["1 unread", "{n} unread"],
   "{n} 个更新": ["1 update", "{n} updates"],
   "{n} 个冲突": ["1 conflict", "{n} conflicts"],
   "移动了 {n} 个": ["1 moved", "{n} moved"],

@@ -40,7 +40,7 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
       )}
       {entry.type === "dir" && entry.new_inside > 0 && (
         <span title={t("里面有你还没打开过的新文件")} className="rounded bg-selected px-1.5 py-px text-[11px] whitespace-nowrap text-accent">
-          {t("{n} 个新文件", { n: entry.new_inside })}
+          {t("{n} 个未读", { n: entry.new_inside })}
         </span>
       )}
       {showChanges && <Tallies entry={entry} />}
