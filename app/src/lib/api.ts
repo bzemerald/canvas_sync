@@ -392,7 +392,17 @@ export async function media(url: string): Promise<string | null> {
 }
 export const health = () => api<{ root: string | null; canvas: string | null; set_up: boolean; version: string }>("/health");
 export const status = () => api<FileStatus[]>("/status");
-export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
+/** A folder's contents. Asked for again at the same moment (React runs effects twice in
+ * development), it's one request. */
+export function tree(path: string): Promise<Entry[]> {
+  let p = listing.get(path);
+  if (!p) {
+    listing.set(path, (p = api<Entry[]>(`/tree?${new URLSearchParams({ path })}`)));
+    setTimeout(() => listing.delete(path)); // (later asks, after a change, go to the backend)
+  }
+  return p;
+}
+const listing = new Map<string, Promise<Entry[]>>();
 
 export const syncState = () => api<SyncState>("/sync");
 export const startSync = (scope: Scope = {}) => api<SyncState>("/sync", { method: "POST", body: JSON.stringify(scope) });

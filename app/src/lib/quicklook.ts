@@ -26,10 +26,14 @@ export async function quickLook(paths: string[], index: number, how: "open" | "t
     await api.openPath(paths[index], { preview: true });
     return true;
   }
-  const { root } = await api.health();
+  if (how === "follow" && !showing) return false; // (the selection changes all the time)
+  root ??= (await api.health()).root ?? undefined;
   if (!root) return false;
   const items = paths.map((p) => ({ path: `${root}/${p}`, icon: iconOf(p) }));
-  const shown = await invoke<boolean>("quick_look", { items, index, open: how !== "follow", toggle: how === "toggle" });
-  if (shown) await api.sawFile(paths[index]);
-  return shown;
+  showing = await invoke<boolean>("quick_look", { items, index, open: how !== "follow", toggle: how === "toggle" });
+  if (showing) await api.sawFile(paths[index]);
+  return showing;
 }
+// The panel was showing when last asked (it may have been closed since: the next ask says).
+let showing = false;
+let root: string | undefined; // the sync folder

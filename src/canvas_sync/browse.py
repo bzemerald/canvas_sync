@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from .layout import Layout
-from .state import META_DIR, State
+from .state import META_DIR, FileRecord, State
 
 # Local changes `restore` undoes. ("moved" alone isn't one: your folders are yours to arrange.)
 RESTORABLE = {"modified", "missing", "ignored"}
@@ -73,7 +73,9 @@ def _dir_size(path: str) -> int:
     return total
 
 
-def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status], rel: str) -> list[Entry]:
+def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status], rel: str,
+             records: list[FileRecord] | None = None) -> list[Entry]:
+    """`records`: every file's, if already read (for `statuses`)."""
     base = (root / rel) if rel else root
     if not base.resolve().is_relative_to(root.resolve()) or not base.is_dir():
         raise LookupError(f"{rel or '.'} is not a folder in {root}")
@@ -81,7 +83,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     by_id = {s.file_id: s for s in statuses}
     at = {s.path: s for s in statuses if s.path and not GONE & set(s.states)}  # where files are now
     moved = {s.file_id for s in statuses if "moved" in s.states}  # their old path may hold something else now
-    tracked = {r.path: r for r in state.all_files() if r.path and not r.ignored and r.id not in moved}
+    tracked = {r.path: r for r in (state.all_files() if records is None else records) if r.path and not r.ignored and r.id not in moved}
     links = {row[0]: row[1] for row in state.db.execute("SELECT path, file_id FROM links")}
     course_dirs = {layout.course_dir(c).as_posix(): c.id for c in state.courses()}
     changed = [s.path for s in statuses if s.path and RESTORABLE & set(s.states)]

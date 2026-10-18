@@ -20,7 +20,7 @@ from .local import clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
 from .search import Hit, Index, IndexStats, ProgressHandler
-from .state import META_DIR, State
+from .state import META_DIR, FileRecord, State
 
 
 class NotInitialized(Exception):
@@ -131,11 +131,12 @@ class Engine:
 
     # -- offline ------------------------------------------------------------------
 
-    def status(self) -> list[FileStatus]:
-        """How tracked files differ from the copies last pulled. No network."""
+    def status(self, records: list[FileRecord] | None = None) -> list[FileStatus]:
+        """How tracked files differ from the copies last pulled (`records`: all of them, if
+        already read). No network."""
         inspector = Inspector(self.root)
         out = []
-        for r in self.state.all_files():
+        for r in self.state.all_files() if records is None else records:
             states, path = [], r.path
             if r.ignored:
                 # Not synced any more: deleted by you, or kept as your own file.
@@ -477,7 +478,8 @@ class Engine:
 
     def list_dir(self, rel: str = "") -> list[Entry]:
         """A folder's contents as the app shows them; see `browse.list_dir`."""
-        return list_dir(self.root, self.state, self.layout, self.status(), rel.strip("/"))
+        records = self.state.all_files()
+        return list_dir(self.root, self.state, self.layout, self.status(records), rel.strip("/"), records)
 
 
 def _under(path: str, folder: str) -> bool:

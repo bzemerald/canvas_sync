@@ -8,6 +8,7 @@ exactly what will happen and drop actions it doesn't want before applying.
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from enum import StrEnum
@@ -117,9 +118,14 @@ class Inspector:
 
     def inspect(self, rec: FileRecord) -> LocalInfo:
         assert rec.path is not None
-        here = self.root / rec.path
-        if is_regular(here):
-            return LocalInfo(rec.path, modified=self._modified(rec, here))
+        # One call, on a plain string: status() asks this of every tracked file.
+        here = os.path.join(self.root, rec.path)
+        try:
+            st = os.lstat(here)
+        except OSError:
+            st = None
+        if st is not None and stat.S_ISREG(st.st_mode):
+            return LocalInfo(rec.path, modified=self._modified(rec, here, st))
         # Not where we left it. Moves within the volume keep the inode, so look for it.
         if rec.snap_inode is not None:
             if self._inodes is None:
@@ -130,11 +136,11 @@ class Inspector:
         return LocalInfo(None)
 
     @staticmethod
-    def _modified(rec: FileRecord, path: Path) -> bool:
-        st = path.stat()
+    def _modified(rec: FileRecord, path: Path | str, st: os.stat_result | None = None) -> bool:
+        st = st or os.stat(path)
         if st.st_mtime == rec.snap_mtime and st.st_size == rec.snap_size:
             return False
-        return sha256_file(path) != rec.base_hash
+        return sha256_file(Path(path)) != rec.base_hash
 
 
 class Planner:
