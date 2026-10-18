@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CloudOff, FolderInput, Pencil, Trash2 } from "lucide-react";
+import { CloudOff, FolderInput, Pencil, RefreshCwOff, Trash2 } from "lucide-react";
 import type { Entry } from "../lib/api";
 import { t } from "../lib/i18n";
 
@@ -11,6 +11,7 @@ const LABEL: Record<string, { text: string; className: string; hint: string }> =
   remote_deleted: { text: t("Canvas 已删除"), className: "bg-danger-soft text-danger", hint: t("老师已经从 Canvas 删除了它；本地副本保留着") },
   untracked: { text: t("不再同步"), className: "bg-chip text-muted", hint: t("你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它") },
 };
+const SKIPPED_HINT = t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载");
 // Shown always: what Canvas did, and what isn't synced (that's how it is now, not a change to
 // undo). The rest is what you did, shown only with 显示改动.
 const ALWAYS = new Set(["remote_deleted", "untracked"]);
@@ -30,7 +31,7 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
         ) : null,
       )}
       {entry.type === "dir" && entry.skipped && (
-        <span title={t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载")} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
+        <span title={SKIPPED_HINT} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
           {t("不再同步")}
         </span>
       )}
@@ -75,7 +76,8 @@ export function Pill({ icon, n, label, className }: { icon?: React.ReactNode; n?
 }
 
 /** The icon view's marks, on the icon's corner: a folder's counts (new, and with `showChanges`
- * what you deleted and changed); a file's state as an icon. Hover says what each is. */
+ * what you deleted and changed); a file's state as an icon; not synced, a sync icon struck out.
+ * Hover says what each is. */
 export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
   const s = entry.states;
   const mine = (x: string) => showChanges && s.includes(x);
@@ -83,6 +85,7 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
     <>
       {entry.new_inside > 0 && <Count n={entry.new_inside} label={t("里面有你还没打开过的新文件")} />}
       {showChanges && <Tallies entry={entry} />}
+      {entry.skipped && <NotSynced label={SKIPPED_HINT} />}
     </>
   ) : (
     <>
@@ -91,10 +94,13 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
       {(mine("missing") || mine("ignored")) && <Pill icon={<Trash2 />} label={LABEL.ignored.hint} className="bg-danger text-on-accent" />}
       {mine("modified") && <Pill icon={<Pencil />} label={LABEL.modified.hint} className="bg-warn text-on-accent" />}
       {mine("moved") && <Pill icon={<FolderInput />} label={LABEL.moved.hint} className="bg-info text-on-accent" />}
+      {s.includes("untracked") && <NotSynced label={LABEL.untracked.hint} />}
     </>
   );
   return <span className="absolute -top-1 -right-1 flex gap-0.5 [&>*]:ring-2 [&>*]:ring-bg">{marks}</span>;
 }
+
+const NotSynced = ({ label }: { label: string }) => <Pill icon={<RefreshCwOff />} label={label} className="bg-muted text-on-accent" />;
 
 /** How many new things there are. */
 export function Count({ n, label }: { n: number; label: string }) {
