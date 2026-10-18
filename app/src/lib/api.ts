@@ -342,13 +342,15 @@ export interface Usage {
  * yours), and what you open. */
 export const catalog = () => api<{ things: CatalogEntry[]; abbreviations: Record<string, string[]> } & Usage>("/catalog");
 /** Search as you type, in the index: `q` only words to find (the app read the courses, kinds and
- * times out of what was typed: lib/query.ts), narrowed to `courses`, `kinds`, `since` up to `until`. */
+ * times out of what was typed: lib/query.ts), narrowed to `courses`, `kinds`, `since` up to `until`,
+ * files `under` a folder. */
 export interface FoundInText {
   hits: Hit[];
   corrected: Record<string, string>; // words taken for others, misspelled ("midtrem": midterm)
 }
-export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; source?: "ed"; since?: string; until?: string; limit?: number } = {}): Promise<FoundInText> {
+export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; source?: "ed"; since?: string; until?: string; under?: string; limit?: number } = {}): Promise<FoundInText> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 40) });
+  if (opts.under) params.set("under", opts.under); // only files in this folder
   for (const c of opts.courses ?? []) params.append("course", String(c));
   for (const k of opts.kinds ?? []) params.append("kind", k);
   if (opts.source) params.set("source", opts.source);

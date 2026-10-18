@@ -2,16 +2,17 @@
 // (courses, pages and tools, assignments, announcements, files and folders, things to do, what's
 // only inside), a few of each until asked for all; before anything is typed, what you opened
 // lately and what's due soon. Above it, how what's typed was read (lib/query.ts): a chip for each
-// part that narrows it down. Shared by the search window and the main window's 搜索 page, inside a
-// cmdk <Command> (arrows move, enter opens).
+// part that narrows it down. Shared by the search window, the main window's 搜索 page and its search
+// box elsewhere (in a course, in a folder: `Scope`), inside a cmdk <Command> (arrows move, enter
+// opens). And the same, narrowing a list (a course's tab) as you type: `useNarrowing`.
 import { Command } from "cmdk";
 import { AppWindow, CalendarDays, CircleCheck, MessagesSquare, RefreshCw, Settings as SettingsIcon, Sparkles, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, Usage } from "../lib/api";
 import { shortDate, untilDue } from "../lib/dates";
 import { en } from "../lib/en";
-import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, dueSoon, find, prepare, recent, vocabulary } from "../lib/find";
+import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, type Scope, dueSoon, find, narrow, prepare, recent, vocabulary } from "../lib/find";
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, singular, without } from "../lib/query";
@@ -94,9 +95,9 @@ export function canvasUrl(e: CatalogEntry): string | null {
 const NOTHING: Usage = { opened: {}, picks: [] };
 
 /** The catalog, made ready for finding, what reading a query knows of it, and what you open;
- * loaded again when `again` changes. */
-export function useCatalog(again: unknown[], courses: Course[] = []) {
-  const data = useLoaded("catalog", api.catalog, again).value;
+ * loaded again when `again` changes (and only while `on`: what was loaded last stays). */
+export function useCatalog(again: unknown[], courses: Course[] = [], on = true) {
+  const data = useLoaded(on ? "catalog" : null, api.catalog, again).value;
   const catalog = useMemo(() => (data ? prepare(data.things, describeEntry(courses), data.abbreviations) : null), [data, courses]);
   const vocab = useMemo(() => (catalog ? vocabulary(catalog, KINDS) : NO_VOCABULARY), [catalog]);
   const names = useMemo(
@@ -137,21 +138,27 @@ function lastCourse(): number | null {
 
 const EMPTY = prepare([], () => ({ names: [], aliases: [], kind: [] }));
 const NO_ANSWER: api.FoundInText = { hits: [], corrected: {} };
+const NOWHERE: Scope = {};
 
 /** What's found for `query`, as you type: how it reads, what that finds by name and in the index
  * (or, with nothing typed, what you opened lately and what's due soon), each by key, and which
- * comes first. */
-export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[]) {
+ * comes first. `scope`: where it's searched from (a course; a folder), unless what's typed names
+ * a course. */
+export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[], scope: Scope = NOWHERE) {
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
-  const asked = useMemo(() => indexQuery(typed, catalog?.abbreviations ?? {}), [typed, catalog]);
+  const where = typed.parts.some((p) => p.role === "course") ? NOWHERE : scope;
+  const asked = useMemo(() => {
+    const q = indexQuery(typed, catalog?.abbreviations ?? {});
+    return q && { ...q, courses: q.courses.length ? q.courses : where.courses ?? [], under: where.under };
+  }, [typed, catalog, where]);
   const { answer, error, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
-    asked ? api.find(asked.q, { courses: asked.courses, kinds: asked.kinds, source: asked.source, since: asked.since, until: asked.until, limit: 40 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
+    asked ? api.find(asked.q, { ...asked, limit: 40 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
   // Misspelled words (the index has nothing they start) are taken for the nearest there are.
   const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
   const hits = answer.hits;
   const results = useMemo(
-    () => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions, Date.now(), lastCourse()) : null),
-    [query, reading, catalog, usage, hits, actions],
+    () => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions, Date.now(), lastCourse(), { ...where, kind: scope.kind }) : null),
+    [query, reading, catalog, usage, hits, actions, where, scope.kind],
   );
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
   const due = useMemo(() => {
@@ -249,6 +256,96 @@ export function FoundSearch({ input, query, onQuery, catalog, vocab, usage, name
     </Command>
   );
 }
+
+/** What the search box finds where it is (a course, a folder: `scope`): as on 搜索, under the box,
+ * which stays in the header (`box`: its keys move through the list and open what's chosen). */
+export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note }: {
+  box: React.RefObject<HTMLInputElement | null>;
+  query: string;
+  onQuery: (q: string) => void;
+  scope: Scope;
+  finder: Finder;
+  actions: Action[];
+  onOpen: (f: Found | undefined, how: How) => void;
+  props?: (f: Found) => object;
+  note?: React.ReactNode; // where it searched, and the way to search more (or less) widely
+}) {
+  const { catalog, vocab, usage, names, courses } = finder;
+  const { reading, results, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions, scope);
+  const { value, choose, list } = useChosen(query, listed, first);
+  const root = useRef<HTMLDivElement>(null);
+  // In a course, its things needn't each say so.
+  const others = useMemo(() => {
+    const here = scope.courses?.length === 1 ? scope.courses[0] : null;
+    return here === null ? names : new Map([...names].filter(([id]) => id !== here));
+  }, [names, scope]);
+  // The box is outside the list: what its keys do here, they do in the list (cmdk's, and ours).
+  useEffect(() => {
+    const input = box.current;
+    if (!input) return;
+    const pass = (e: KeyboardEvent) => {
+      if (e.isComposing || !["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(e.key)) return;
+      const copy = new KeyboardEvent("keydown", { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, bubbles: true, cancelable: true });
+      root.current?.dispatchEvent(copy);
+      if (copy.defaultPrevented || e.key !== "Tab") e.preventDefault();
+    };
+    input.addEventListener("keydown", pass);
+    return () => input.removeEventListener("keydown", pass);
+  }, [box]);
+  return (
+    <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
+      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => completion(reading, listed.get(value)), onQuery)}>
+      <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+        {(note || reading.parts.length > 0) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 pt-1 pb-1 text-xs text-muted">
+            {note}
+            <ReadingBar reading={reading} names={names} courses={courses} onQuery={onQuery} />
+          </div>
+        )}
+        {error && <p className="px-2 py-6 text-sm whitespace-pre-wrap text-danger">{error}</p>}
+        {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
+        <FoundList results={results} recent={[]} due={[]} courses={courses} names={others} onOpen={(f) => onOpen(f, "open")} props={props} />
+      </Command.List>
+    </Command>
+  );
+}
+
+/** What search knows (useCatalog), and the courses: for what narrows lists in the main window. */
+export interface Finder {
+  catalog: Catalog | null;
+  vocab: Vocabulary;
+  usage: Usage;
+  names: Map<number, string>;
+  courses: Course[];
+}
+export const FinderContext = createContext<Finder | null>(null);
+
+const listed: Describe = (e) => ({ names: [e.title || e.name || ""], aliases: e.aliases, kind: [] });
+
+/** A list narrowed by what's typed in the search box, read and matched as search does (find.ts:
+ * `narrow`): `entries`, the list's things as catalog entries; `index`, where the index has more of
+ * them (the text inside). `scores`: how well each matches, by key; null when nothing typed narrows
+ * it (nothing, or only a course: the list is of one). */
+export function useNarrowing(query: string, entries: CatalogEntry[] | null, index?: { course: number; kind: api.Kind }) {
+  const finder = useContext(FinderContext);
+  const vocab = finder?.vocab ?? NO_VOCABULARY;
+  const abbr = finder?.catalog?.abbreviations ?? NO_ABBREVIATIONS;
+  const typed = useMemo(() => read(query, vocab), [query, vocab]);
+  const asked = useMemo(() => {
+    const q = index && indexQuery({ ...typed, parts: typed.parts.filter((p) => p.role !== "course") }, abbr);
+    return q ? { ...q, courses: [index.course], kinds: [index.kind] } : null;
+  }, [typed, abbr, index?.course, index?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { answer, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
+    asked ? api.find(asked.q, { ...asked, limit: 200 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
+  const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
+  const scores = useMemo(() => {
+    if (!entries || !reading.parts.some((p) => p.role !== "course")) return null;
+    return narrow(reading, entries, listed, abbr, answer.hits);
+  }, [reading, entries, abbr, answer]);
+  return { reading, scores, loading: loading && !!asked, names: finder?.names ?? NO_NAMES, courses: finder?.courses ?? [] };
+}
+const NO_ABBREVIATIONS: Record<string, string[]> = {};
+const NO_NAMES = new Map<number, string>();
 
 // -- how a query reads ----------------------------------------------------------------------------
 

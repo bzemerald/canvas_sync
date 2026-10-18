@@ -43,6 +43,14 @@ export interface Results {
   groups: Group[]; // the best group first; what's only inside, then what's only like it in meaning, last
 }
 
+/** Where search is, besides what's typed: in a course (what's typed can name another), in a folder
+ * (only the files and folders in it), on a tab showing a kind of thing (that kind a little first). */
+export interface Scope {
+  courses?: number[];
+  under?: string;
+  kind?: KindId;
+}
+
 /** What a thing is called (`names`: as it's shown; `aliases`: what else it answers to, in any
  * language), and what kind of thing it is, in words. */
 export type Describe = (e: CatalogEntry) => { names: string[]; aliases: string[]; kind: string[] };
@@ -154,6 +162,7 @@ const W = {
   view: 0.2, // one of a course's views
   term: 1, // this term's
   here: 0.4, // of the course you were last in
+  shown: 0.4, // of the kind the tab you searched from shows
   dueSoon: 0.3, // due within the week, and not handed in
   fresh: 0.2, // new in the last two weeks (less as it ages)
   post: 1, // a post on Ed: what's said about a thing, after the thing itself
@@ -233,8 +242,8 @@ function isStatus(e: CatalogEntry, s: Status, now: number): boolean {
 }
 
 /** What makes one thing likelier than another that matches as well to be what you're after. */
-interface Context { catalog: Catalog; usage: Usage; picks: Map<string, number>; now: number; here: number | null }
-function bonus(p: Prepared, { catalog, usage, picks, now, here }: Context): number {
+interface Context { catalog: Catalog; usage: Usage; picks: Map<string, number>; now: number; here: number | null; kind?: KindId }
+function bonus(p: Prepared, { catalog, usage, picks, now, here, kind }: Context): number {
   const e = p.entry;
   let b = W.opened * Math.min(frecency(usage.opened[p.key], now), 4);
   const pick = picks.get(p.key) ?? 0;
@@ -244,6 +253,7 @@ function bonus(p: Prepared, { catalog, usage, picks, now, here }: Context): numb
   else if (e.type === "doc" && e.kind === "post") b -= W.post;
   if (p.term && p.term === catalog.latestTerm) b += W.term; // (what was last term's is seldom what you're after)
   if (here !== null && p.course === here) b += W.here;
+  if (kind && p.kind === kind) b += W.shown;
   const due = e.due ? Date.parse(e.due) - now : NaN;
   if (due > 0 && due < 7 * DAY && !handedIn(e.status)) b += W.dueSoon;
   const age = e.date ? (now - Date.parse(e.date)) / DAY : NaN;
@@ -269,15 +279,50 @@ const hitKeyOf = (h: Hit) => `hit:${h.kind}:${h.course_id}:${h.path ?? h.url ?? 
 type Term = PartOf<"word"> | PartOf<"series"> | PartOf<"kind">;
 const isTerm = (p: Part): p is Term => p.role === "word" || p.role === "series" || p.role === "kind";
 
+const isUnder = (path: string, folder: string) => path.startsWith(folder + "/");
+
 /** What a reading finds: by name in the catalog (and actions), and by the index (`hits`, as it
  * returns them for the reading's `indexQuery`: names first, then what's only inside). `here`: the
- * course you were last in, whose things come a little first. */
+ * course you were last in, whose things come a little first. `scope`: where it's searched from. */
 export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[] = [], now = Date.now(),
-  here: number | null = null): Results {
+  here: number | null = null, scope: Scope = {}): Results {
+  const { named, inside, related } = scored(reading, catalog, usage, hits, actions, now, here, scope);
+  const top = named[0] ?? inside.shift() ?? related.shift() ?? null;
+  const groups = new Map<GroupId, Found[]>();
+  for (const f of named) {
+    if (f === top) continue;
+    const g = groupOf(f);
+    groups.set(g, [...(groups.get(g) ?? []), f]);
+  }
+  const out: Group[] = [...groups].map(([id, items]) => ({ id, items: items.slice(0, MOST), cap: CAP[id] }));
+  out.sort((a, b) => b.items[0].score - a.items[0].score);
+  if (inside.length) out.push({ id: "inside", items: inside.slice(0, MOST), cap: CAP.inside });
+  if (related.length) out.push({ id: "related", items: related.slice(0, MOST), cap: CAP.related });
+  return { top, groups: out };
+}
+
+const NO_USAGE: Usage = { opened: {}, picks: [] };
+
+/** A list narrowed down by a reading, as find goes about it: the list's things, as catalog entries
+ * (`describe`: what each is called), and `hits`, the index's for it (by name, and inside: what
+ * matches only by meaning is left out). How well each matches, by key; none if the reading has
+ * nothing to narrow it down by. A course it says is left out: the list is of one. */
+export function narrow(reading: Reading, entries: CatalogEntry[], describe: Describe, abbreviations: Record<string, string[]>,
+  hits: Hit[] = [], now = Date.now()): Map<string, number> {
+  const parts = reading.parts.filter((p) => p.role !== "course");
+  const { named, inside } = scored({ ...reading, parts }, prepare(entries, describe, abbreviations), NO_USAGE, hits, [], now, null, {});
+  return new Map([...named, ...inside].flatMap((f) => (f.type === "thing" ? [[f.key, f.score] as const] : [])));
+}
+
+/** What a reading finds (see find), best first: by name; only inside; only by meaning. */
+function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], actions: Action[], now: number,
+  here: number | null, scope: Scope): { named: Found[]; inside: Found[]; related: Found[] } {
   const { parts, query } = reading;
   const abbr = catalog.abbreviations;
   const courseParts = parts.filter((p): p is PartOf<"course"> => p.role === "course");
-  let only: Set<number> | null = courseParts.length ? new Set(courseParts.flatMap((p) => p.courses)) : null;
+  // (Searching in a course, what's typed can name another: then that's where.)
+  let only: Set<number> | null = courseParts.length ? new Set(courseParts.flatMap((p) => p.courses))
+    : scope.courses?.length ? new Set(scope.courses) : null;
   const when = parts.filter((p): p is PartOf<"when"> => p.role === "when").at(-1)?.when;
   const statuses = parts.flatMap((p) => (p.role === "status" ? [p.status] : []));
   const sources = parts.flatMap((p) => (p.role === "source" ? [p.source] : []));
@@ -286,18 +331,19 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   // Little words ("can I get an extension") needn't match when there's more to go by.
   if (terms.some(little) && (terms.some((t) => !little(t)) || narrowed || courseParts.length)) terms = terms.filter((t) => !little(t));
   if (!terms.length && !narrowed) {
-    if (!courseParts.length) return { top: null, groups: [] };
+    if (!courseParts.length) return { named: [], inside: [], related: [] };
     // Only a course: the course, and what's called that ("cs70": CS 70).
     terms = courseParts.map((p) => ({ role: "word", quoted: false, spans: p.spans, text: p.text.toLowerCase() }));
     only = null;
   }
   const picks = picked(query, usage, now);
-  const ctx: Context = { catalog, usage, picks, now, here };
+  const ctx: Context = { catalog, usage, picks, now, here, kind: scope.kind };
   const found = new Map<string, Found>();
 
   /** Whether it's in what the reading narrows things down to. */
-  const within = (p: Prepared) => {
+  const inScope = (p: Prepared) => {
     if (only && (p.course === null || !only.has(p.course))) return false;
+    if (scope.under !== undefined && !("path" in p.entry && isUnder(p.entry.path, scope.under))) return false;
     if (sources.length && !sources.some((s) => p.entry.source === s || isView(p.entry) && SOURCE_VIEWS[s].includes(p.entry.view))) return false;
     if (when) {
       const date = when.due ? p.entry.due : p.entry.due ?? p.entry.date;
@@ -306,7 +352,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     }
     return statuses.every((s) => isStatus(p.entry, s, now));
   };
-  const entries = catalog.entries.filter(within);
+  const entries = catalog.entries.filter(inScope);
 
   // Each part, against what things are called (own) and what they're in (context).
   const last = parts.at(-1);
@@ -382,10 +428,11 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
   hits.forEach((h, i) => {
     const thing = thingOfHit(h);
     const p = thing ? catalog.byKey.get(thingKey(thing)) : undefined;
-    if (p ? !within(p) : statuses.length > 0) return;
+    if (p ? !inScope(p) : statuses.length > 0) return;
     const key = p ? p.key : hitKeyOf(h);
+    const shown = !p && scope.kind && h.kind === scope.kind ? W.shown : 0;
     if (h.match !== "name") {
-      const score = W.inside - Math.min(i, 40) * 0.02 + (p ? bonus(p, ctx) : 0);
+      const score = W.inside - Math.min(i, 40) * 0.02 + (p ? bonus(p, ctx) : shown);
       const to = h.match === "meaning" ? related : inside;
       if (!found.has(key)) to.push(p ? { type: "thing", key, entry: p.entry, hit: h, score } : { type: "hit", key, hit: h, score });
       return;
@@ -396,13 +443,14 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
       had.hit = h;
       had.score = Math.max(had.score, score + (p ? bonus(p, ctx) : 0));
     } else if (p) found.set(key, { type: "thing", key, entry: p.entry, hit: h, score: score + bonus(p, ctx) });
-    else found.set(key, { type: "hit", key, hit: h, score: score - 0.2 });
+    else found.set(key, { type: "hit", key, hit: h, score: score - 0.2 + shown });
   });
   inside.sort((a, b) => b.score - a.score);
 
-  // Things to do (about a course, when the reading has it; not when it's narrowed in time).
+  // Things to do (about a course, when the reading has it; not when it's narrowed in time, or to a
+  // folder).
   const words = terms.filter((t): t is PartOf<"word"> => t.role === "word");
-  if (!narrowed && words.length === terms.length) {
+  if (!narrowed && words.length === terms.length && scope.under === undefined) {
     const actionOwn = words.map((w) => ranks(actions, w.text.toLowerCase(), (a) => a.names));
     for (const a of actions) {
       if (only ? a.course === undefined || !only.has(a.course) : a.course !== undefined && !words.some((_, i) => courseRank(i, a.course!) > 0)) continue;
@@ -422,19 +470,7 @@ export function find(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit
     }
   }
 
-  const named = [...found.values()].sort((a, b) => b.score - a.score);
-  const top = named[0] ?? inside.shift() ?? related.shift() ?? null;
-  const groups = new Map<GroupId, Found[]>();
-  for (const f of named) {
-    if (f === top) continue;
-    const g = groupOf(f);
-    groups.set(g, [...(groups.get(g) ?? []), f]);
-  }
-  const out: Group[] = [...groups].map(([id, items]) => ({ id, items: items.slice(0, MOST), cap: CAP[id] }));
-  out.sort((a, b) => b.items[0].score - a.items[0].score);
-  if (inside.length) out.push({ id: "inside", items: inside.slice(0, MOST), cap: CAP.inside });
-  if (related.length) out.push({ id: "related", items: related.slice(0, MOST), cap: CAP.related });
-  return { top, groups: out };
+  return { named: [...found.values()].sort((a, b) => b.score - a.score), inside, related };
 }
 
 /** What you opened lately (that's still there), latest first. */

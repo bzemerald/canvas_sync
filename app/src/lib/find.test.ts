@@ -1,7 +1,7 @@
 // What search finds for what you type (find.ts), on a small catalog of a few courses.
 import { describe, expect, it } from "vitest";
 import type { CatalogEntry, Hit, Usage } from "./api";
-import { type Action, type Describe, type Found, dueSoon, find, prepare, recent, spaced, vocabulary } from "./find";
+import { type Action, type Describe, type Found, type Scope, dueSoon, find, narrow, prepare, recent, spaced, vocabulary } from "./find";
 import { type KindId, key, read } from "./query";
 import { type Thing, thingKey } from "./things";
 
@@ -228,6 +228,46 @@ describe("with what the index finds", () => {
   it("leaves out what the index finds that the reading narrows away", () => {
     const r = run("graded hw", none, [hit({ kind: "assignment", title: "Homework 3", doc_id: "3", url: "/courses/70/assignments/3" })]);
     expect(all(r)).not.toContain("Homework 3"); // (not graded)
+  });
+});
+
+describe("searching from where you are", () => {
+  const from = (q: string, scope: Scope) => find(read(q, vocabulary(known, KINDS), NOW), known, none, [], [], NOW, null, scope);
+
+  it("in a course, finds only what's in it", () => {
+    expect(all(from("hw 3", { courses: [70] }))).toEqual(["Homework 3", "HW3_solutions.pdf"]);
+  });
+
+  it("finds what's in another course when what's typed names it", () => {
+    expect(all(from("neu100a hw 3", { courses: [70] }))).toContain("Homework 3 notes.pdf");
+  });
+
+  it("in a folder, finds only the files and folders in it", () => {
+    expect(all(from("lec", { courses: [70], under: `${CS70}/Lectures` }))).toEqual(["lec-02.pdf", "lec-03.pdf"]);
+  });
+
+  it("puts what the tab shows a little first", () => {
+    expect(keyOf(from("homework 3", { courses: [70] }).top)).toBe("doc:70:assignment:3");
+    expect(named(from("hw3", { courses: [70], kind: "file" }).top!)).toBe("HW3_solutions.pdf");
+  });
+});
+
+describe("narrowing a list", () => {
+  const reading = (q: string) => read(q, vocabulary(known, KINDS), NOW);
+  const list = things.filter((e) => e.type === "doc" && e.in_course === 70);
+  const keep = (q: string, hits: Hit[] = []) => [...narrow(reading(q), list, describeEntry, ABBR, hits, NOW).keys()];
+
+  it("matches as search does: one of a series, a status", () => {
+    expect(keep("hw3")).toEqual(["doc:70:assignment:3"]);
+    expect(keep("submitted")).toEqual(["doc:70:assignment:2"]);
+  });
+
+  it("leaves out the course it's of", () => {
+    expect(keep("cs70 lecture")).toEqual(["doc:70:announcement:9"]);
+  });
+
+  it("keeps what the index found inside", () => {
+    expect(keep("induction", [hit({ kind: "announcement", title: "Asynchronous lecture", doc_id: "9", match: "content" })])).toEqual(["doc:70:announcement:9"]);
   });
 });
 

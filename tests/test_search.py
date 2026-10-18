@@ -120,6 +120,14 @@ def test_api_find_takes_words_and_what_narrows_them(client):
     assert find(q="eigen", course=[1]) == ["Lecture 3.pdf"] and find(q="eigen", course=[2]) == []
     assert find(q="公告") == ["考试安排"]  # (a kind of thing, as the index has it)
     assert find(q="late", kind=["assignment"]) == ["Problem Set 4"] and find(q="late", kind=["page"]) == []
+    # From a course's 文件: only the files in the folder you're in.
+    def paths(**params):
+        return [h["path"] for h in client.get("/api/find", params=params).json()["hits"]]
+
+    folder = next(p for p in paths(q="lecture") if p).rsplit("/", 1)[0]
+    assert paths(q="lecture", under=folder) and all(p.startswith(folder + "/") for p in paths(q="lecture", under=folder))
+    assert find(q="hw", under=folder) == []
+    assert client.get("/api/find", params={"q": "hw", "under": "../x"}).status_code == 400
 
 
 def test_a_courses_number_is_before_its_term():

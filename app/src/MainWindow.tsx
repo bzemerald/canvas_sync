@@ -7,7 +7,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { FoundSearch, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
+import { type Finder, FinderContext, FoundHere, FoundSearch, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
 } from "./components/CourseView";
@@ -29,7 +29,8 @@ import {
 import * as api from "./lib/api";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
-import type { Found } from "./lib/find";
+import type { Found, Scope as Where } from "./lib/find";
+import type { KindId } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
@@ -96,7 +97,13 @@ const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isCon
 const countLabel = (names: string[]) => (names.length === 1 ? names[0] : t("{n} 项", { n: names.length }));
 const listed = (list: Shown[], x: Thing) => list.some((e) => same(e, x) && !e.hidden);
 // Views that narrow their own lists as you type in the search box.
-const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "modules", "grades"];
+const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "discussion", "modules", "grades"];
+// What a tab shows, searched from it: that kind comes a little first.
+const VIEW_FINDS: Partial<Record<ViewName, KindId>> = {
+  announcements: "announcement", assignments: "assignment", pages: "page", discussion: "post", modules: "module", files: "file",
+};
+const kindShown = (tab: Thing | null): KindId | undefined =>
+  !tab ? undefined : isView(tab) ? VIEW_FINDS[tab.view] : tab.type === "doc" ? tab.kind : tab.type === "module" ? "module" : tab.type === "folder" ? "file" : undefined;
 
 export function MainWindow() {
   const [courseList, setCourseList] = useState<Course[]>([]);
@@ -367,19 +374,23 @@ export function MainWindow() {
       : view.kind === "browse" && view.path
         ? t("在“{name}”中搜索", { name: folderName(view.path) })
         : t("搜索");
+  // A smart folder's results (typing in its box searches where it is instead: below).
+  const smart = searched && !query.trim() ? searched : null;
   const results = useSearch(
-    !query.trim() && searched ? thingKey(searched) : query,
-    () => {
-      if (!query.trim() && searched) {
-        return api.search(searched.query, { courses: searched.courses, kinds: searched.kinds, namesOnly: !searched.content, limit: 500 });
-      }
-      if (!query.trim() || filtering || view.kind === "home") return Promise.resolve([]); // (搜索 finds its own: SearchHome)
-      if (folderScope !== null) return api.search(query, { limit: 300, under: folderScope });
-      if (browsing !== null && browsing !== "" && scopeCourses.length === 0) return Promise.resolve([]);
-      return api.search(query, { limit: 300, courses: browsing ? scopeCourses : [] });
-    },
-    [view, searched && thingKey(searched), scopeCourses.join(","), version, folderScope, filtering],
+    smart ? thingKey(smart) : "",
+    () => (smart ? api.search(smart.query, { courses: smart.courses, kinds: smart.kinds, namesOnly: !smart.content, limit: 500 }) : Promise.resolve([])),
+    [version],
   );
+  // What's typed is searched as on 搜索 (and in the search window), where the box is: the folder,
+  // the course (what its tab shows a little first), or everything.
+  const scope = useMemo((): Where => {
+    if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : scopeCourses.length ? { courses: scopeCourses } : {}) };
+    return cv ? { courses: [cv.id], kind: kindShown(tab) } : {};
+  }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { catalog, vocab, usage, names } = useCatalog([version], courseList, view.kind === "home" || query.trim() !== "");
+  const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
+  const actions = useMemo(() => actionsFor(names), [names]);
+  const box = useMemo(() => ({ query: filtering ? query : "", onQuery: setQuery, onWiden: () => setWide(true) }), [filtering, query]);
   /** Above the results: what was searched, and the way to search more (or less) widely. */
   const scopeNote = (() => {
     if (!query.trim()) return null;
@@ -391,12 +402,19 @@ export function MainWindow() {
       if (folderScope !== null) {
         return { text: t("只搜“{name}”里的文件", { name: folderName(folderScope) }), action: t("搜索整门课 ›"), onAction: () => setWide(true) };
       }
+      return { text: t("在 {label} 中搜索", { label: course.label }), action: t("搜索全部课程 ›"), onAction: () => searchEverywhere(query) };
     }
     if (view.kind === "browse" && folderScope !== null) {
       return { text: t("只搜“{name}”里的文件", { name: folderName(folderScope) }), action: t("搜索全部 ›"), onAction: () => setWide(true) };
     }
     return null;
   })();
+
+  /** What's typed, searched on 搜索 (all courses). */
+  const searchEverywhere = (q: string) => {
+    go({ kind: "home" });
+    setQuery(q);
+  };
 
   // -- actions --------------------------------------------------------------------------
   const signedOut = account !== null && !account.signed_in;
@@ -710,6 +728,9 @@ export function MainWindow() {
       ...(h.path ? ["separator" as const, del] : []),
     ];
   };
+  /** Right-clicking what search found only in the index (a thing has its own menu: useThing). */
+  const hitMenu = (f: Found) =>
+    f.type === "hit" ? { onContextMenu: (ev: React.MouseEvent) => (ev.preventDefault(), openMenu(hitsMenu([f.hit]), ev.clientX, ev.clientY)) } : {};
 
   const unhide = (c: Course) =>
     api.hideCourse(c.id, false, c.excluded ? true : undefined).then(() => {
@@ -886,13 +907,12 @@ export function MainWindow() {
           version={version}
           focus={cv.item ? Number(cv.item) : undefined}
           only={tab.type === "module" ? tab.module : undefined}
-          query={filtering ? query : ""}
-          onWiden={() => setWide(true)}
+          box={box}
         />
       );
     }
     if (isView(tab, "grades")) {
-      return <CourseGrades key={course.id} course={course} version={version} query={filtering ? query : ""} onWiden={() => setWide(true)} />;
+      return <CourseGrades key={course.id} course={course} version={version} box={box} />;
     }
     if (isView(tab, "tools")) {
       return (
@@ -909,8 +929,7 @@ export function MainWindow() {
           version={version}
           onSelect={(id) => replaceView({ ...cv, item: id })}
           onSeen={seenChanged}
-          query={filtering ? query : ""}
-          onWiden={() => setWide(true)}
+          box={box}
         />
       );
     }
@@ -945,6 +964,7 @@ export function MainWindow() {
 
   return (
     <ThingsContext.Provider value={things}>
+    <FinderContext.Provider value={finder}>
     <div className="flex h-screen bg-bg text-fg">
       <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-sidebar">
         {/* The title bar: the window controls (macOS), then the sync button. Empty space drags the window. */}
@@ -1083,7 +1103,7 @@ export function MainWindow() {
               {filesView && (
                 <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} compact />
               )}
-              {(filesTab || !!searched || searching) && (
+              {((filesTab && !searching) || !!smart) && (
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
                   <ToolButton title={t("列表")} pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
                   <ToolButton title={t("图标")} pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
@@ -1113,14 +1133,15 @@ export function MainWindow() {
         )}
 
         {view.kind === "home" ? (
-          <SearchHome
+          <FoundSearch
             input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />}
             query={query}
             onQuery={setQuery}
-            version={version}
-            courses={courseList}
+            {...finder}
+            actions={actions}
             onOpen={openFound}
-            props={(f) => (f.type === "hit" ? { onContextMenu: (ev: React.MouseEvent) => (ev.preventDefault(), openMenu(hitsMenu([f.hit]), ev.clientX, ev.clientY)) } : {})}
+            props={hitMenu}
+            welcome={<Welcome />}
           />
         ) : view.kind === "settings" ? (
           <Settings
@@ -1153,6 +1174,14 @@ export function MainWindow() {
             onRename={(e, name) => void renameFolder(e.path, name)}
             onRenameCancel={() => setRenaming(null)}
           />
+        ) : searching ? (
+          <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu}
+            note={scopeNote && (
+              <span className="flex items-center gap-2">
+                {scopeNote.text}
+                <button onClick={scopeNote.onAction} className="text-accent hover:underline">{scopeNote.action}</button>
+              </span>
+            )} />
         ) : (
           <Results
             view={view}
@@ -1257,6 +1286,7 @@ export function MainWindow() {
         />
       )}
     </div>
+    </FinderContext.Provider>
     </ThingsContext.Provider>
   );
 }
@@ -1442,25 +1472,6 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
     </>
   );
   return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} />;
-}
-
-/** 搜索 in the main window: everything by name, and what the index finds (see Found.tsx). What
- * search knows is loaded again each time it's shown (what you opened since counts). */
-function SearchHome({ input, query, onQuery, version, courses, onOpen, props }: {
-  input: React.ReactNode;
-  query: string;
-  onQuery: (q: string) => void;
-  version: number;
-  courses: Course[];
-  onOpen: (f: Found | undefined, how: How) => void;
-  props: (f: Found) => object;
-}) {
-  const { catalog, vocab, usage, names } = useCatalog([version], courses);
-  const actions = useMemo(() => actionsFor(names), [names]);
-  return (
-    <FoundSearch input={input} query={query} onQuery={onQuery} catalog={catalog} vocab={vocab} usage={usage} names={names} courses={courses}
-      actions={actions} onOpen={onOpen} props={props} welcome={<Welcome />} />
-  );
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {

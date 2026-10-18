@@ -553,6 +553,7 @@ export const en: Record<string, string | [string, string]> = {
   "只搜“{name}”里的文件": "Files in “{name}”",
   "搜索整门课 ›": "Search the whole course ›",
   "搜索全部 ›": "Search everything ›",
+  "搜索全部课程 ›": "Search all courses ›",
   "找到 {n} 个": ["1 found", "{n} found"],
   "没有找到": "Nothing found",
 
