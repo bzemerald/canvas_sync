@@ -127,10 +127,12 @@ def test_list_dir_marks_canvas_files_links_changes_and_deletions(root, fake):
     files = entries(root, f"{COURSE}/Files")
     assert files["notes.txt"]["deleted"] and files["notes.txt"]["states"] == ["missing"]
     assert files["Lectures"]["type"] == "dir"
+    assert files["Lectures"]["size"] == 2  # my notes.md; view links don't count
     assert list(files) == ["Lectures", "notes.txt"]  # folders first
 
     course = entries(root, COURSE)
     assert course["Modules"]["changes"] == 1 and course["Files"]["changes"] == 1
+    assert course["Modules"]["size"] == len(b"mine") + len(b"w2")  # what's in its folders
     assert (course["Modules"]["modified_inside"], course["Modules"]["deleted_inside"]) == (1, 0)
     assert (course["Files"]["modified_inside"], course["Files"]["deleted_inside"]) == (0, 1)
     assert entries(root, "Fall 2026")["MATH 221"]["course_id"] == 1

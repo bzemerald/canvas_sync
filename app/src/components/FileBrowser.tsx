@@ -320,7 +320,7 @@ export function FileBrowser({
                 </span>
                 <span className="min-w-0 overflow-hidden"><StatusBadges entry={e} showChanges={showChanges} /></span>
                 <span className="truncate text-xs text-muted">{formatTime(e.mtime)}</span>
-                <span className="text-right text-xs text-muted tabular-nums">{e.type === "file" ? formatSize(e.size) : ""}</span>
+                <span className="text-right text-xs text-muted tabular-nums">{e.deleted ? "" : formatSize(e.size)}</span>
               </li>
             ))}
           </ul>

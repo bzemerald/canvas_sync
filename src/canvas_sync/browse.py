@@ -35,7 +35,7 @@ class Entry:
     name: str
     path: str                     # relative to root
     type: str                     # dir | file
-    size: int | None = None
+    size: int | None = None       # dirs: the files below (not view links, which would count a file twice)
     mtime: float | None = None
     file_id: int | None = None    # set if the file came from Canvas
     course_id: int | None = None  # files: their course; dirs: set if this is a course's folder
@@ -55,6 +55,22 @@ class Entry:
 def _natural(name: str) -> list[object]:
     """"Week 2" before "Week 10"."""
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name.casefold())]
+
+
+def _dir_size(path: str) -> int:
+    total = 0
+    try:
+        with os.scandir(path) as it:
+            for d in it:
+                if d.name.startswith("."):
+                    continue
+                if d.is_dir(follow_symlinks=False):
+                    total += _dir_size(d.path)
+                elif d.is_file(follow_symlinks=False):
+                    total += d.stat(follow_symlinks=False).st_size
+    except OSError:
+        pass
+    return total
 
 
 def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status], rel: str) -> list[Entry]:
@@ -107,7 +123,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
                                  link=real, **canvas(rec.id, rec.course_id, path)))  # type: ignore[arg-type]
             elif st is not None and d.is_dir():
                 prefix = path + "/"
-                out.append(Entry(d.name, path, "dir", mtime=st.st_mtime, course_id=course_dirs.get(path),
+                out.append(Entry(d.name, path, "dir", _dir_size(d.path), st.st_mtime, course_id=course_dirs.get(path),
                                  changes=sum(p.startswith(prefix) for p in changed),
                                  modified_inside=sum(p.startswith(prefix) for p in modified),
                                  deleted_inside=sum(p.startswith(prefix) for p in gone),
