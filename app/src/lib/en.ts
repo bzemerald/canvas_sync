@@ -103,7 +103,6 @@ export const en: Record<string, string | [string, string]> = {
   "正在第一次同步，课程马上就会出现在这里。": "Syncing for the first time; your courses will show up here shortly.",
   "还没有课程。点上面的“同步”从 Canvas 拉取。": "No courses yet. Click “Sync” above to get them from Canvas.",
   "{term} 的操作": "{term} actions",
-  "{n} 个文件有本地改动": ["1 file changed here", "{n} files changed here"],
   "设置": "Settings",
   "后退 ({back})": "Back ({back})",
   "前进 ({forward})": "Forward ({forward})",

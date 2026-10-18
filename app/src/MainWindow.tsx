@@ -991,7 +991,6 @@ export function MainWindow() {
                   title={c.label}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isPinned({ type: "course", course: c.id })}
-                  badge={changes[c.id] ? t("{n} 个文件有本地改动", { n: changes[c.id] }) : undefined}
                   count={c.new}
                   onClick={() => openCourse(c)}
                   onMenu={(x, y) => openMenu(courseMenu(c), x, y)}
@@ -1518,13 +1517,12 @@ function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search">; name
   );
 }
 
-function NavItem({ icon, title, subtitle, active, badge, count, muted, onClick, onMenu }: {
+function NavItem({ icon, title, subtitle, active, count, muted, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
   subtitle?: string;
   active: boolean;
   muted?: boolean;
-  badge?: string;
   count?: number; // new things in it
   onClick: () => void;
   onMenu?: (x: number, y: number) => void;
@@ -1541,7 +1539,6 @@ function NavItem({ icon, title, subtitle, active, badge, count, muted, onClick, 
           <span className="block truncate">{title}</span>
           {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
         </span>
-        {badge && <span title={badge} aria-label={badge} className="size-1.5 shrink-0 rounded-full bg-warn group-hover:hidden" />}
         {!!count && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
       </button>
       {onMenu && (
