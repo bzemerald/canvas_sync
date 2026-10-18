@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import { quickLook } from "../lib/quicklook";
 import type { Entry } from "../lib/api";
-import { fileCommand } from "../lib/keys";
+import { fileCommand, isMac } from "../lib/keys";
 import { thingOfEntry, useDragThing, useThings } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import { FileIcon } from "./FileIcon";
@@ -44,14 +44,17 @@ export const canRename = (e: Entry) => e.type === "dir" && !e.deleted;
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
+// As the platform counts: Finder in 1000s, Explorer in 1024s.
+const KB = isMac ? 1000 : 1024;
+
 export function formatSize(n: number | null): string {
   if (n == null) return "";
-  if (n < 1024) return `${n} B`;
+  if (n < KB) return `${n} B`;
   const units = ["KB", "MB", "GB"];
-  let v = n / 1024;
+  let v = n / KB;
   let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
+  while (v >= KB && i < units.length - 1) {
+    v /= KB;
     i++;
   }
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
