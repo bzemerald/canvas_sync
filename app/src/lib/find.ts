@@ -340,10 +340,11 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
   const ctx: Context = { catalog, usage, picks, now, here, kind: scope.kind };
   const found = new Map<string, Found>();
 
-  /** Whether it's in what the reading narrows things down to. */
-  const inScope = (p: Prepared) => {
+  /** Whether it's in what the reading narrows things down to. (What the index found is in the
+   * folder already: it counts the files the folder's view links point to, elsewhere.) */
+  const inScope = (p: Prepared, indexed = false) => {
     if (only && (p.course === null || !only.has(p.course))) return false;
-    if (scope.under !== undefined && !("path" in p.entry && isUnder(p.entry.path, scope.under))) return false;
+    if (scope.under !== undefined && !indexed && !("path" in p.entry && isUnder(p.entry.path, scope.under))) return false;
     if (sources.length && !sources.some((s) => p.entry.source === s || isView(p.entry) && SOURCE_VIEWS[s].includes(p.entry.view))) return false;
     if (when) {
       const date = when.due ? p.entry.due : p.entry.due ?? p.entry.date;
@@ -352,7 +353,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
     }
     return statuses.every((s) => isStatus(p.entry, s, now));
   };
-  const entries = catalog.entries.filter(inScope);
+  const entries = catalog.entries.filter((p) => inScope(p));
 
   // Each part, against what things are called (own) and what they're in (context).
   const last = parts.at(-1);
@@ -428,7 +429,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
   hits.forEach((h, i) => {
     const thing = thingOfHit(h);
     const p = thing ? catalog.byKey.get(thingKey(thing)) : undefined;
-    if (p ? !inScope(p) : statuses.length > 0) return;
+    if (p ? !inScope(p, true) : statuses.length > 0) return;
     const key = p ? p.key : hitKeyOf(h);
     const shown = !p && scope.kind && h.kind === scope.kind ? W.shown : 0;
     if (h.match !== "name") {
