@@ -38,7 +38,7 @@ export function fileCommand(e: Key): FileCommand | null {
   return null;
 }
 
-export type AppCommand = "back" | "forward" | "search" | "toggleDeleted" | "settings";
+export type AppCommand = "back" | "forward" | "search" | "toggleChanges" | "settings";
 
 /** Window-wide keys. `typing` is true when the key went to a text field. */
 export function appCommand(e: Key, typing: boolean): AppCommand | null {
@@ -47,7 +47,7 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
     if (e.metaKey && k === "[") return "back";
     if (e.metaKey && k === "]") return "forward";
     if (e.metaKey && k === "f") return "search";
-    if (e.metaKey && e.shiftKey && e.code === "Period") return "toggleDeleted"; // like ⌘⇧. for hidden files
+    if (e.metaKey && e.shiftKey && e.code === "Period") return "toggleChanges"; // like ⌘⇧. for hidden files
     if (e.metaKey && k === ",") return "settings";
     return null;
   }
@@ -55,7 +55,7 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
   if (e.altKey && k === "ArrowRight") return "forward";
   if (k === "Backspace" && !typing && platform === "windows") return "back";
   if (e.ctrlKey && k === "f") return "search";
-  if (e.ctrlKey && k === "h" && platform === "linux") return "toggleDeleted"; // like Ctrl+H for hidden files
+  if (e.ctrlKey && k === "h" && platform === "linux") return "toggleChanges"; // like Ctrl+H for hidden files
   if (e.ctrlKey && k === ",") return "settings";
   return null;
 }
@@ -64,11 +64,11 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
 export const shortcut = isMac
   ? {
       open: "⌘O", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
-      toggleDeleted: "⌘⇧.", settings: "⌘,", launcher: "⌘⇧Space",
+      toggleChanges: "⌘⇧.", settings: "⌘,", launcher: "⌘⇧Space",
     }
   : {
       open: "Enter", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
-      toggleDeleted: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", launcher: "Ctrl+Shift+Space",
+      toggleChanges: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", launcher: "Ctrl+Shift+Space",
     };
 
 export const trashName = isMac ? t("废纸篓") : t("回收站");

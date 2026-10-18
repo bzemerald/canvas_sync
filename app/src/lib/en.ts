@@ -110,7 +110,7 @@ export const en: Record<string, string | [string, string]> = {
   "在 {label} 中搜索": "Search {label}",
   "列表": "List",
   "图标": "Icons",
-  "显示你删除的文件": "Show files you deleted",
+  "显示改动": "Show modifications",
   "在 Canvas 中打开这门课": "Open this course in Canvas",
   "编辑": "Edit",
   "搜索所有课程… 例如 221 mt": "Search all courses… e.g. 221 mt",
@@ -240,9 +240,9 @@ export const en: Record<string, string | [string, string]> = {
   "取消": "Cancel",
   "移到{trash}": "Move to {trash}",
   "正在检查…": "Checking…",
-  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示你删除的文件”，再右键恢复。": [
-    "1 of them is from Canvas: syncing won't download it again. To get it back, right-click an empty spot in the folder, turn on “Show files you deleted”, then right-click it.",
-    "{n} of them are from Canvas: syncing won't download them again. To get them back, right-click an empty spot in the folder, turn on “Show files you deleted”, then right-click them.",
+  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示改动”，再右键恢复。": [
+    "1 of them is from Canvas: syncing won't download it again. To get it back, right-click an empty spot in the folder, turn on “Show modifications”, then right-click it.",
+    "{n} of them are from Canvas: syncing won't download them again. To get them back, right-click an empty spot in the folder, turn on “Show modifications”, then right-click them.",
   ],
   "你自己的 {n} 个文件会在{trash}里。": ["1 file of your own goes to the {trash}.", "{n} files of your own go to the {trash}."],
   "这里面没有文件。": "There are no files in here.",
@@ -351,8 +351,10 @@ export const en: Record<string, string | [string, string]> = {
   "你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载": "You deleted this folder or stopped syncing it: files Canvas adds here later won't download",
   "Canvas 上有新版本，已经更新到这里；你还没打开过": "Canvas had a new version, now here too; you haven't opened it yet",
   "里面有你还没打开过的新文件": "Has new files you haven't opened yet",
-  "里面有你改过或删除的文件": "Has files you changed or deleted",
-  "{n} 处改动": ["1 change", "{n} changes"],
+  "里面有你删除的文件": "Has files you deleted",
+  "里面有你改过的文件": "Has files you changed",
+  "{n} 个已删除": ["1 deleted", "{n} deleted"],
+  "{n} 个已修改": ["1 modified", "{n} modified"],
   "新的": "New",
 
   // -- dates

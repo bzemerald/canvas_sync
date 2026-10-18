@@ -131,6 +131,8 @@ def test_list_dir_marks_canvas_files_links_changes_and_deletions(root, fake):
 
     course = entries(root, COURSE)
     assert course["Modules"]["changes"] == 1 and course["Files"]["changes"] == 1
+    assert (course["Modules"]["modified_inside"], course["Modules"]["deleted_inside"]) == (1, 0)
+    assert (course["Files"]["modified_inside"], course["Files"]["deleted_inside"]) == (0, 1)
     assert entries(root, "Fall 2026")["MATH 221"]["course_id"] == 1
 
     week1 = entries(root, f"{COURSE}/Modules/01 Week 1")["lec1.pdf"]

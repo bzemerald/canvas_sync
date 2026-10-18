@@ -5,15 +5,19 @@ import { t } from "../lib/i18n";
 const LABEL: Record<string, { text: string; className: string; hint: string }> = {
   modified: { text: t("已修改"), className: "bg-warn-soft text-warn", hint: t("你改过这个文件；同步不会覆盖你的修改") },
   moved: { text: t("已移动"), className: "bg-info-soft text-info", hint: t("你把它从原来的位置移到了这里；下次同步会记住新位置") },
-  missing: { text: t("已删除"), className: "bg-chip text-muted", hint: t("你删除了它；下次同步时不会再下载") },
-  ignored: { text: t("已删除"), className: "bg-chip text-muted", hint: t("你删除了它，之后不再同步；可以恢复") },
+  missing: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它；下次同步时不会再下载") },
+  ignored: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它，之后不再同步；可以恢复") },
   remote_deleted: { text: t("Canvas 已删除"), className: "bg-danger-soft text-danger", hint: t("老师已经从 Canvas 删除了它；本地副本保留着") },
   untracked: { text: t("不再同步"), className: "bg-chip text-muted", hint: t("你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它") },
 };
+// What Canvas did, shown always; the rest is what you did, shown only with 显示改动.
+const NOT_YOURS = new Set(["remote_deleted"]);
 
-/** Badges for what changed. A file from Canvas that nobody touched shows nothing. */
-export function StatusBadges({ entry }: { entry: Entry }) {
-  const states = [...new Set(entry.states.map((s) => (s === "missing" ? "ignored" : s)))];
+/** Badges for what changed. A file from Canvas that nobody touched shows nothing; what you
+ * changed shows only when `showChanges`. */
+export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
+  const states = [...new Set(entry.states.map((s) => (s === "missing" ? "ignored" : s)))]
+    .filter((s) => showChanges || NOT_YOURS.has(s));
   return (
     <span className="flex gap-1">
       {states.map((s) =>
@@ -23,7 +27,7 @@ export function StatusBadges({ entry }: { entry: Entry }) {
           </span>
         ) : null,
       )}
-      {entry.type === "dir" && entry.skipped && (
+      {showChanges && entry.type === "dir" && entry.skipped && (
         <span title={t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载")} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
           {t("不再同步")}
         </span>
@@ -38,9 +42,14 @@ export function StatusBadges({ entry }: { entry: Entry }) {
           {t("{n} 个新文件", { n: entry.new_inside })}
         </span>
       )}
-      {entry.type === "dir" && entry.changes > 0 && (
-        <span title={t("里面有你改过或删除的文件")} className="rounded bg-warn-soft px-1.5 py-px text-[11px] whitespace-nowrap text-warn">
-          {t("{n} 处改动", { n: entry.changes })}
+      {showChanges && entry.type === "dir" && entry.deleted_inside > 0 && (
+        <span title={t("里面有你删除的文件")} className="rounded bg-danger-soft px-1.5 py-px text-[11px] whitespace-nowrap text-danger">
+          {t("{n} 个已删除", { n: entry.deleted_inside })}
+        </span>
+      )}
+      {showChanges && entry.type === "dir" && entry.modified_inside > 0 && (
+        <span title={t("里面有你改过的文件")} className="rounded bg-warn-soft px-1.5 py-px text-[11px] whitespace-nowrap text-warn">
+          {t("{n} 个已修改", { n: entry.modified_inside })}
         </span>
       )}
     </span>
@@ -48,17 +57,21 @@ export function StatusBadges({ entry }: { entry: Entry }) {
 }
 
 /** A small dot for the icon view, where there's no room for words. */
-export function StatusDot({ entry }: { entry: Entry }) {
+export function StatusDot({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
   const s = entry.states;
-  const color = s.includes("modified") || entry.changes > 0
-    ? "bg-warn"
-    : s.includes("remote_deleted")
-      ? "bg-danger"
-      : s.includes("moved")
-        ? "bg-info"
-        : entry.new || entry.new_inside > 0
-          ? "bg-accent"
-          : null;
+  const color = s.includes("remote_deleted")
+    ? "bg-danger"
+    : entry.new || entry.new_inside > 0
+      ? "bg-accent"
+      : !showChanges
+        ? null
+        : s.includes("ignored") || s.includes("missing") || entry.deleted_inside > 0
+          ? "bg-danger"
+          : s.includes("modified") || entry.modified_inside > 0
+            ? "bg-warn"
+            : s.includes("moved")
+              ? "bg-info"
+              : null;
   return color ? <span className={`size-2 rounded-full ${color}`} /> : null;
 }
 

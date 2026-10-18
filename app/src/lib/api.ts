@@ -161,7 +161,9 @@ export interface Entry {
   link: string | null;
   states: string[];
   deleted: boolean;
-  changes: number;
+  changes: number; // dirs: files below that restore can undo
+  modified_inside: number; // dirs: files below you changed
+  deleted_inside: number; // dirs: files below you deleted
   skipped: boolean; // dirs: deleted or unsynced by you; Canvas's new files don't come here
   new: "new" | "updated" | null; // files: arrived (or came in a new version) since you last opened it
   new_inside: number; // dirs: new files below

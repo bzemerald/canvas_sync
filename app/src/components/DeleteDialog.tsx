@@ -48,7 +48,7 @@ export function DeleteDialog({ paths, label, onClose, onDone }: {
         <div className="space-y-2 text-fg-soft">
           {preview.canvas_files > 0 && (
             <p>
-              {t("其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示你删除的文件”，再右键恢复。", { n: preview.canvas_files })}
+              {t("其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示改动”，再右键恢复。", { n: preview.canvas_files })}
             </p>
           )}
           {preview.own_files > 0 && <p>{t("你自己的 {n} 个文件会在{trash}里。", { n: preview.own_files, trash: trashName })}</p>}

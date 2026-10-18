@@ -74,7 +74,7 @@ def test_delete_a_folder_and_what_canvas_adds_to_it_later(root, fake):
     assert kinds(pull(root, fake)) == [("download", f"{COURSE}/Files/Lectures/also-in-files.pdf")]
 
     ghost = listing(root, f"{COURSE}/Modules")["01 Week 1"]
-    assert ghost["deleted"] and ghost["type"] == "dir" and ghost["skipped"] and ghost["changes"] == 1
+    assert ghost["deleted"] and ghost["type"] == "dir" and ghost["skipped"] and ghost["changes"] == ghost["deleted_inside"] == 1
 
     with Engine(root) as e:  # bring the folder back: its file, and new files again
         assert e.restore_in(Scope([WEEK1])) == [MOD]

@@ -104,7 +104,7 @@ export function MainWindow() {
   const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "home" }], i: 0 });
   const [query, setQuery] = useState("");
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
-  const [showDeleted, setShowDeleted] = usePref("showDeleted", false);
+  const [showChanges, setShowChanges] = usePref("showChanges", false); // what you changed, in files
   const [sync, setSync] = useState<SyncState | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
@@ -195,7 +195,7 @@ export function MainWindow() {
     return () => clearInterval(timer);
   }, [sync?.running]);
 
-  // Window-wide keys (back, forward, search, show deleted), per platform; and the mouse's
+  // Window-wide keys (back, forward, search, show changes), per platform; and the mouse's
   // back / forward buttons.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -203,7 +203,7 @@ export function MainWindow() {
       if (command === "back") step(-1);
       else if (command === "forward") step(1);
       else if (command === "search") searchBox.current?.focus();
-      else if (command === "toggleDeleted") setShowDeleted(!showDeleted);
+      else if (command === "toggleChanges") setShowChanges(!showChanges);
       else if (command === "settings") go({ kind: "settings" });
       else return;
       e.preventDefault();
@@ -219,7 +219,7 @@ export function MainWindow() {
       window.removeEventListener("mouseup", onMouse);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showDeleted]);
+  }, [showChanges]);
 
   // -- the open course's page: its tabs, overview and 工具与链接, arranged for it or as every course's --
   const courseById = (id: number) => courseList.find((c) => c.id === id) ?? null;
@@ -632,7 +632,7 @@ export function MainWindow() {
   const folderMenu = (here: string): MenuItem[] => {
     const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : t("全部文件");
     return sections(
-      [{ label: t("显示你删除的文件"), checked: showDeleted, hint: shortcut.toggleDeleted || undefined, onSelect: () => setShowDeleted(!showDeleted) }],
+      [{ label: t("显示改动"), checked: showChanges, hint: shortcut.toggleChanges || undefined, onSelect: () => setShowChanges(!showChanges) }],
       [
         { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
         { label: t("恢复此文件夹的原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
@@ -904,7 +904,7 @@ export function MainWindow() {
         select={cv.select}
         version={version}
         mode={mode}
-        showDeleted={showDeleted}
+        showChanges={showChanges}
         onNavigate={goPath}
         onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
         onPreview={(e) => void api.openPath(e.path, { preview: true })}
@@ -1118,7 +1118,7 @@ export function MainWindow() {
             select={view.select}
             version={version}
             mode={mode}
-            showDeleted={showDeleted}
+            showChanges={showChanges}
             onNavigate={goPath}
             onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
             onPreview={(e) => void api.openPath(e.path, { preview: true })}

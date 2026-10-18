@@ -23,7 +23,7 @@ interface Props {
   root: string; // don't go above this (a course's own folder, or "" for everything)
   version: number; // bump to reload (after a sync, a restore, or the window regaining focus)
   mode: ViewMode;
-  showDeleted: boolean;
+  showChanges: boolean; // what you changed: deleted files, and badges for your changes
   select?: string | null; // a path to select once it's listed
   onNavigate: (path: string) => void;
   onOpen: (e: Entry) => void;
@@ -68,7 +68,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, version, mode, showDeleted, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
+  path, root, version, mode, showChanges, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const dragThing = useDragThing(); // (置顶 is in their menus)
@@ -106,7 +106,7 @@ export function FileBrowser({
 
   const sorted = useCallback(
     (entries: Entry[]) => {
-      const visible = showDeleted ? entries : entries.filter((e) => !e.deleted);
+      const visible = showChanges ? entries : entries.filter((e) => !e.deleted);
       const cmp = (a: Entry, b: Entry) => {
         const v = sort.key === "date" ? (a.mtime ?? 0) - (b.mtime ?? 0)
           : sort.key === "size" ? (a.size ?? 0) - (b.size ?? 0)
@@ -115,7 +115,7 @@ export function FileBrowser({
       };
       return [...visible].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || cmp(a, b));
     },
-    [showDeleted, sort],
+    [showChanges, sort],
   );
 
   // The rows on screen, in order: expanded folders' children follow them (list view only).
@@ -284,7 +284,7 @@ export function FileBrowser({
                     </span>
                   )}
                 </span>
-                <StatusBadges entry={e} />
+                <StatusBadges entry={e} showChanges={showChanges} />
                 <span className="truncate text-xs text-muted">{formatTime(e.mtime)}</span>
                 <span className="text-right text-xs text-muted tabular-nums">{e.type === "file" ? formatSize(e.size) : ""}</span>
               </li>
@@ -313,7 +313,7 @@ export function FileBrowser({
                 ) : (
                   <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
                 )}
-                <StatusDot entry={e} />
+                <StatusDot entry={e} showChanges={showChanges} />
               </div>
             ))}
           </div>
