@@ -228,6 +228,20 @@ def test_links_in_a_folder_not_synced_stay(root, fake):
     assert kinds(pull(root, fake)) == [("update", MOD)] and (root / LINK).read_bytes() == b"v2"
 
 
+def test_a_deleted_folder_can_stop_and_resume_syncing(root, fake):
+    pull(root, fake)
+    with Engine(root) as e:
+        e.delete([WEEK1], stop_syncing_folders=False)
+        e.untrack([WEEK1])
+    assert skip_folders(root) == [WEEK1]
+    new_module_file(fake, 101, "next.pdf")
+    assert pull(root, fake).actions == []
+    with Engine(root) as e:
+        e.track([WEEK1])
+    assert skip_folders(root) == []
+    assert kinds(pull(root, fake)) == [("download", f"{WEEK1}/next.pdf")]  # (lec1.pdf stays deleted)
+
+
 def test_restoring_a_file_in_a_deleted_folder_syncs_it_again(root, fake):
     pull(root, fake)
     with Engine(root) as e:

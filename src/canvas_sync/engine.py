@@ -182,11 +182,12 @@ class Engine:
 
     # -- deleting, and stopping / resuming sync ------------------------------------------
 
-    def _checked(self, rel: str) -> str:
+    def _checked(self, rel: str, gone_ok: bool = False) -> str:
+        """`gone_ok`: also a folder you deleted, that files from Canvas were in."""
         rel = rel.strip("/")
         if not rel or rel.split("/")[0] == META_DIR:
             raise ValueError("that can't be changed")
-        if not os.path.lexists(self.root / rel):
+        if not os.path.lexists(self.root / rel) and not (gone_ok and self._has_canvas_content(rel)):
             raise LookupError(f"{rel} does not exist")
         return rel
 
@@ -284,10 +285,11 @@ class Engine:
 
     def untrack(self, rels: list[str]) -> int:
         """Stop syncing these files and folders but keep them, as your own files. Files
-        Canvas adds to the folders later aren't downloaded. View links in the folders
-        stay. Returns how many files."""
-        rels = [self._checked(r) for r in rels]
+        Canvas adds to the folders later aren't downloaded (a folder you deleted, too).
+        View links in the folders stay. Returns how many files."""
+        rels = [self._checked(r, gone_ok=True) for r in rels]
         files, folders = self._affected(rels)
+        folders += [r for r in rels if not os.path.lexists(self.root / r)]
         skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)]
         self._stop_syncing(files, keep_links_in=folders)
         self.state.commit()
@@ -297,8 +299,9 @@ class Engine:
         return len(files)
 
     def track(self, rels: list[str]) -> int:
-        """Undo `untrack`: sync these files and folders again. Returns how many files."""
-        rels = [self._checked(r) for r in rels]
+        """Undo `untrack`: sync these files and folders again (a folder you deleted: what
+        Canvas adds to it). Returns how many files."""
+        rels = [self._checked(r, gone_ok=True) for r in rels]
         n = 0
         for r in self.state.all_files():
             if r.ignored and r.path and is_regular(self.root / r.path) and any(_under(r.path, rel) for rel in rels):

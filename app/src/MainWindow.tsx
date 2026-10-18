@@ -590,6 +590,11 @@ export function MainWindow() {
       return [
         { label: t("恢复…"), onSelect: () => setRestoring({ scope: restoreScope(e), label: e.name }) },
         ...(e.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) }] : []),
+        ...(e.type === "dir"
+          ? ["separator" as const, e.skipped
+            ? { label: t("恢复同步此文件夹"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
+            : { label: t("停止同步此文件夹"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) }]
+          : []),
       ];
     }
     if (e.type === "dir") {
