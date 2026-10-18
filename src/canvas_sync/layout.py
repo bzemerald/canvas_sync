@@ -73,13 +73,14 @@ class Layout:
             out[-1] = names["/".join(parts)]
         return PurePosixPath(*out)
 
+    def of_courses(self, path: str) -> bool:
+        """A course's folder as Canvas names make it, its term's, or a folder in it."""
+        dirs = self.course_dirs
+        return not dirs or any(d == path or d.startswith(path + "/") or path.startswith(d + "/") for d in dirs)
+
     def live_names(self) -> dict[str, str]:
         """The folder renames that apply: of a course's folder, its term's, or what's in it."""
-        dirs = self.course_dirs
-        if not dirs:
-            return self.s.folder_names
-        return {k: v for k, v in self.s.folder_names.items()
-                if any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in dirs)}
+        return {k: v for k, v in self.s.folder_names.items() if self.of_courses(k)}
 
     def canonical(self, path: str) -> str:
         """Undo `renamed`: the Canvas-derived path of a folder as it is on disk now."""

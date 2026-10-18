@@ -433,7 +433,10 @@ class Engine:
         os.rename(src, dest)
         try:
             self._repath(rel, new)
-            record_folder_rename(self.meta / "config.toml", canonical, None if new_name == own_name else new_name, rel, new)
+            # (A folder no course has, as Canvas names go, is yours, or one you renamed in Finder:
+            # renaming it renames nothing of Canvas's.)
+            kept = new_name if new_name != own_name and self.layout.of_courses(canonical) else None
+            record_folder_rename(self.meta / "config.toml", canonical, kept, rel, new)
             self.state.commit()
         except BaseException:
             self.state.db.rollback()

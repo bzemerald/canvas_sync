@@ -84,6 +84,14 @@ def test_a_rename_no_course_goes_through_changes_nothing(root, fake):
     assert pull(root, fake).actions == []
 
 
+def test_renaming_back_what_you_renamed_in_finder_records_nothing(root, fake):
+    pull(root, fake)
+    os.rename(root / "Fall 2026", root / "fa26")
+    assert rename(root, "fa26", "Fall 2026") == "Fall 2026"
+    assert names(root) == {}
+    assert pull(root, fake).actions == []
+
+
 def test_renaming_back_forgets_the_rename(root, fake):
     pull(root, fake)
     rename(root, WEEK1, "W1")
