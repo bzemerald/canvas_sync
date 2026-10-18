@@ -11,14 +11,15 @@ const LABEL: Record<string, { text: string; className: string; hint: string }> =
   remote_deleted: { text: t("Canvas 已删除"), className: "bg-danger-soft text-danger", hint: t("老师已经从 Canvas 删除了它；本地副本保留着") },
   untracked: { text: t("不再同步"), className: "bg-chip text-muted", hint: t("你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它") },
 };
-// What Canvas did, shown always; the rest is what you did, shown only with 显示改动.
-const NOT_YOURS = new Set(["remote_deleted"]);
+// Shown always: what Canvas did, and what isn't synced (that's how it is now, not a change to
+// undo). The rest is what you did, shown only with 显示改动.
+const ALWAYS = new Set(["remote_deleted", "untracked"]);
 
 /** Badges for what changed. A file from Canvas that nobody touched shows nothing; what you
- * changed shows only when `showChanges`. */
+ * changed shows only when `showChanges` (but 不再同步 always). */
 export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
   const states = [...new Set(entry.states.map((s) => (s === "missing" ? "ignored" : s)))]
-    .filter((s) => showChanges || NOT_YOURS.has(s));
+    .filter((s) => showChanges || ALWAYS.has(s));
   return (
     <span className="flex gap-1">
       {states.map((s) =>
@@ -28,7 +29,7 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
           </span>
         ) : null,
       )}
-      {showChanges && entry.type === "dir" && entry.skipped && (
+      {entry.type === "dir" && entry.skipped && (
         <span title={t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载")} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
           {t("不再同步")}
         </span>
