@@ -362,13 +362,15 @@ def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list
 
 
 @_writes
-def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = ()) -> None:  # type: ignore[assignment]
-    """Add folders to [layout] skip_folders, and drop those at or under `remove_under`."""
+def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = (),  # type: ignore[assignment]
+                        remove: list[str] = ()) -> None:  # type: ignore[assignment]
+    """Drop from [layout] skip_folders those at or under `remove_under`, and those in `remove`;
+    then add `add`."""
     doc = tomlkit.parse(path.read_text())
     layout = doc.setdefault("layout", tomlkit.table())
     current = [str(x) for x in layout.get("skip_folders", [])]
-    gone = lambda p: any(p == r or p.startswith(r + "/") for r in remove_under)  # noqa: E731
-    wanted = [p for p in dict.fromkeys([*current, *add]) if not gone(p)]
+    gone = lambda p: p in remove or any(p == r or p.startswith(r + "/") for r in remove_under)  # noqa: E731
+    wanted = list(dict.fromkeys([*(p for p in current if not gone(p)), *add]))
     if wanted != current:
         arr = tomlkit.array()
         arr.extend(wanted)

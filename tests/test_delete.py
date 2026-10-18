@@ -174,3 +174,60 @@ def test_search_keeps_untracked_files_and_drops_deleted_ones(root, fake):
         e.delete([MOD])
         e.reindex()
         assert e.search("lec1") == []
+
+
+MODULES = f"{COURSE}/Modules"
+WEEK2 = f"{MODULES}/02 Week 2"
+LECTURES = f"{COURSE}/Files/Lectures"
+
+
+def two_weeks(fake: FakeCanvas) -> None:
+    fake.put(200, "lec2.pdf", b"w2", listed=False)
+    fake.module(2, "Week 2", [{"type": "File", "content_id": 200}])
+
+
+def test_resuming_a_folder_in_one_not_synced_resumes_the_way_to_it(root, fake):
+    two_weeks(fake)
+    pull(root, fake)
+    with Engine(root) as e:
+        e.untrack([MODULES])
+        assert e.track([WEEK1]) == 1
+    # Modules and Week 1 sync again; Week 2, beside them, still doesn't.
+    assert skip_folders(root) == [WEEK2]
+    assert states(root) == {f"{WEEK2}/lec2.pdf": ["untracked"]}
+    new_module_file(fake, 101, "next.pdf")  # (in Week 1)
+    fake.put(200, "lec2.pdf", b"w2 v2", listed=False, version="2026-09-02T00:00:00Z")
+    fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
+    assert kinds(pull(root, fake)) == [("download", f"{WEEK1}/next.pdf"), ("link", LINK), ("update", MOD)]
+
+
+def test_resuming_one_file_in_a_folder_not_synced(root, fake):
+    pull(root, fake)
+    with Engine(root) as e:
+        e.untrack([WEEK1])
+        assert e.track([MOD]) == 1
+    assert skip_folders(root) == []
+    fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
+    assert kinds(pull(root, fake)) == [("link", LINK), ("update", MOD)]
+
+
+def test_restoring_a_file_in_a_deleted_folder_syncs_it_again(root, fake):
+    pull(root, fake)
+    with Engine(root) as e:
+        e.delete([MODULES])
+        e.restore_files([100])
+    assert skip_folders(root) == []
+    fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
+    assert ("update", MOD) in kinds(pull(root, fake))
+
+
+def test_resuming_in_a_renamed_folder(root, fake):
+    two_weeks(fake)
+    pull(root, fake)
+    with Engine(root) as e:
+        renamed = e.rename_folder(MODULES, "Weeks")
+        e.untrack([renamed])
+        e.track([f"{renamed}/01 Week 1"])
+    assert skip_folders(root) == [WEEK2]  # (Canvas's names)
+    new_module_file(fake, 101, "next.pdf")
+    assert kinds(pull(root, fake)) == [("download", f"{renamed}/01 Week 1/next.pdf"), ("link", LINK)]

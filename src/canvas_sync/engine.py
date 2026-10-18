@@ -6,7 +6,7 @@ import asyncio
 import os
 import posixpath
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from send2trash import send2trash
 
@@ -301,17 +301,44 @@ class Engine:
                 self.state.update(r.id, ignored=0)
                 n += 1
         self.state.commit()
-        update_skip_folders(self.meta / "config.toml", remove_under=[self.layout.canonical(r) for r in rels])
-        self._reload()
+        self._resume(rels)
         return n
 
     def restore_in(self, scope: Scope) -> list[str]:
         """Restore everything you changed or deleted in `scope`, and sync its folders again."""
         restored = self.restore_files([s.file_id for s in self.restorable(scope)])
         if scope.paths:
-            update_skip_folders(self.meta / "config.toml", remove_under=[self.layout.canonical(p) for p in scope.paths])
-            self._reload()
+            self._resume(scope.paths)
         return restored
+
+    def _resume(self, rels: list[str]) -> None:
+        """Sync these paths' folders again: what's at or under them, and the folders above
+        them that weren't synced (else nothing in them could be). The other folders in
+        those stay as they were: not synced."""
+        canon = [self.layout.canonical(r) for r in rels]
+        above = [s for s in self.settings.skip_folders if any(c.startswith(s + "/") for c in canon)]
+        keep: list[str] = []
+        for s in above:
+            for c in (c for c in canon if c.startswith(s + "/")):
+                here = s
+                for part in c[len(s) + 1:].split("/"):
+                    keep += [d for d in self._subfolders(here) if d != f"{here}/{part}"]
+                    here = f"{here}/{part}"
+        keep = [k for k in keep if not any(_under(k, c) or _under(c, k) for c in canon)]
+        update_skip_folders(self.meta / "config.toml", remove_under=canon, remove=above, add=keep)
+        self._reload()
+
+    def _subfolders(self, canonical: str) -> list[str]:
+        """The folders in a folder (Canvas-derived paths): on disk, and those you deleted
+        that files from Canvas were in."""
+        rel = self.layout.renamed(PurePosixPath(canonical)).as_posix()
+        names = set()
+        if (self.root / rel).is_dir():
+            names |= {d.name for d in os.scandir(self.root / rel) if d.is_dir(follow_symlinks=False)}
+        paths = [r.path for r in self.state.all_files() if r.path]
+        paths += [row[0] for row in self.state.db.execute("SELECT path FROM links")]
+        names |= {p[len(rel) + 1:].split("/")[0] for p in paths if p.startswith(rel + "/") and "/" in p[len(rel) + 1:]}
+        return sorted(self.layout.canonical(f"{rel}/{n}") for n in names)
 
     def _reload(self) -> None:
         self.settings = Settings.load(self.meta / "config.toml")
@@ -364,6 +391,8 @@ class Engine:
             self.state.update(rec.id, ignored=0, snap_mtime=st.st_mtime, snap_size=st.st_size, snap_inode=st.st_ino)
             self.state.commit()
             done.append(rel)
+        if done:  # synced again: so are the folders they're in
+            self._resume(done)
         return done
 
     def rename_folder(self, rel: str, name: str) -> str:
