@@ -11,7 +11,6 @@ Everything a Canvas course has, on your own computer.
   you rarely need the Canvas website or Finder. Every course can be arranged to look alike, however
   its instructor organized it.
 
-macOS first; the Windows paths are kept working.
 
 ## The desktop app
 
