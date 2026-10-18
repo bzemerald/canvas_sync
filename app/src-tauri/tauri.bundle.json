@@ -6,6 +6,9 @@
   "bundle": {
     "resources": {
       "backend/": "backend/"
+    },
+    "macOS": {
+      "signingIdentity": "-"
     }
   }
 }
