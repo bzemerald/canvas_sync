@@ -91,13 +91,16 @@ define_class!(
             _panel: Option<&QLPreviewPanel>,
             item: Option<&ProtocolObject<dyn QLPreviewItem>>,
         ) -> NSRect {
+            // By URL, not by object: reopened soon after closing, the panel still asks about the
+            // URL it showed last time (an object we've since replaced), and without a frame it
+            // fades in instead.
             let Some(item) = item else { return NSRect::ZERO };
-            let item = item as *const _ as *const AnyObject;
+            let item = unsafe { &*(item as *const _ as *const AnyObject) };
             self.ivars()
                 .items
                 .borrow()
                 .iter()
-                .find(|s| std::ptr::eq(&*s.url as *const NSURL as *const AnyObject, item))
+                .find(|s| s.url.isEqual(Some(item)))
                 .map_or(NSRect::ZERO, |s| s.frame)
         }
 
