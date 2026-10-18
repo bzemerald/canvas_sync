@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import functools
 import os
+import shlex
+import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -654,31 +657,80 @@ class Account:
         ACCOUNT_FILE.write_text(tomlkit.dumps(doc))
 
     def token(self) -> str | None:
-        return os.environ.get("CANVAS_TOKEN") or keyring.get_password(KEYRING_SERVICE, self.base_url)
+        return os.environ.get("CANVAS_TOKEN") or get_secret(self.base_url)
 
     def set_token(self, token: str) -> None:
-        keyring.set_password(KEYRING_SERVICE, self.base_url, token)
+        set_secret(self.base_url, token)
 
     def clear_token(self) -> None:
         """Sign out: forget the token (the files stay)."""
-        try:
-            keyring.delete_password(KEYRING_SERVICE, self.base_url)
-        except keyring.errors.PasswordDeleteError:
-            pass
+        delete_secret(self.base_url)
 
     def ed_token(self) -> str | None:
         if os.environ.get("ED_TOKEN"):
             return os.environ["ED_TOKEN"]
-        return keyring.get_password(KEYRING_SERVICE, f"edstem:{self.ed_region}") if self.ed_region else None
+        return get_secret(f"edstem:{self.ed_region}") if self.ed_region else None
 
     def set_ed_token(self, region: str, token: str) -> None:
         self.clear_ed_token()
-        keyring.set_password(KEYRING_SERVICE, f"edstem:{region}", token)
+        set_secret(f"edstem:{region}", token)
 
     def clear_ed_token(self) -> None:
         """Disconnect Ed: forget its token (what came from it stays, as do the courses linked)."""
         if self.ed_region:
+            delete_secret(f"edstem:{self.ed_region}")
+
+
+# The tokens are in the system's keychain (KEYRING_SERVICE, one entry per Canvas or Ed account).
+# On macOS they go through Apple's `security` tool, not this process: the Keychain asks before a
+# program reads an entry it didn't make, and remembers "Always Allow" by the program's signature.
+# The packed app's backend is signed ad hoc, so it's another program after every build (and it
+# asked again on every read). `security` stays the same program.
+SECURITY = "/usr/bin/security"
+_secrets: dict[str, str | None] = {}  # (read once per process)
+_secrets_lock = threading.Lock()
+
+
+def _security() -> bool:
+    return sys.platform == "darwin" and os.path.exists(SECURITY)
+
+
+def get_secret(name: str) -> str | None:
+    with _secrets_lock:  # (one question at a time, if the Keychain asks)
+        if name not in _secrets:
+            if not _security():
+                _secrets[name] = keyring.get_password(KEYRING_SERVICE, name)
+            else:
+                run = subprocess.run([SECURITY, "find-generic-password", "-s", KEYRING_SERVICE, "-a", name, "-w"],
+                                     capture_output=True, text=True)
+                if run.returncode not in (0, 44):  # (44: there's none)
+                    raise keyring.errors.KeyringError(run.stderr.strip() or f"security: {run.returncode}")
+                _secrets[name] = run.stdout.rstrip("\n") or None  # (tokens are ASCII: anything else is in hex)
+        return _secrets[name]
+
+
+def set_secret(name: str, value: str) -> None:
+    with _secrets_lock:
+        _secrets.pop(name, None)
+        if not _security():
+            keyring.set_password(KEYRING_SERVICE, name, value)
+        else:
+            # Given on stdin (`security -i`), so the token isn't on a command line; in hex, so
+            # nothing in it needs quoting.
+            line = shlex.join(["add-generic-password", "-U", "-s", KEYRING_SERVICE, "-a", name, "-X", value.encode().hex()])
+            run = subprocess.run([SECURITY, "-i"], input=line + "\n", capture_output=True, text=True)
+            if run.returncode != 0 or run.stderr.strip():
+                raise keyring.errors.PasswordSetError(run.stderr.strip() or f"security: {run.returncode}")
+        _secrets[name] = value
+
+
+def delete_secret(name: str) -> None:
+    with _secrets_lock:
+        _secrets[name] = None
+        if not _security():
             try:
-                keyring.delete_password(KEYRING_SERVICE, f"edstem:{self.ed_region}")
+                keyring.delete_password(KEYRING_SERVICE, name)
             except keyring.errors.PasswordDeleteError:
                 pass
+        else:
+            subprocess.run([SECURITY, "delete-generic-password", "-s", KEYRING_SERVICE, "-a", name], capture_output=True)
