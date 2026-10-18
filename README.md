@@ -38,7 +38,7 @@ Chinese or English. See [app/README.md](app/README.md) for how the shell and bac
   syncing, rename folders, and delete to the Trash, all from right-click menus.
 - **Search** (⌘⇧Space anywhere, or the search box) finds things by name as you type, and by
   the text inside them. It reads what a query says: a course, a kind, a time, a status, numbered
-  things: `cs70 作业 本周 未交` is CS 70's homework due this week and not handed in; `hw3` also
+  things: `cs70 due this week not submitted` is CS 70's assignments due this week that aren't handed in; `hw3` also
   finds "Homework 3" and "Problem Set 3"; a misspelled word ("midtrem") is taken for the one
   meant.
 - **New** things (announcements, assignments, pages, files, Ed posts) get a blue dot until you
@@ -91,7 +91,7 @@ and notebooks, and every page, assignment, announcement and syllabus (and Ed pos
 - Words that name a course become a filter: `221`, `math221`, `cs70` (for COMPSCI 70),
   the start of the course name, or your own `[course_aliases]`.
 - Abbreviations expand both ways: `mt` ↔ midterm, `hw` ↔ homework / problem set,
-  `sol` ↔ solution, `期中` → midterm, … Add your own under `[search.abbreviations]`.
+  `sol` ↔ solution, … Add your own under `[search.abbreviations]`.
 - `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
 - Results whose name or folder matches come first; files that only mention it inside follow.
 - `--open N` opens result N (the file, or the Canvas page).
