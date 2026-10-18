@@ -65,6 +65,8 @@ without the Canvas website or Finder.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin`.
+    `src-tauri/src/quicklook.rs`: Quick Look (macOS), the system's panel, zooming out of the icon
+    that has the file's `data-ql` (`src/lib/quicklook.ts`).
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
 
 ## Commands

@@ -96,6 +96,7 @@ class OpenRequest(BaseModel):
     external: str | None = None  # any http(s) link, in the browser
     reveal: bool = False       # show in the file manager instead of opening
     preview: bool = False      # Quick Look (macOS)
+    seen: bool = False         # only mark it seen (the app showed it itself)
 
 
 class LaunchRequest(BaseModel):
@@ -926,7 +927,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             target = inside(req.path)
             if not target.exists():
                 raise HTTPException(404, f"{req.path} does not exist")
-            open_path(target, reveal=req.reveal, preview=req.preview)
+            if not req.seen:
+                open_path(target, reveal=req.reveal, preview=req.preview)
             if not req.reveal:  # opening (or previewing) a file is seeing it
                 with engine() as e:
                     if rec := e.state.by_path(req.path.strip("/")):

@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+#[cfg(target_os = "macos")]
+mod quicklook;
+
 const LAUNCHER: &str = "launcher";
 /// Carries what's being dragged past the main window's edge, where the page can't draw it.
 const GHOST: &str = "ghost";
@@ -239,7 +242,13 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![backend, hide_launcher, show_main])
+        .invoke_handler(tauri::generate_handler![
+            backend,
+            hide_launcher,
+            show_main,
+            #[cfg(target_os = "macos")]
+            quicklook::quick_look
+        ])
         .build(tauri::generate_context!())
         .expect("error while building the app")
         .run(|app, event| match event {

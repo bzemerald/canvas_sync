@@ -2,10 +2,11 @@
 // double-click opens, ⌘/Ctrl/Shift-click and dragging a box select several, and the same
 // keys as the file browser.
 import { ExternalLink, FolderOpen } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as api from "../lib/api";
 import type { Hit } from "../lib/api";
 import { fileCommand } from "../lib/keys";
+import { quickLook } from "../lib/quicklook";
 import { thingOfHit } from "../lib/things";
 import { onTheWeb, useDragThing } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
@@ -31,6 +32,15 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
   const sel = useSelection(keys);
   const marquee = useMarquee(scroller, sel);
   const chosen = () => keys.filter((k) => sel.has(k)).map((k) => byKey.get(k)!);
+
+  // The selected files, for Quick Look; when it's open it follows them, as in Finder.
+  const previewable = hits.filter((h) => h.path && sel.has(hitKey(h)));
+  const preview = (how: "toggle" | "follow") =>
+    quickLook(previewable.map((h) => h.path!), Math.max(0, previewable.findIndex((h) => hitKey(h) === sel.cursor)), how);
+  useEffect(() => {
+    void preview("follow");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewable.map(hitKey).join("\0"), sel.cursor]);
   const divider = firstContentMatch(hits);
 
   const onKeyDown = (ev: React.KeyboardEvent) => {
@@ -43,12 +53,11 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
     };
     const command = fileCommand(ev);
     const picked = chosen();
-    const cur = sel.has(sel.cursor ?? "") ? byKey.get(sel.cursor!) : undefined; // (deselected: nothing to act on)
     let handled = true;
     if (command === "open") picked.forEach(onOpen);
     else if (command === "selectAll") sel.all();
     else if (command === "delete" && picked.some((h) => h.path)) onDelete(picked.filter((h) => h.path));
-    else if (command === "preview") cur?.path && void api.openPath(cur.path, { preview: true }); // (else nothing, not a scroll)
+    else if (command === "preview") void preview("toggle");
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
     else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
     else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);

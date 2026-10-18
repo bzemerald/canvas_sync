@@ -71,7 +71,7 @@ export function Thumb({ path, name, mtime, size, iconClass }: { path: string; na
   }, [visible, path, mtime, size]);
 
   return (
-    <div ref={box} className="flex items-center justify-center" style={{ width: size, height: size }}>
+    <div ref={box} data-ql={path} className="flex items-center justify-center" style={{ width: size, height: size }}>
       {url ? (
         <img src={url} alt="" draggable={false} className="max-h-full max-w-full rounded-sm border border-line bg-white object-contain shadow-sm" />
       ) : url === null || !hasThumbnail(name) ? (

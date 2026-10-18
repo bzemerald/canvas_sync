@@ -5,6 +5,7 @@
 import { ChevronDown, ChevronRight, ChevronUp, CornerUpRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
+import { quickLook } from "../lib/quicklook";
 import type { Entry } from "../lib/api";
 import { fileCommand } from "../lib/keys";
 import { thingOfEntry, useDragThing, useThings } from "./Things";
@@ -30,7 +31,6 @@ interface Props {
   select?: string | null; // a path to select once it's listed
   onNavigate: (path: string) => void;
   onOpen: (e: Entry) => void;
-  onPreview: (e: Entry) => void;
   onMenu: (entries: Entry[], x: number, y: number) => void; // the selection, right-clicked
   onFolderMenu: (x: number, y: number) => void; // the folder itself: right-clicked where nothing is
   onDelete: (entries: Entry[]) => void;
@@ -71,7 +71,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onPreview, onMenu, onFolderMenu, onDelete,
+  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const dragThing = useDragThing(); // (置顶 is in their menus)
@@ -155,6 +155,14 @@ export function FileBrowser({
   const marquee = useMarquee(scroller, sel);
   const chosen = () => keys.filter((k) => sel.has(k)).map((k) => byPath.get(k)!);
 
+  // What's selected, for Quick Look; when it's open it follows the selection, as in Finder.
+  const previewable = rows.filter((r) => sel.has(r.entry.path) && !r.entry.deleted).map((r) => r.entry.path);
+  const preview = (how: "toggle" | "follow") => quickLook(previewable, Math.max(0, previewable.indexOf(sel.cursor ?? "")), how);
+  useEffect(() => {
+    void preview("follow");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewable.join("\0"), sel.cursor]);
+
   // Select `select` once it shows up (a "show original" jump), but only once: later reloads
   // keep whatever you've selected since.
   const applied = useRef<string | null>(null);
@@ -188,7 +196,7 @@ export function FileBrowser({
   const onKeyDown = (ev: React.KeyboardEvent) => {
     const i = rows.findIndex((r) => r.entry.path === sel.cursor);
     const cur = i >= 0 ? rows[i] : null;
-    const focused = cur && sel.has(cur.entry.path) ? cur.entry : null; // (deselected: nothing to rename or preview)
+    const focused = cur && sel.has(cur.entry.path) ? cur.entry : null; // (deselected: nothing to rename)
     const go = (j: number) => {
       const r = rows[Math.max(0, Math.min(rows.length - 1, j))];
       if (r) sel.moveTo(r.entry.path, ev.shiftKey);
@@ -202,7 +210,7 @@ export function FileBrowser({
     else if (command === "selectAll") sel.all();
     else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
     else if (command === "rename") focused && canRename(focused) ? onStartRename(focused) : (handled = false);
-    else if (command === "preview") focused?.type === "file" && !focused.deleted && onPreview(focused); // (else nothing, not a scroll)
+    else if (command === "preview") void preview("toggle");
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
     else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
     else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);
@@ -296,7 +304,7 @@ export function FileBrowser({
                       {e.new && <NewDot label={e.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} />}
                     </span>
                   )}
-                  <MarkedIcon e={e} marked={marked} className="size-4" />
+                  <span data-ql={e.path} className="flex shrink-0"><MarkedIcon e={e} marked={marked} className="size-4" /></span>
                   {renaming === e.path ? (
                     <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="flex-1 text-sm" />
                   ) : (
@@ -328,7 +336,7 @@ export function FileBrowser({
               >
                 <div className="relative">
                   {e.type === "dir" ? (
-                    <div className="flex size-18 items-center justify-center"><MarkedIcon e={e} marked={marked} className="size-14" /></div>
+                    <div data-ql={e.path} className="flex size-18 items-center justify-center"><MarkedIcon e={e} marked={marked} className="size-14" /></div>
                   ) : (
                     <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
                   )}

@@ -27,6 +27,7 @@ import {
   ThingIcon, ThingsContext, VIEW_LABEL, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
 } from "./components/Things";
 import * as api from "./lib/api";
+import { quickLook } from "./lib/quicklook";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
@@ -545,7 +546,7 @@ export function MainWindow() {
       case "file":
         return [
           openIt,
-          ...(isMac ? [{ label: t("快速预览"), onSelect: () => void api.openPath(x.path, { preview: true }) }] : []),
+          ...(isMac ? [{ label: t("快速预览"), onSelect: () => void quickLook([x.path], 0, "open") }] : []),
           { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(x.path), x.path) },
           { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(x.path) },
         ];
@@ -652,7 +653,7 @@ export function MainWindow() {
     }
     const items: MenuItem[] = [
       { label: t("打开"), hint: shortcut.open, onSelect: () => void api.openPath(e.path) },
-      ...(isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void api.openPath(e.path, { preview: true }) }] : []),
+      ...(isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void quickLook([e.path], 0, "open") }] : []),
       { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
     ];
     if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
@@ -730,7 +731,7 @@ export function MainWindow() {
     const x = thingOfHit(h);
     return [
       { label: t("打开"), hint: shortcut.open, onSelect: () => openHere(h) },
-      ...(h.path && isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void api.openPath(h.path!, { preview: true }) }] : []),
+      ...(h.path && isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void quickLook([h.path!], 0, "open") }] : []),
       ...(h.path
         ? [
             { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(h.path!), h.path!) },
@@ -963,7 +964,6 @@ export function MainWindow() {
         showChanges={showChanges}
         onNavigate={goPath}
         onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
-        onPreview={(e) => void api.openPath(e.path, { preview: true })}
         onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
         onFolderMenu={(x, y) => openMenu(folderMenu(cv.path), x, y)}
         onDelete={(es) => {
@@ -1180,7 +1180,6 @@ export function MainWindow() {
             showChanges={showChanges}
             onNavigate={goFolder}
             onOpen={(e) => (e.deleted ? setRestoring({ scope: restoreScope(e), label: e.name }) : void api.openPath(e.path).then(seenChanged))}
-            onPreview={(e) => void api.openPath(e.path, { preview: true })}
             onMenu={(es, x, y) => openMenu(entriesMenu(es), x, y)}
             onFolderMenu={(x, y) => openMenu(folderMenu(view.path), x, y)}
             onDelete={(es) => {

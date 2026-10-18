@@ -32,7 +32,7 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
   const folder = hit.path ? hit.path.split("/").slice(2, -1).join(" / ") : "";
   return (
     <div className="flex min-w-0 gap-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      <Icon data-ql={hit.path} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate font-medium text-fg">{hit.title}</span>

@@ -257,6 +257,9 @@ def test_api_smart_folders_thumbs_and_preview(api, root):
 
     assert api.post("/api/open", json={"path": MOD1, "preview": True}).status_code == 200
     assert api.opened[-1][1] == {"reveal": False, "preview": True}  # type: ignore[attr-defined]
+    # Shown in the app's own Quick Look: nothing is opened, it's only seen.
+    assert api.post("/api/open", json={"path": MOD1, "seen": True}).json()["opened"].endswith(MOD1)
+    assert len(api.opened) == 1  # type: ignore[attr-defined]
     assert api.post("/api/open", json={"path": ".canvas/config.toml"}).status_code == 400
 
 

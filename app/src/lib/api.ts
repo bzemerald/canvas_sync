@@ -457,6 +457,9 @@ export function openPath(path: string, how: { reveal?: boolean; preview?: boolea
   return api("/open", { method: "POST", body: JSON.stringify({ path, ...how }) });
 }
 
+/** A file was seen in the app itself (in Quick Look): mark it seen. */
+export const sawFile = (path: string) => post("/open", { path, seen: true });
+
 /** A page on Canvas (relative to the site), or anywhere on the web (in full: Ed's). */
 export function openUrl(url: string) {
   if (/^https?:\/\//.test(url)) return openExternal(url);
