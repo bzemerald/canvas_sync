@@ -70,7 +70,7 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   const c = overview?.counts;
   const has: Record<ViewName, boolean> = {
     overview: true, modules: !!c?.modules, announcements: !!c?.announcements, discussion: !!c?.posts, assignments: !!c?.assignments,
-    grades: !!c?.grades, files: true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
+    grades: !!c?.grades, files: c ? c.files > 0 : true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
   };
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }

@@ -290,6 +290,13 @@ function getBackend(): Promise<Backend> {
   return backend;
 }
 
+/** What the backend said no with, and its HTTP status (404: not there). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const { port, token } = await getBackend();
   const res = await fetch(`http://127.0.0.1:${port}/api${path}`, {
@@ -298,7 +305,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
+    throw new ApiError(body.detail ?? `${res.status} ${res.statusText}`, res.status);
   }
   return res.json();
 }

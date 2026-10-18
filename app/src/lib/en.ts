@@ -276,6 +276,7 @@ export const en: Record<string, string | [string, string]> = {
   "状态": "Status",
   "修改日期": "Date modified",
   "大小": "Size",
+  "这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。": "This course has no files yet. Once it has some on Canvas, they appear here after a sync.",
   "这个文件夹是空的": "This folder is empty",
   "收起": "Collapse",
   "展开": "Expand",

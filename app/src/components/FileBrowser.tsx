@@ -75,6 +75,7 @@ export function FileBrowser({
   const { courses } = useThings();
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false); // the folder isn't there (a course with no files yet)
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "name", desc: false });
   const box = useRef<HTMLDivElement>(null);
@@ -85,9 +86,13 @@ export function FileBrowser({
     try {
       const entries = await api.tree(dir);
       setListings((l) => ({ ...l, [dir]: entries }));
-      if (dir === path) setError(null);
+      if (dir === path) {
+        setError(null);
+        setMissing(false);
+      }
     } catch (e) {
-      if (dir === path) setError((e as Error).message);
+      if (dir === path && e instanceof api.ApiError && e.status === 404) setMissing(true);
+      else if (dir === path) setError((e as Error).message);
       else setExpanded((x) => new Set([...x].filter((p) => p !== dir))); // vanished: fold it
     }
   }, [path]);
@@ -96,6 +101,7 @@ export function FileBrowser({
   useEffect(() => {
     setExpanded(new Set());
     setListings({});
+    setMissing(false);
     box.current?.focus();
   }, [path]);
   useEffect(() => {
@@ -243,6 +249,11 @@ export function FileBrowser({
         <MarqueeBox box={marquee.box} />
         {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
         {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("这个文件夹是空的")}</p>}
+        {missing && !error && (
+          <p className="px-3 py-10 text-center text-sm text-muted">
+            {path === root && root ? t("这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。") : t("找不到这个文件夹了")}
+          </p>
+        )}
 
         {mode === "list" ? (
           <ul role="tree" aria-multiselectable>
