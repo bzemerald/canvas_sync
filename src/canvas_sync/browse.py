@@ -49,6 +49,7 @@ class Entry:
     skipped: bool = False         # in (or, dirs: is) a folder you deleted or stopped syncing; Canvas's new files don't come here
     new: str | None = None        # files: "new" (arrived since you last opened it) or "updated" (a new version)
     new_inside: int = 0           # dirs: files below that are new to you
+    renamed_from: str | None = None  # dirs: what Canvas calls it, if you renamed it
 
 
 def _natural(name: str) -> list[object]:
@@ -77,6 +78,19 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     def skipped(path: str) -> bool:
         return layout.skipped(PurePosixPath(layout.canonical(path)))
 
+    # Folders you renamed, where they are now -> what Canvas calls them. (Worked out forwards, from
+    # the renames of a course's folders, its term's or what's in it: an old rename that no course's
+    # folder goes through renames nothing.)
+    canon_dirs = [layout.canonical_course_dir(c).as_posix() for c in state.courses()]
+    was_named = {
+        layout.renamed(PurePosixPath(k)).as_posix(): posixpath.basename(k) for k in layout.s.folder_names
+        if any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in canon_dirs)
+    }
+
+    def renamed_from(path: str) -> str | None:
+        was = was_named.get(path)
+        return was if was != posixpath.basename(path) else None
+
     def canvas(fid: int, cid: int, path: str) -> dict[str, object]:
         s = by_id.get(fid)
         return {"file_id": fid, "course_id": cid, "url": f"/courses/{cid}/files/{fid}",
@@ -103,7 +117,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
                                  changes=sum(p.startswith(prefix) for p in changed),
                                  modified_inside=sum(p.startswith(prefix) for p in modified),
                                  deleted_inside=sum(p.startswith(prefix) for p in gone),
-                                 skipped=skipped(path),
+                                 skipped=skipped(path), renamed_from=renamed_from(path),
                                  new_inside=len({fid for p, fid in new_at.items() if p.startswith(prefix)})))
             elif st is not None:
                 s, rec = at.get(path), tracked.get(path)

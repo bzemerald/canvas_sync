@@ -63,6 +63,10 @@ def test_rename_the_folder_links_point_into_and_its_parents(root, fake):
     assert names(root) == {MOD: "课件", WEEK1: "第一周", COURSE: "线性代数", "Fall 2026": "2026 秋"}
     assert pull(root, fake).actions == []
     with Engine(root) as e:
+        # Listed, each says what Canvas calls it; what you didn't rename doesn't.
+        was = {x.name: x.renamed_from for x in e.list_dir("2026 秋/线性代数")}
+        assert was["课件"] == "Modules" and was["Files"] is None
+        assert [x.renamed_from for x in e.list_dir("2026 秋")] == [COURSE.split("/")[-1]]
         assert [c.id for c in e.courses_in(Scope(["2026 秋"]))] == [1]
         e.reindex()
         assert [h.title for h in e.search("线性代数 lec1")] == ["lec1.pdf"]  # the new name is a course alias

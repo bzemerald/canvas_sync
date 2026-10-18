@@ -289,6 +289,7 @@ export function FileBrowser({
                   ) : (
                     <span className={`truncate ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
                   )}
+                  {showChanges && e.renamed_from && <WasNamed name={e.renamed_from} className="min-w-0 shrink truncate text-xs" />}
                   {e.link && (
                     <span title={t("快捷方式，原文件在 {link}", { link: e.link })}>
                       <CornerUpRight className="size-3 shrink-0 text-muted" aria-label={t("快捷方式")} />
@@ -325,6 +326,7 @@ export function FileBrowser({
                 ) : (
                   <span className={`line-clamp-2 w-full text-center text-xs break-words ${e.deleted ? "line-through" : ""}`}>{e.name}</span>
                 )}
+                {showChanges && e.renamed_from && <WasNamed name={e.renamed_from} className="line-clamp-1 w-full text-center text-[11px] break-all" />}
               </div>
             ))}
           </div>
@@ -332,6 +334,11 @@ export function FileBrowser({
       </div>
     </div>
   );
+}
+
+/** What Canvas calls a folder you renamed, struck through. */
+function WasNamed({ name, className }: { name: string; className: string }) {
+  return <s title={t("Canvas 上叫“{name}”", { name })} className={`text-muted ${className}`}>{name}</s>;
 }
 
 function SortHeader({ label, k, sort, setSort, right }: {

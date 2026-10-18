@@ -204,6 +204,7 @@ export interface Entry {
   skipped: boolean; // in (dirs: or is) a folder you deleted or stopped syncing; Canvas's new files don't come here
   new: "new" | "updated" | null; // files: arrived (or came in a new version) since you last opened it
   new_inside: number; // dirs: new files below
+  renamed_from: string | null; // dirs: what Canvas calls it, if you renamed it
 }
 
 export interface FileStatus {
