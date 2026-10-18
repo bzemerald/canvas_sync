@@ -74,6 +74,8 @@ without the Canvas website or Finder.
 - Python tests: `.venv/bin/python -m pytest -q tests`
 - Frontend checks, in `app/`: `npx tsc --noEmit -p .`, `npm test` (vitest), `npm run build`,
   `npm run check:i18n` (it must report nothing missing and nothing unused).
+- A standalone app: `npm run bundle` in `app/` (the backend packed in, by PyInstaller:
+  `scripts/build-backend.mjs`, `src-tauri/tauri.bundle.json`).
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
   terminal (check `ps`). Frontend edits hot-reload. The Python server keeps running old code
   until the app restarts: `touch app/src-tauri/src/lib.rs`, and tauri dev rebuilds and

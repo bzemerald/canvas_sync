@@ -8,6 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "bundle": "tauri build --config src-tauri/tauri.bundle.json",
+    "build:backend": "node scripts/build-backend.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run"
   },

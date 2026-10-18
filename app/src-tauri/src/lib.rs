@@ -41,11 +41,19 @@ struct BackendState {
     log: Mutex<VecDeque<String>>,
 }
 
-/// Where the `canvas` executable is: $CANVAS_BACKEND, else the repo's virtualenv
-/// (development). Packaged builds will ship it as a sidecar next to the app binary.
-fn backend_path() -> PathBuf {
+/// Where the `canvas` executable is: $CANVAS_BACKEND; in a release build, the one packed
+/// inside the app, if it was (`npm run bundle`); else the repo's virtualenv (development).
+fn backend_path(app: &AppHandle) -> PathBuf {
     if let Some(p) = std::env::var_os("CANVAS_BACKEND") {
         return PathBuf::from(p);
+    }
+    if !cfg!(debug_assertions) {
+        let exe = if cfg!(windows) { "canvas.exe" } else { "canvas" };
+        if let Some(packed) = app.path().resource_dir().ok().map(|d| d.join("backend").join(exe)) {
+            if packed.is_file() {
+                return packed;
+            }
+        }
     }
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     if cfg!(windows) {
@@ -57,7 +65,7 @@ fn backend_path() -> PathBuf {
 
 fn start_backend(app: &AppHandle) {
     let state = app.state::<BackendState>();
-    let path = backend_path();
+    let path = backend_path(app);
     let spawned = Command::new(&path)
         .args(["serve", "--exit-with-stdin"])
         .stdin(Stdio::piped())

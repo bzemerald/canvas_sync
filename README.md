@@ -24,6 +24,19 @@ The first launch asks for your Canvas address, an access token and the sync fold
 then syncs on launch and every hour (you can change both in Settings). Its interface is in
 Chinese or English. See [app/README.md](app/README.md) for how the shell and backend fit together.
 
+To build the app as a standalone `Canvas Sync.app` (and a `.dmg`), in `app/`:
+
+```sh
+npm run bundle    # -> src-tauri/target/release/bundle/macos/, and dmg/
+```
+
+This packs the Python backend with PyInstaller into the app (`npm run build:backend` does that
+part alone), so the app doesn't need this repo or its `.venv`. `npm run tauri build` makes
+one without it, which starts the repo's `.venv/bin/canvas`. It isn't signed with a developer
+ID: on another Mac, open it the first time with right-click → Open. The packed backend is a new
+program to the Keychain, so macOS may ask before it reads the Canvas token (Always Allow), and
+again after a rebuild.
+
 - **A course's page** has tabs (overview, modules, announcements, discussion, assignments,
   grades, files, syllabus, pages) and an overview of cards (upcoming deadlines, latest
   announcements, current modules, new files, grades, tools and links, notes you type).
