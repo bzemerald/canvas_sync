@@ -24,7 +24,7 @@ import { Settings } from "./components/Settings";
 import { Count } from "./components/Status";
 import { SmartFolderDialog, type SmartFolder } from "./components/SmartFolderDialog";
 import {
-  ThingIcon, ThingsContext, VIEW_LABEL, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
+  ThingIcon, ThingsContext, VIEW_LABEL, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
 } from "./components/Things";
 import * as api from "./lib/api";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
@@ -37,7 +37,7 @@ import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
 import { termRank } from "./lib/terms";
 import {
-  type Shown, type Thing, type ThingOf, type ViewName, changed, isView, opensElsewhere, putAt, same, thingKey, thingOf, thingOfHit,
+  type Shown, type Thing, type ThingOf, type ViewName, changed, fromEd, isView, opensElsewhere, putAt, same, thingKey, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
 import { useTrafficLights } from "./lib/window";
@@ -518,6 +518,7 @@ export function MainWindow() {
           { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(x.path) },
         ];
       case "doc": {
+        if (fromEd(x)) return [openIt, { label: t("在 Ed 中打开"), onSelect: () => void api.item(x.course, x.kind, x.id).then((it) => it.url && api.openUrl(it.url)) }];
         const where = { page: "pages", assignment: "assignments", announcement: "discussion_topics" }[x.kind];
         return [openIt, { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${x.course}/${where}/${encodeURIComponent(x.id)}`) }];
       }
@@ -704,7 +705,7 @@ export function MainWindow() {
             { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(h.path!) },
           ]
         : []),
-      ...(h.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(h.url!) }] : []),
+      ...(h.url ? [{ label: onTheWeb(h.url), onSelect: () => void api.openUrl(h.url!) }] : []),
       ...(x ? ["separator" as const, pinOf({ ...x, name: h.title })] : []),
       ...(h.path ? ["separator" as const, del] : []),
     ];

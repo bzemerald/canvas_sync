@@ -28,7 +28,7 @@ import { RenameDialog } from "./RenameDialog";
 import { RichText } from "./RichText";
 import { Loading, NewDot } from "./Status";
 import { Thumb } from "./Thumb";
-import { ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
+import { SourceTag, ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 
 const GAP = 16; // px between cards
 
@@ -320,6 +320,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
                 <div className="flex items-center gap-2">
                   {a.new && <NewDot label={t("新公告")} />}
                   <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
+                  <SourceTag source={a.source} />
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
                 </div>
                 {a.preview && <p className="mt-0.5 line-clamp-1 text-xs text-muted">{a.preview}</p>}

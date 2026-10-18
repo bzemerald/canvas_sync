@@ -28,8 +28,9 @@ export interface ItemSummary {
   kind: DocKind;
   id: string;
   title: string;
-  url: string | null; // on Canvas, relative to the site
+  url: string | null; // on Canvas, relative to the site; from elsewhere (Ed), in full
   date: string | null; // posted / due / updated
+  source?: "ed"; // from Ed, not Canvas
   new: boolean; // arrived since you last looked, and you haven't opened (or read / handed in on Canvas)
   author?: string | null;
   preview?: string;
@@ -293,7 +294,8 @@ export type CatalogEntry = Shown & {
   due?: string | null;
   status?: SubmissionStatus;
   text?: string; // a note's first line
-  canvas_url?: string;
+  canvas_url?: string; // (in full when it's elsewhere: Ed)
+  source?: "ed"; // a document from Ed
 };
 /** What you open: how often and when last, by thingKey; and what you'd typed in search for what. */
 export interface Usage {
@@ -407,7 +409,9 @@ export function openPath(path: string, how: { reveal?: boolean; preview?: boolea
   return api("/open", { method: "POST", body: JSON.stringify({ path, ...how }) });
 }
 
+/** A page on Canvas (relative to the site), or anywhere on the web (in full: Ed's). */
 export function openUrl(url: string) {
+  if (/^https?:\/\//.test(url)) return openExternal(url);
   return api("/open", { method: "POST", body: JSON.stringify({ url }) });
 }
 

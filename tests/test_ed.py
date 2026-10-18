@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from canvas_sync import ed, server
-from canvas_sync.config import Account, Settings
+from canvas_sync import Engine, content, ed, server
+from canvas_sync.config import Account, Settings, set_ed_courses
 from canvas_sync.models import Course
 from fake_canvas import BASE, FakeCanvas, pull, wait_for_sync
 from fake_ed import TOKEN, FakeEd
@@ -124,3 +126,93 @@ def test_ed_failing_doesnt_stop_a_sync(root, tmp_path, fake, fake_ed, web):
         api.post("/api/sync", json={})
         assert wait_for_sync(api)["ed_error"] is None
         assert api.get("/api/ed").json()["error"] is None
+
+
+def ed_sync(root: Path) -> str | None:
+    async def go():
+        with Engine(root) as e:
+            return await ed.sync(e, TOKEN, "au")
+    return asyncio.run(go())
+
+
+def ago(days: float) -> str:
+    return (datetime.now(timezone(timedelta(hours=10))) - timedelta(days=days)).isoformat()
+
+
+@pytest.fixture
+def linked(root, fake, fake_ed, web) -> FakeEd:
+    """MATH 221 synced from Canvas, and its Ed course linked to it."""
+    pull(root, fake)
+    set_ed_courses(root / ".canvas" / "config.toml", {1: 501})
+    return fake_ed
+
+
+def test_ed_announcements_are_the_courses(root, fake, linked):
+    fake.announcements.append({"id": 9, "title": "Welcome", "message": "<p>Hello</p>", "posted_at": "2026-10-10T00:00:00Z",
+                               "html_url": f"{BASE}/courses/1/discussion_topics/9"})
+    pull(root, fake)
+    body = ('<document version="2.0"><paragraph>HW 3 is due <bold>Friday</bold>; see '
+            '<link href="https://x.edu/hw3">the spec</link>.</paragraph></document>')
+    linked.thread(501, 9001, "HW 3 deadline moved", body, type="announcement", user=1, created="2026-10-16T09:00:00+10:00")
+    linked.thread(501, 9002, "Is lecture recorded?")  # a question: not an announcement
+    # Posted on Canvas and Ed both: it's one announcement (Canvas's).
+    linked.thread(501, 9003, "welcome!", type="announcement", user=1, created="2026-10-10T12:00:00+10:00")
+    linked.thread(501, 9004, "Welcome", type="announcement", user=1, created="2026-09-01T09:00:00+10:00")  # (another)
+    assert ed_sync(root) is None
+
+    with Engine(root) as e:
+        items = content.items(e.state, e.root, 1, "announcement")
+        assert [(a["id"], a["title"]) for a in items] == [("ed-9001", "HW 3 deadline moved"), ("9", "Welcome"), ("ed-9004", "Welcome")]
+        a = items[0]
+        assert a["date"] == "2026-10-15T23:00:00Z"  # (as Canvas writes times: they sort together)
+        assert a["author"] == "Prof Ed" and a["source"] == "ed"
+        assert a["url"] == "https://edstem.org/au/courses/501/discussion/9001"
+        it = content.item(e.state, e.root, 1, "announcement", "ed-9001")
+        assert it["html"] == ('<p>HW 3 is due <strong>Friday</strong>; see '
+                              '<a href="https://x.edu/hw3">the spec</a>.</p>')
+        e.reindex()
+        assert [h.title for h in e.search("deadline moved")] == ["HW 3 deadline moved"]
+
+    # Each source keeps its own: syncing Canvas leaves Ed's, and the other way round.
+    pull(root, fake)
+    ed_sync(root)
+    with Engine(root) as e:
+        assert {a["id"] for a in content.items(e.state, e.root, 1, "announcement")} == {"ed-9001", "9", "ed-9004"}
+
+
+def test_what_is_new_from_ed(root, linked):
+    linked.thread(501, 9001, "Old news", type="announcement", user=1, created=ago(30))
+    linked.thread(501, 9002, "This week", type="announcement", user=1, created=ago(1))
+    ed_sync(root)
+    with Engine(root) as e:
+        # The first time, as for a course: only what's recent is new.
+        assert set(content.news(e.state, e.root, 1)["announcement"]) == {"ed-9002"}
+    linked.thread(501, 9003, "Later", type="announcement", user=1, created=ago(0), is_seen=True)
+    linked.thread(501, 9004, "Later still", type="announcement", user=1, created=ago(0))
+    ed_sync(root)
+    with Engine(root) as e:
+        assert set(content.news(e.state, e.root, 1)["announcement"]) == {"ed-9002", "ed-9004"}  # (9003: read on Ed)
+
+
+def test_ed_going_wrong_keeps_what_came(root, linked):
+    linked.thread(501, 9001, "Exam room", type="announcement", user=1)
+    ed_sync(root)
+    linked.threads[501][0].pop("category")  # Ed changed what it says
+    assert ed_sync(root) == "Ed changed"
+    with Engine(root) as e:
+        assert [a["id"] for a in content.items(e.state, e.root, 1, "announcement")] == ["ed-9001"]
+
+    # A course that's no longer linked to its Ed course doesn't keep what came from there.
+    set_ed_courses(root / ".canvas" / "config.toml", {1: 0})
+    assert ed_sync(root) is None
+    with Engine(root) as e:
+        assert content.items(e.state, e.root, 1, "announcement") == []
+
+
+def test_to_html():
+    xml = ('<document version="2.0"><heading level="1">Exam</heading><list style="number"><list-item>'
+           '<paragraph>Bring <code>id</code> &amp; a pen</paragraph></list-item></list>'
+           '<snippet language="py">if a &lt; b: pass</snippet><image src="https://static.edstem.org/a.png"/></document>')
+    assert ed.to_html(xml) == ('<h2>Exam</h2><ol><li><p>Bring <code>id</code> &amp; a pen</p></li></ol>'
+                               '<pre><code>if a &lt; b: pass</code></pre><img src="https://static.edstem.org/a.png" alt="">')
+    assert ed.to_html("not <xml") == "<p>not &lt;xml</p>"

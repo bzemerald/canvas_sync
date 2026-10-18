@@ -49,8 +49,10 @@ CREATE TABLE IF NOT EXISTS modules (
     course_id INTEGER, id INTEGER, position INTEGER, name TEXT, raw TEXT,  -- raw includes the items
     PRIMARY KEY (course_id, id)
 );
+-- A course's announcements, assignments, pages, syllabus; `source`: where from (canvas, ed).
 CREATE TABLE IF NOT EXISTS documents (
     course_id INTEGER, kind TEXT, id TEXT, title TEXT, updated_at TEXT, raw TEXT,
+    source TEXT NOT NULL DEFAULT 'canvas',
     PRIMARY KEY (course_id, kind, id)
 );
 -- Your grade in each course as Canvas computes it (NULL scores: not shown to students).
@@ -114,6 +116,8 @@ class State:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode = WAL")  # readers (search, GUI) don't block a pull
         self.db.executescript(SCHEMA)
+        if "source" not in {r[1] for r in self.db.execute("PRAGMA table_info(documents)")}:  # (from before Ed)
+            self.db.execute("ALTER TABLE documents ADD COLUMN source TEXT NOT NULL DEFAULT 'canvas'")
 
     def close(self) -> None:
         self.db.commit()
@@ -220,12 +224,17 @@ class State:
         rows = self.db.execute("SELECT raw FROM modules WHERE course_id = ? ORDER BY position, id", (course_id,))
         return [json.loads(r[0]) for r in rows]
 
-    def save_documents(self, course_id: int, docs: list[Document]) -> None:
-        self.db.execute("DELETE FROM documents WHERE course_id = ?", (course_id,))
+    def save_documents(self, course_id: int, docs: list[Document], source: str = "canvas") -> None:
+        """A course's documents from one source, as it has them now (the other sources' stay)."""
+        self.db.execute("DELETE FROM documents WHERE course_id = ? AND source = ?", (course_id, source))
         self.db.executemany(
-            "INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?, ?)",
-            [(d.course_id, d.kind, d.id, d.title, d.updated_at, json.dumps(d.raw)) for d in docs],
+            "INSERT OR REPLACE INTO documents (course_id, kind, id, title, updated_at, raw, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(d.course_id, d.kind, d.id, d.title, d.updated_at, json.dumps(d.raw), source) for d in docs],
         )
+
+    def has_documents(self, course_id: int, source: str) -> bool:
+        return self.db.execute("SELECT 1 FROM documents WHERE course_id = ? AND source = ? LIMIT 1",
+                               (course_id, source)).fetchone() is not None
 
     def save_grades(self, course_id: int, grades: dict) -> None:
         self.db.execute("INSERT OR REPLACE INTO grades VALUES (?, ?)", (course_id, json.dumps(grades)))
@@ -265,14 +274,16 @@ class State:
     # -- what's new -------------------------------------------------------------------
 
     def record_arrivals(self, course_id: int, items: Iterable[tuple[str, str, str | None]],
-                        now: datetime | None = None) -> None:
+                        now: datetime | None = None, first: bool | None = None) -> None:
         """Note items (kind, id, when Canvas says it appeared) showing up for the first time.
         The first time for a course, only what appeared in the last RECENT_DAYS is news: the
-        rest counts as seen already."""
+        rest counts as seen already. `first`: whether it's the first time for these items'
+        source (default: for the course)."""
         now = now or datetime.now(timezone.utc)
-        first = self.db.execute("SELECT 1 FROM tracked WHERE course_id = ?", (course_id,)).fetchone() is None
-        if first:
+        untracked = self.db.execute("SELECT 1 FROM tracked WHERE course_id = ?", (course_id,)).fetchone() is None
+        if untracked:
             self.db.execute("INSERT INTO tracked VALUES (?, ?)", (course_id, now.isoformat()))
+        first = untracked if first is None else first
 
         def recent(when: str | None) -> bool:
             try:

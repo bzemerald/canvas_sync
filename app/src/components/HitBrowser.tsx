@@ -7,7 +7,7 @@ import * as api from "../lib/api";
 import type { Hit } from "../lib/api";
 import { fileCommand } from "../lib/keys";
 import { thingOfHit } from "../lib/things";
-import { useDragThing } from "./Things";
+import { onTheWeb, useDragThing } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import type { ViewMode } from "./FileBrowser";
 import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
@@ -132,7 +132,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
                   </IconButton>
                 )}
                 {h.url && (
-                  <IconButton title={t("在 Canvas 中打开")} onClick={() => void api.openCanvas(h)}>
+                  <IconButton title={onTheWeb(h.url)} onClick={() => void api.openCanvas(h)}>
                     <ExternalLink className="size-4" />
                   </IconButton>
                 )}

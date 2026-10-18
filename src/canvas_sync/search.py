@@ -407,6 +407,12 @@ def relative_url(url: str | None) -> str | None:
 DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body"}
 
 
+def doc_url(raw: dict[str, Any]) -> str | None:
+    """Where a document is on the web: on Canvas, relative to the site; from elsewhere (Ed),
+    in full."""
+    return raw.get("html_url") if raw.get("source") else relative_url(raw.get("html_url"))
+
+
 # The words of each index, kept until it changes: (what it was then, the words sorted, how many
 # items each is in). An item changed in place leaves "what it was" as it was: sync drops them.
 _WORDS: dict[str, tuple[tuple[int, int], list[str], dict[str, int]]] = {}
@@ -455,7 +461,7 @@ class Index:
             raw = json.loads(row["raw"] or "{}")
             html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
             cid, kind = row["course_id"], row["kind"]
-            url = relative_url(raw.get("html_url"))
+            url = doc_url(raw)
             if kind == "syllabus":
                 url = f"/courses/{cid}/assignments/syllabus"
             elif kind == "page" and not url:

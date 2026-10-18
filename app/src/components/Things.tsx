@@ -139,6 +139,18 @@ export function ThingIcon({ thing, courses, className = "size-4" }: { thing: Thi
   return createElement(icon ?? FileText, { className: `${className} shrink-0` });
 }
 
+/** What opening a web address says: on Canvas for the site's own (relative) ones, else where. */
+export function onTheWeb(url: string): string {
+  if (url.startsWith("/")) return t("在 Canvas 中打开");
+  return /(^|\.)edstem\.org$/.test(new URL(url).hostname) ? t("在 Ed 中打开") : t("在浏览器中打开");
+}
+
+/** Where a document came from, when not Canvas: a small tag beside its title. */
+export function SourceTag({ source }: { source?: string }) {
+  if (source !== "ed") return null;
+  return <span title={t("来自 Ed")} className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">Ed</span>;
+}
+
 /** What a thing opens as, said on hover: a file in its app, a tool or link in the browser. */
 export function opensHint(thing: Thing): string | undefined {
   if (!opensElsewhere(thing)) return undefined;

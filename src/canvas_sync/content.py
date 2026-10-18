@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
-from .search import DOC_BODY, relative_url
+from .search import DOC_BODY, doc_url, relative_url
 from .state import NEWS_KINDS, State
 from .text import html_to_text
 
@@ -108,7 +108,9 @@ def submission(assignment: dict[str, Any]) -> dict[str, Any]:
 
 
 def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, Any], new: bool = False) -> dict[str, Any]:
-    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": relative_url(raw.get("html_url")), "new": new}
+    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": doc_url(raw), "new": new}
+    if raw.get("source"):
+        out["source"] = raw["source"]  # (from elsewhere: Ed)
     if kind == "announcement":
         text = html_to_text(raw.get("message"))
         out |= {

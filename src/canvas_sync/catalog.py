@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from . import content
-from .search import DEFAULT_ABBREVIATIONS, code_keys, course_label, normalized, relative_url
+from .search import DEFAULT_ABBREVIATIONS, code_keys, course_label, doc_url, normalized, relative_url
 from .state import META_DIR
 from .things import Entry, Thing, course_thing, view
 
@@ -77,7 +77,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             continue
         if kind not in DOC_KINDS:
             continue
-        fields: dict[str, Any] = {"name": row["title"], "canvas_url": relative_url(raw.get("html_url"))}
+        fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
         if kind == "announcement":
             fields["date"] = raw.get("posted_at")
         elif kind == "assignment":

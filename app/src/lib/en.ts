@@ -450,6 +450,8 @@ export const en: Record<string, string | [string, string]> = {
   "Ed 改了它的接口，暂时读不懂。已经同步的内容都还在。": "Ed changed how it answers, and the app can't read it for now. What's already synced is still here.",
   "Ed：{why}": "Ed: {why}",
   "课程@@ed": "Courses",
+  "在 Ed 中打开": "Open in Ed",
+  "来自 Ed": "From Ed",
   "连不上 Canvas": "Can't reach Canvas",
 
   // -- signing in

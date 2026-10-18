@@ -58,6 +58,9 @@ export function thingKey(t: Thing): string {
 }
 export const same = (a: Thing | null | undefined, b: Thing | null | undefined) => !!a && !!b && thingKey(a) === thingKey(b);
 
+/** A document from Ed (an announcement or post there): its id is "ed-" and Ed's (see ed.py). */
+export const fromEd = (x: ThingOf<"doc">) => x.id.startsWith("ed-");
+
 export const view = (course: number, name: ViewName): ThingOf<"view"> => ({ type: "view", course, view: name });
 export function isView<N extends ViewName = ViewName>(t: Thing | null | undefined, name?: N): t is ThingOf<"view"> & { view: N } {
   return t?.type === "view" && (name === undefined || t.view === name);

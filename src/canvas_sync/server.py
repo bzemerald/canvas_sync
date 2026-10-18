@@ -1155,7 +1155,7 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
                 await e.apply(plan, on_event)
                 if scope is None and account.ed_region and (ed_token := account.ed_token()):
                     job.current = "Ed"
-                    job.ed_error = await ed.sync(e, ed_token, account.ed_region)
+                    job.ed_error = await ed.sync(e, ed_token, account.ed_region, [x.course.id for x in plan.snapshots])
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 

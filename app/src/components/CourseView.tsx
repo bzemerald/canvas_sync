@@ -23,7 +23,7 @@ import type { MenuItem } from "./Menu";
 import { RenameDialog } from "./RenameDialog";
 import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
-import { ThingIcon, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
+import { SourceTag, ThingIcon, onTheWeb, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
 
 /** Where each kind of document is listed. */
@@ -577,6 +577,7 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
         <div className="flex items-center gap-2">
           {it.new && <NewDot />}
           <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
+          <SourceTag source={it.source} />
           {it.front_page && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">{t("首页")}</span>}
           <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(it.date, false)}</span>
         </div>
@@ -660,7 +661,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
       <header className="mb-4 border-b border-line pb-4">
         <h1 className="selectable text-xl font-semibold">{kind === "syllabus" ? t("课程大纲") : it.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-          {kind === "announcement" && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span></>}
+          {kind === "announcement" && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span><SourceTag source={it.source} /></>}
           {kind === "assignment" && (
             <>
               <Due iso={it.due_at} />
@@ -674,7 +675,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
           {it.tool ? (
             <span className="ml-auto flex items-center gap-3">
               {it.url && (
-                <button onClick={() => void api.openUrl(it.url!)} className="text-muted hover:text-fg hover:underline">{t("在 Canvas 中打开")}</button>
+                <button onClick={() => void api.openUrl(it.url!)} className="text-muted hover:text-fg hover:underline">{onTheWeb(it.url)}</button>
               )}
               <button
                 onClick={() => launch("assignment", { assignment_id: it.tool!.assignment_id })}
@@ -687,7 +688,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
             </span>
           ) : it.url && (
             <button onClick={() => void api.openUrl(it.url!)} className="ml-auto flex items-center gap-1 text-accent hover:underline">
-              {submit ? t("在 Canvas 中提交") : t("在 Canvas 中打开")}
+              {submit ? t("在 Canvas 中提交") : onTheWeb(it.url)}
               <ExternalLink className="size-3.5" />
             </button>
           )}
