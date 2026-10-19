@@ -219,6 +219,13 @@ pub fn run() {
             hide_after_full_screen(app.handle());
             if let Some(w) = app.get_webview_window(GHOST) {
                 let _ = w.set_ignore_cursor_events(true); // the pointer goes through, to the drag
+                // Above the menu bar, as the system's own drag images are: at a lower level macOS
+                // pushes a window that reaches into the menu bar down below it.
+                #[cfg(target_os = "macos")]
+                if let Ok(ns_window) = w.ns_window() {
+                    let ns_window = unsafe { &*(ns_window as *const objc2_app_kit::NSWindow) };
+                    ns_window.setLevel(objc2_app_kit::NSPopUpMenuWindowLevel);
+                }
             }
             if let Err(e) = app.global_shortcut().register(launcher_shortcut()) {
                 eprintln!("could not register the search shortcut: {e}");

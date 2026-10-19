@@ -6,7 +6,7 @@
 // Where the copy would be cut off by the window's edge, a window of its own carries it on.
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo } from "@tauri-apps/api/event";
-import { Window } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 
 /** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs):
  * it shrinks out of the way of what shows there; dragged off its list to take it away: faded,
@@ -35,6 +35,8 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   let ghost: Ghost | null = null;
   let scroller: AutoScroll | null = null;
   let last = { x: startX, y: startY };
+  let origin: [number, number] | null = null; // the page's top left on the screen
+  void pageOrigin().then((o) => (origin = o));
 
   const finish = () => {
     window.removeEventListener("pointermove", move);
@@ -62,7 +64,8 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     const over = h.onMove?.(ev.clientX, ev.clientY);
     ghost.compact(over === "zone");
     ghost.removing(over === "remove");
-    ghost.move(ev.clientX, ev.clientY, ev.screenX, ev.screenY);
+    if (origin) ghost.move(ev.clientX, ev.clientY, origin[0] + ev.clientX, origin[1] + ev.clientY);
+    else ghost.move(ev.clientX, ev.clientY);
   };
   const land = (to: Landing) => {
     const g = ghost!;
@@ -90,6 +93,19 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   window.addEventListener("pointercancel", cancel);
   window.addEventListener("keydown", key);
   window.addEventListener("blur", cancel);
+}
+
+/** Where the page's top left is on the screen, in points. Not from the event's screenX/Y: on
+ * macOS WebKit counts those from the top of the window's own screen, so on a display above or
+ * below the main one the copy would show on the wrong screen. */
+async function pageOrigin(): Promise<[number, number] | null> {
+  try {
+    const win = getCurrentWindow();
+    const [at, scale] = await Promise.all([win.innerPosition(), win.scaleFactor()]);
+    return [at.x / scale, at.y / scale];
+  } catch {
+    return null;
+  }
 }
 
 /** The click that ends a drag isn't a click on what was dragged. */
