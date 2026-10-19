@@ -6,6 +6,7 @@
 // isn't put anywhere.
 import { useEffect, useRef, useState } from "react";
 import { trackDrag } from "./drag";
+import { dragOut } from "./dragOut";
 import type { Shown } from "./things";
 
 export type ZoneState = "idle" | "ready" | "over"; // ready: something it takes is being dragged
@@ -134,12 +135,15 @@ export function useDropZone(
   return { ref: (el: HTMLElement | null) => void (zone.current.el = el), state, slot, entry: over, id: zone.current as ZoneId };
 }
 
-/** Drag something only to put it somewhere (a file, an announcement, a row in a card): press on `el`. */
-export function dragToPlace(e: React.PointerEvent, el: HTMLElement, entry: Shown) {
+/** Drag something only to put it somewhere (a file, an announcement, a row in a card): press on
+ * `el`. Out of the window, files go to other apps: `files` (in the sync folder) if given, what's
+ * selected with it. */
+export function dragToPlace(e: React.PointerEvent, el: HTMLElement, entry: Shown, files?: string[]) {
   if (e.button !== 0) return;
   trackDrag(e, el, {
     onMove: (x, y) => (dropZones.update(x, y, entry, undefined, el) ? "zone" : undefined),
     onDrop: (x, y) => void dropZones.drop(x, y, entry, undefined, el),
     onCancel: () => dropZones.end(),
+    out: dragOut(entry, undefined, files),
   });
 }

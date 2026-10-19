@@ -7,6 +7,7 @@
 // can be dragged off it to take it away.
 import { useRef, useState } from "react";
 import { trackDrag, type DragOver } from "./drag";
+import { dragOut } from "./dragOut";
 import { dropZones, type ZoneId } from "./dropZones";
 import type { Shown } from "./things";
 
@@ -168,6 +169,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
           return source;
         },
         onSettled: settled,
+        out: target ? dragOut(target, zone) : undefined, // (files, out of the window: to other apps)
       });
     },
   });

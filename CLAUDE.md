@@ -67,6 +67,7 @@ without the Canvas website or Finder.
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin`.
     `src-tauri/src/quicklook.rs`: Quick Look (macOS), the system's panel, zooming out of the icon
     that has the file's `data-ql` (`src/lib/quicklook.ts`).
+    `src-tauri/src/dragout.rs`: dragging files out to other apps, the system's drag (a copy).
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
 
 ## Commands
@@ -119,6 +120,9 @@ without the Canvas website or Finder.
     takes it; places inside one another don't take each other's items.
   - `useThing()(entry)` (components/Things.tsx) makes anything on screen draggable to a place,
     with `ways` + 置顶 in its right-click menu.
+  - `lib/dragOut.ts` (trackDrag's `out`): files, folders and courses dragged past the window's
+    edge become the system's drag (Finder, the desktop, other apps); back over the window, a
+    place can still take them.
 - **Where settings live:**
   - `<sync folder>/.canvas/config.toml`: sync rules, and app things tied to courses:
     - `[[pinned]]`: 置顶, entries of any thing.

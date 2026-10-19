@@ -23,6 +23,9 @@ export interface DragHandlers {
   onDrop?: (x: number, y: number) => Landing; // released after a drag
   onCancel?: () => Landing; // Escape, or the window lost focus
   onSettled?: () => void; // the copy has landed (or faded): show what it stood in for
+  /** Dragged out of the window: hand it over to the system's drag (lib/dragOut.ts), if it's
+   * files. True if it did: then it's over here, as if cancelled. */
+  out?: () => Promise<boolean>;
 }
 
 const THRESHOLD = 5; // px before a press is a drag
@@ -37,6 +40,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   let last = { x: startX, y: startY };
   let origin: [number, number] | null = null; // the page's top left on the screen
   void pageOrigin().then((o) => (origin = o));
+  let handing = false; // out of the window: being handed to the system (once a drag)
 
   const finish = () => {
     window.removeEventListener("pointermove", move);
@@ -64,6 +68,17 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     const over = h.onMove?.(ev.clientX, ev.clientY);
     ghost.compact(over === "zone");
     ghost.removing(over === "remove");
+    if (h.out && !handing && outside(ev)) {
+      handing = true;
+      void h.out().catch(() => false).then((handed) => {
+        if (!handed || !ghost) return; // (not files; or let go meanwhile)
+        finish();
+        ghost.remove();
+        ghost = null;
+        h.onCancel?.();
+        h.onSettled?.();
+      });
+    }
     if (origin) ghost.move(ev.clientX, ev.clientY, origin[0] + ev.clientX, origin[1] + ev.clientY);
     else ghost.move(ev.clientX, ev.clientY);
   };
@@ -94,6 +109,8 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   window.addEventListener("keydown", key);
   window.addEventListener("blur", cancel);
 }
+
+const outside = (ev: PointerEvent) => ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
 
 /** Where the page's top left is on the screen, in points. Not from the event's screenX/Y: on
  * macOS WebKit counts those from the top of the window's own screen, so on a display above or

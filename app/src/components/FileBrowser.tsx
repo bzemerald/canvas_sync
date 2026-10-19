@@ -235,7 +235,8 @@ export function FileBrowser({
     onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(), // no word selection on double-click
     onClick: (ev: React.MouseEvent) => sel.click(e.path, ev),
     onDoubleClick: () => activate(e),
-    ...dragThing(e.deleted ? null : thingOfEntry(e, courses)),
+    // (Out of the window, what's selected goes with it, as from Finder.)
+    ...dragThing(e.deleted ? null : thingOfEntry(e, courses), () => (sel.has(e.path) ? chosen() : [e]).filter((x) => !x.deleted).map((x) => x.path)),
     onContextMenu: (ev: React.MouseEvent) => {
       ev.preventDefault();
       // Right-clicking outside the selection acts on that item alone, as in Finder/Explorer.

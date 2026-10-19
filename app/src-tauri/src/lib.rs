@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+mod dragout;
 #[cfg(target_os = "macos")]
 mod quicklook;
 
@@ -261,6 +262,7 @@ pub fn run() {
             backend,
             hide_launcher,
             show_main,
+            dragout::drag_out,
             #[cfg(target_os = "macos")]
             quicklook::quick_look
         ])

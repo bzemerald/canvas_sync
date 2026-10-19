@@ -64,10 +64,11 @@ export function thingOfEntry(e: { type: "dir" | "file"; path: string }, courses:
   return c ? { type: "course", course: c.id } : { type: "folder", path: e.path };
 }
 
-/** Just the dragging, for things with menus of their own (that offer 置顶 themselves). */
+/** Just the dragging, for things with menus of their own (that offer 置顶 themselves). `files`:
+ * what goes out of the window to other apps, if not just its own (what's selected with it). */
 export function useDragThing() {
-  return (entry: Shown | null | undefined) =>
-    entry ? { onPointerDown: (e: React.PointerEvent<HTMLElement>) => !noDrag(e) && dragToPlace(e, e.currentTarget, entry) } : {};
+  return (entry: Shown | null | undefined, files?: () => string[]) =>
+    entry ? { onPointerDown: (e: React.PointerEvent<HTMLElement>) => !noDrag(e) && dragToPlace(e, e.currentTarget, entry, files?.()) } : {};
 }
 
 /** Menu sections, with a separator between those that have anything. */
