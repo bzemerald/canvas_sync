@@ -296,6 +296,33 @@ def test_quick_look_draws_other_documents(root, monkeypatch):
     (root / "notes.rtf").write_text(r"{\rtf1\ansi Hello}")
     out = thumbnail(root, "notes.rtf", 64)
     assert out is not None and max(Image.open(out).size) <= 64
+    (root / "doc").mkdir()
+    (root / "doc/notes.docx").write_bytes(make_docx("Hello"))
+    (root / "link.docx").symlink_to("doc/notes.docx")  # (Office's Quick Look hangs on a link)
+    assert thumbnail(root, "link.docx", 64) is not None
     (root / "broken.docx").write_bytes(b"not a document")
     assert thumbnail(root, "broken.docx", 64) is None  # (Quick Look hangs on it)
     assert thumbnail(root, "broken.docx", 64) is None  # and isn't asked again
+
+
+def make_docx(text: str) -> bytes:
+    """The least a Word document has."""
+    import zipfile
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    parts = {
+        "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        "</Types>",
+        "_rels/.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        "</Relationships>",
+        "word/document.xml": f'<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>',
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, xml in parts.items():
+            z.writestr(name, xml)
+    return buf.getvalue()

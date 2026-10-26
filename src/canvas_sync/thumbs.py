@@ -87,7 +87,8 @@ def _quick_look(src: Path, px: int):  # -> PIL.Image.Image
     from PIL import Image
 
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["qlmanage", "-t", "-s", str(px), "-o", tmp, str(src)], capture_output=True, timeout=QUICK_LOOK_TIMEOUT)
+        # The real file, not a link to it: Office's Quick Look hangs on a link.
+        subprocess.run(["qlmanage", "-t", "-s", str(px), "-o", tmp, str(src.resolve())], capture_output=True, timeout=QUICK_LOOK_TIMEOUT)
         made = next(Path(tmp).glob("*.png"))  # none: StopIteration, so no thumbnail
         with Image.open(made) as im:
             im.thumbnail((px, px))
