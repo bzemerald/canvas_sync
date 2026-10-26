@@ -108,7 +108,8 @@ export function FileBrowser({
     setExpanded(new Set());
     setListings({});
     setMissing(false);
-    box.current?.focus();
+    // (Not from a text box: clearing the search box brings this back, and typing goes on there.)
+    if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) box.current?.focus();
   }, [path]);
   const merged = inline !== undefined && path === root ? inline : null; // (its contents are the root's)
   useEffect(() => {

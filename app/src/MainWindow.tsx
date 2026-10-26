@@ -455,6 +455,7 @@ export function MainWindow() {
   /** Something search found: opened (↵), shown in its folder (⌘↵), or on Canvas (⌘⇧↵). */
   const openFound = (f: Found | undefined, how: How) => {
     if (!f) return;
+    searchBox.current?.blur(); // what opens takes the keys (a folder's list)
     if (f.type === "action") {
       api.noteOpened(f.key, query);
       return runAction(f.action.id);
@@ -593,14 +594,14 @@ export function MainWindow() {
       const { path: renamed } = await api.rename(path, name);
       const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
       const moveThing = (x: Thing): Thing => (x.type === "folder" || x.type === "file" ? { ...x, path: move(x.path) } : x);
-      setHist((h) => ({
       const moveCourse = (v: CourseView): CourseView => ({ ...v, tab: moveThing(v.tab), path: move(v.path), select: v.select && move(v.select) });
+      setHist((h) => ({
         ...h,
         stack: h.stack.map((v) => (v.kind === "browse" ? { ...v, path: move(v.path), select: v.select && move(v.select) }
           : v.kind === "course" ? moveCourse(v) : v)),
       }));
-      setHist((h) => {
       for (const [id, v] of lastIn.current) lastIn.current.set(id, moveCourse(v));
+      setHist((h) => {
         const cur = h.stack[h.i];
         if ((cur.kind !== "browse" && cur.kind !== "course") || cur.path !== parentOf(renamed)) return h;
         const stack = [...h.stack];
