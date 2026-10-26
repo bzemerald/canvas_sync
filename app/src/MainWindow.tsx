@@ -48,7 +48,8 @@ import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
 import { locale, t } from "./lib/i18n";
 
-// A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually).
+// A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually), or
+// where you last were in it (openCourse).
 // `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
 // `path` is the folder 文件 (or a folder tab) is in; `item` the announcement / assignment / page
 // being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
@@ -295,6 +296,11 @@ export function MainWindow() {
   useEffect(() => {
     if (cv) rememberCourse(cv.id);
   }, [cv?.id]);
+  // Where you were in each course (this run of the app): opening it again goes back there.
+  const lastIn = useRef(new Map<number, CourseView>());
+  useEffect(() => {
+    if (cv) lastIn.current.set(cv.id, cv);
+  }, [cv]);
   const course = cv ? courseById(cv.id) : null;
   const tab = cv?.tab ?? null;
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;
@@ -315,8 +321,12 @@ export function MainWindow() {
   };
   /** Go into a folder from the one showing: 全部文件 stays 全部文件, even in a course's folder. */
   const goFolder = (path: string) => (view.kind === "browse" ? go({ kind: "browse", path }) : goPath(path));
-  /** A course opens on its first tab (概览, unless that course's 概览 is hidden). */
-  const openCourse = (c: Course) => go({ kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true });
+  /** A course opens where you last were in it; the first time, or from inside it, on its first
+   * tab (概览, unless that course's 概览 is hidden). */
+  const openCourse = (c: Course) => {
+    const last = cv?.id === c.id ? null : lastIn.current.get(c.id);
+    go(last ? { ...last, select: undefined } : { kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true });
+  };
   const launchTool = (x: ThingOf<"tool">) => {
     const key = thingKey(x);
     setOpening(key);
@@ -584,11 +594,13 @@ export function MainWindow() {
       const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
       const moveThing = (x: Thing): Thing => (x.type === "folder" || x.type === "file" ? { ...x, path: move(x.path) } : x);
       setHist((h) => ({
+      const moveCourse = (v: CourseView): CourseView => ({ ...v, tab: moveThing(v.tab), path: move(v.path), select: v.select && move(v.select) });
         ...h,
         stack: h.stack.map((v) => (v.kind === "browse" ? { ...v, path: move(v.path), select: v.select && move(v.select) }
-          : v.kind === "course" ? { ...v, tab: moveThing(v.tab), path: move(v.path), select: v.select && move(v.select) } : v)),
+          : v.kind === "course" ? moveCourse(v) : v)),
       }));
       setHist((h) => {
+      for (const [id, v] of lastIn.current) lastIn.current.set(id, moveCourse(v));
         const cur = h.stack[h.i];
         if ((cur.kind !== "browse" && cur.kind !== "course") || cur.path !== parentOf(renamed)) return h;
         const stack = [...h.stack];
