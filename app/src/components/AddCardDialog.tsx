@@ -145,7 +145,8 @@ function Chooser({ groups }: { groups: { label: string; items: Choice[] }[] }) {
   const flat = shown.flatMap((g) => g.items);
   const current = flat[Math.min(at, flat.length - 1)];
   useEffect(() => setAt(0), [q]);
-  useEffect(() => list.current?.querySelector("[data-current]")?.scrollIntoView({ block: "nearest" }), [at]);
+  // (void: Chromium's scrollIntoView returns a promise, which React would call as the clean-up)
+  useEffect(() => void list.current?.querySelector("[data-current]")?.scrollIntoView({ block: "nearest" }), [at]);
   const step = (d: number) => setAt((i) => (flat.length ? (Math.min(i, flat.length - 1) + d + flat.length) % flat.length : 0));
   const pick = (c: Choice | undefined) => c && !c.disabled && c.pick();
 
