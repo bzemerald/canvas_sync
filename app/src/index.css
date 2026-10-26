@@ -3,6 +3,8 @@
 
 /* Color tokens, light first; dark follows the system setting. */
 :root {
+  color-scheme: light dark; /* native scrollbars and controls follow it too (Windows draws them light otherwise) */
+  scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
   --bg: #ffffff;
   --sidebar: #f6f6f7;
   --panel: #ffffff;
