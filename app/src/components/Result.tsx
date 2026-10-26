@@ -2,6 +2,7 @@ import { BookOpen, ClipboardList, FileText, Megaphone, MessagesSquare, ScrollTex
 import type { Hit, Kind } from "../lib/api";
 import { locale, t } from "../lib/i18n";
 import { SourceTag } from "./Things";
+import { Thumb } from "./Thumb";
 
 export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
   file: { icon: FileText, label: t("文件") },
@@ -22,17 +23,23 @@ export function formatDate(iso: string | null): string {
   return d.toLocaleDateString(locale, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
 }
 
+export const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
 export function hitKey(h: Hit): string {
   return `${h.kind}:${h.course_id}:${h.path ?? h.url ?? h.title}`;
 }
 
-/** Icon, title, course/kind/date line, and the matching text. Shared by both windows. */
+/** Icon (a file's preview), title, course/kind/date line, and the matching text. Shared by both windows. */
 export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: boolean }) {
   const { icon: Icon, label } = KIND[hit.kind] ?? KIND.file;
   const folder = hit.path ? hit.path.split("/").slice(2, -1).join(" / ") : "";
   return (
     <div className="flex min-w-0 gap-3">
-      <Icon data-ql={hit.path} className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      {hit.path ? (
+        <div className="shrink-0"><Thumb path={hit.path} name={baseName(hit.path)} mtime={null} size={32} iconClass="size-5" /></div>
+      ) : (
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate font-medium text-fg">{hit.title}</span>

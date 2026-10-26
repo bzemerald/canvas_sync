@@ -11,7 +11,7 @@ import { thingOfHit } from "../lib/things";
 import { onTheWeb, useDragThing } from "./Things";
 import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
 import type { ViewMode } from "./FileBrowser";
-import { ContentDivider, KIND, ResultBody, firstContentMatch, hitKey } from "./Result";
+import { ContentDivider, KIND, ResultBody, baseName, firstContentMatch, hitKey } from "./Result";
 import { Thumb } from "./Thumb";
 import { t } from "../lib/i18n";
 
@@ -110,7 +110,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
                 className={`flex flex-col items-center gap-1.5 rounded-lg p-2 ${shade(h)}`}
               >
                 {h.path ? (
-                  <Thumb path={h.path} name={h.title} mtime={null} size={72} iconClass="size-12" />
+                  <Thumb path={h.path} name={baseName(h.path)} mtime={null} size={72} iconClass="size-12" />
                 ) : (
                   <div className="flex size-18 items-center justify-center"><Icon className="size-10 text-muted" /></div>
                 )}

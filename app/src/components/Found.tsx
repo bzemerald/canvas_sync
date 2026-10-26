@@ -19,8 +19,9 @@ import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type 
 import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
-import { KIND, ResultBody, Snippet, formatDate } from "./Result";
+import { KIND, ResultBody, Snippet, baseName, formatDate } from "./Result";
 import { SourceTag, ThingIcon, thingName, useThing } from "./Things";
+import { Thumb } from "./Thumb";
 
 /** One of the app's words as it's said in each language (en.ts has the English). */
 function inBoth(zh: string): string[] {
@@ -505,7 +506,11 @@ function FoundRow({ f, courses, names, top }: { f: Found; courses: Course[]; nam
   const date = !due && e.date && (e.type === "doc" || e.type === "file") ? formatDate(e.date) : "";
   return (
     <div className="flex min-w-0 gap-3">
-      <span className={`mt-0.5 shrink-0 text-muted ${top ? "[&_svg]:size-5" : ""}`}><ThingIcon thing={e} courses={courses} /></span>
+      {e.type === "file" ? (
+        <div className="shrink-0"><Thumb path={e.path} name={baseName(e.path)} mtime={null} size={top ? 40 : 32} iconClass={top ? "size-5" : "size-4"} /></div>
+      ) : (
+        <span className={`mt-0.5 shrink-0 text-muted ${top ? "[&_svg]:size-5" : ""}`}><ThingIcon thing={e} courses={courses} /></span>
+      )}
       <div className="min-w-0 flex-1">
         <div className={`truncate text-fg ${top ? "text-base font-medium" : "font-medium"}`}>{thingName(e, courses)}</div>
         {(course || what || due || date) && (
