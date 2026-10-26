@@ -83,15 +83,17 @@ class Engine:
 
     async def courses(self) -> list[Course]:
         """Current courses, plus any ids listed under `include` in the config."""
+        return [Course.from_api(d) for d in await self.course_data()]
+
+    async def course_data(self) -> list[dict]:
+        """`courses()` as Canvas gives them (with their terms' dates)."""
         api = self._api()
-        listed = [
-            Course.from_api(d) for d in await api.courses() if not d.get("access_restricted_by_date")
-        ]
-        known = {c.id for c in listed}
+        listed = [d for d in await api.courses() if not d.get("access_restricted_by_date")]
+        known = {d["id"] for d in listed}
         extra = [i for i in self.settings.include if i not in known]
         for d in await asyncio.gather(*(api.course(i, ["term"]) for i in extra), return_exceptions=True):
             if isinstance(d, dict):
-                listed.append(Course.from_api(d))
+                listed.append(d)
         return listed
 
     def is_selected(self, course: Course) -> bool:

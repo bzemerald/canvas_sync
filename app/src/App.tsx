@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { Launcher } from "./Launcher";
 import { MainWindow, StartupError } from "./MainWindow";
+import { ChooseCoursesPage } from "./components/ChooseCourses";
 import { SignInPage } from "./components/SignIn";
 import * as api from "./lib/api";
 import { applyLanguage, type LangPref } from "./lib/i18n";
@@ -12,21 +13,25 @@ const isLauncher = getCurrentWindow().label === "launcher";
 document.documentElement.classList.toggle("launcher", isLauncher);
 
 export default function App() {
-  const [setUp, setSetUp] = useState<boolean | null>(null);
+  // Signing in, then (a folder that has never synced) choosing which courses sync, then the app.
+  const [step, setStep] = useState<"sign in" | "choose" | "app" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const checkStep = () =>
+    void api.health().then((h) => setStep(!h.set_up ? "sign in" : h.choosing ? "choose" : "app"), (e) => setError(String(e.message ?? e)));
 
   useEffect(() => {
     // The language this window loaded with was remembered here; the backend's is the one chosen.
     void api.prefs().then((p) => applyLanguage(p.language), () => {});
     const off = listen<{ language: LangPref }>("prefs-changed", ({ payload }) => applyLanguage(payload.language));
-    if (!isLauncher) void api.health().then((h) => setSetUp(h.set_up), (e) => setError(String(e.message ?? e)));
+    if (!isLauncher) checkStep();
     return () => void off.then((f) => f());
   }, []);
 
   if (isLauncher) return <Launcher />;
   if (error) return <StartupError message={error} />;
-  if (setUp === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
-  // Signing in starts the first sync; the main window picks it up.
-  if (!setUp) return <SignInPage onDone={() => setSetUp(true)} />;
+  if (step === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
+  if (step === "sign in") return <SignInPage onDone={checkStep} />;
+  // Choosing starts the first sync; the main window picks it up.
+  if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} />;
   return <MainWindow />;
 }

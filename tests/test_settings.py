@@ -11,9 +11,9 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from canvas_sync import CanvasClient, server
+from canvas_sync import CanvasClient, Engine, server
 from canvas_sync.config import Account, AppPrefs, Settings
-from fake_canvas import BASE, FakeCanvas, wait_for_sync
+from fake_canvas import BASE, FakeCanvas, pull, wait_for_sync
 
 PREFS = "prefs.toml"
 
@@ -86,9 +86,43 @@ def test_sign_in_from_scratch(tmp_path, canvas, keychain):
         assert keychain == {BASE: "good"}
         assert Account.load() == Account(BASE, (tmp_path / "Canvas").resolve(), "Test")
         assert api.get("/api/courses").status_code == 200
-        assert wait_for_sync(api)["phase"] == "done"  # signing in starts the first sync
+        # Which courses sync is chosen first: Canvas keeps most past courses "active".
+        assert api.get("/api/health").json()["choosing"] is True
+        assert api.get("/api/sync").json()["phase"] == "idle"
+        assert api.put("/api/courses/choice", json={"sync": [1], "skip": []}).json()["running"]  # starts the first sync
+        assert wait_for_sync(api)["phase"] == "done"
         assert [c["id"] for c in api.get("/api/courses").json()] == [1]
         assert api.get("/api/sync").json()["last_synced"]
+        assert api.get("/api/health").json()["choosing"] is False
+
+
+def test_choose_courses(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    canvas.course["term"] = {"name": "Fall 2026", "start_at": "2026-08-20T07:00:00Z", "end_at": "2026-12-20T08:00:00Z"}
+    canvas.others = [
+        {"id": 2, "name": "Discrete Math", "course_code": "CS 70", "term": {"name": "Spring 2025"}, "is_favorite": True},
+        {"id": 3, "name": "Closed", "course_code": "X 1", "access_restricted_by_date": True},
+    ]
+    config = root / ".canvas" / "config.toml"
+    with client(Account(BASE, root), tmp_path) as api:
+        got = api.get("/api/courses/choice").json()
+        assert (got["select"], got["chosen"]) == ("active", False)
+        assert [(c["id"], c["term"], c["syncing"]) for c in got["courses"]] == [(1, "Fall 2026", True), (2, "Spring 2025", True)]
+        assert got["courses"][0]["term_end"] == "2026-12-20T08:00:00Z" and got["courses"][1]["favorite"]
+
+        assert api.put("/api/courses/choice", json={"sync": [1], "skip": [2]}).json()["running"]
+        assert wait_for_sync(api)["phase"] == "done"
+        s = Settings.load(config)
+        assert (s.exclude, s.include) == ([2], [])
+        got = api.get("/api/courses/choice").json()
+        assert got["chosen"] and [c["syncing"] for c in got["courses"]] == [True, False]
+
+        # Chosen again later (in 设置): it's saved, and nothing starts by itself.
+        api.post("/api/prefs", json={"select": "favorites"})
+        assert not api.put("/api/courses/choice", json={"sync": [1, 2], "skip": []}).json()["running"]
+        s = Settings.load(config)
+        assert (s.exclude, s.include) == ([], [1, 2])  # (not starred, 1 syncs only because it's listed)
+        assert "# Which courses" in config.read_text(encoding="utf-8")
 
 
 def test_sign_out_and_in_again(root, tmp_path, canvas, keychain):
@@ -124,7 +158,12 @@ def test_sync_on_launch(root, tmp_path, canvas, keychain, monkeypatch):
                 time.sleep(0.02)
             return state["phase"]
 
-    assert launch_and_watch(2) == "done"  # never synced: it syncs
+    assert launch_and_watch(0.2) == "idle"  # never synced: the courses are chosen first
+    pull(root, canvas)
+    with Engine(root) as e:  # (as if long ago)
+        e.state.db.execute("UPDATE courses SET synced_at = '2026-01-01T00:00:00+00:00'")
+        e.state.commit()
+    assert launch_and_watch(2) == "done"  # last synced long ago: it syncs
     assert launch_and_watch(0.2) == "idle"  # just did: it doesn't
     AppPrefs(sync_on_launch=False).save(tmp_path / PREFS)
     monkeypatch.setattr(server, "LAUNCH_GRACE", timedelta(0))

@@ -642,4 +642,24 @@ export const en: Record<string, string | [string, string]> = {
   "回收站": "Recycle Bin",
   "文件资源管理器": "File Explorer",
   "文件管理器": "Files",
+  // choosing which courses sync
+  "选择要同步的课程": "Choose the courses to sync",
+  "Canvas 上往往还挂着以前学期的课。已经勾好了正在进行的课程，看看对不对。":
+    "Canvas often still lists courses from past terms. The ones going on now are ticked: check that they're right.",
+  "开始同步": "Start syncing",
+  "正在读取 Canvas 上的课程…": "Getting your courses from Canvas…",
+  "Canvas 上没有找到你的课程。": "No courses of yours on Canvas.",
+  "没有学期": "No term",
+  "进行中": "Now",
+  "{on}/{n} 门": "{on} of {n}",
+  "已选 {n} 门课": ["1 course chosen", "{n} courses chosen"],
+  "没勾选的课不会下载。以后 Canvas 上新加的课程会自动同步；随时可以在设置里重新选。":
+    "Courses not ticked aren't downloaded. New courses on Canvas sync by themselves; you can choose again in Settings any time.",
+  "没勾选的课不会下载。以后你在 Canvas 上收藏的新课程会自动同步；随时可以在设置里重新选。":
+    "Courses not ticked aren't downloaded. New courses you star on Canvas sync by themselves; you can choose again in Settings any time.",
+  "重试": "Try again",
+  "要同步的课程": "Courses to sync",
+  "在 Canvas 上的全部课程里勾选。没勾选的课不会下载。": "Tick them among all your courses on Canvas. Courses not ticked aren't downloaded.",
+  "选择课程…": "Choose Courses…",
+  "没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。": "Couldn't get the list of courses from Canvas. Check the network connection and try again.",
 };

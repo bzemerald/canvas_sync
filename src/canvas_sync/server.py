@@ -37,12 +37,13 @@ from . import __version__, content
 from . import ed, meaning
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
+from .models import Course
 from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, migrate, needs_migration, save_course_place, save_pinned,
-    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_ed_courses,
+    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
 )
 from .engine import Engine
 from .local import open_path
@@ -185,6 +186,11 @@ class HideRequest(BaseModel):
     courses: list[int] = []      # /courses/hide: which (a whole term)
 
 
+class ChoiceRequest(BaseModel):
+    sync: list[int]  # the courses chosen
+    skip: list[int]  # the rest
+
+
 class SidebarRequest(BaseModel):
     terms: list[str] | None = None    # the terms in order (Canvas's names for them)
     courses: list[int] | None = None  # course ids in order
@@ -283,9 +289,17 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         for p in req.paths:
             inside(p)
 
+    def choosing() -> bool:
+        """Signed in to a folder that has never synced: which courses to sync is chosen first
+        (Canvas leaves most past courses "active", so syncing them all would bring every term)."""
+        if account is None:
+            return False
+        with Engine(account.root) as e:
+            return e.state.last_synced() is None
+
     @api.get("/health")
     def health() -> dict[str, Any]:
-        return {"ok": True, "version": __version__, "set_up": account is not None,
+        return {"ok": True, "version": __version__, "set_up": account is not None, "choosing": choosing(),
                 "root": str(account.root) if account else None, "canvas": account.base_url if account else None}
 
     # -- preferences and the account --------------------------------------------------------
@@ -363,10 +377,11 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         new.set_token(new_token)
         account = new
         update_files()
-        try:
-            start_sync(SyncRequest())  # what you signed in for
-        except HTTPException:
-            pass
+        if not choosing():  # (else the first sync starts once the courses are chosen)
+            try:
+                start_sync(SyncRequest())  # what you signed in for
+            except HTTPException:
+                pass
         return account_info()
 
     @api.post("/account/token")
@@ -490,6 +505,40 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     "excluded": c.id in e.settings.exclude,   # not synced
                 })
             return out
+
+    @api.get("/courses/choice")
+    async def course_choice() -> dict[str, Any]:
+        """Your courses on Canvas, to choose which sync: each with its term's dates and its own,
+        and whether it syncs now. `chosen`: the config already says which (not just `select`)."""
+        assert account is not None
+        if not (token := account.token()):
+            raise HTTPException(400, "not signed in to Canvas")
+        try:
+            async with CanvasClient(account.base_url, token) as client:
+                with Engine(account.root, client) as e:
+                    out = []
+                    for d in await e.course_data():
+                        c, term = Course.from_api(d), d.get("term") or {}
+                        out.append({
+                            "id": c.id, "code": c.code, "name": c.name, "label": course_label(c, e.settings),
+                            "term": c.term, "term_start": term.get("start_at"), "term_end": term.get("end_at"),
+                            "start_at": d.get("start_at"), "end_at": d.get("end_at"),
+                            "favorite": c.is_favorite, "syncing": e.is_selected(c),
+                        })
+                    s = e.settings
+                    return {"select": s.select, "chosen": bool(s.include or s.exclude), "courses": out}
+        except (CanvasError, httpx.HTTPError) as err:
+            raise HTTPException(502, f"could not list the courses: {err}")
+
+    @api.put("/courses/choice")
+    async def choose_courses(req: ChoiceRequest) -> dict[str, Any]:
+        """Which courses sync, as chosen; the first sync starts when this is the first choice."""
+        first = choosing()
+        with engine() as e:
+            set_courses_syncing(config(), req.sync, req.skip, include=e.settings.select != "active")
+        if first:
+            start_sync(SyncRequest())
+        return sync_state()
 
     @api.get("/search")
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
@@ -1075,7 +1124,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         return max(times, default=None)
 
     def sync_if_due(within: timedelta) -> None:
-        if account is None or not _due(last_synced(), within, datetime.now(timezone.utc)):
+        if account is None or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
             return
         try:
             start_sync(SyncRequest())

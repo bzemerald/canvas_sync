@@ -390,7 +390,9 @@ export async function media(url: string): Promise<string | null> {
   });
   return res.ok ? URL.createObjectURL(await res.blob()) : null;
 }
-export const health = () => api<{ root: string | null; canvas: string | null; set_up: boolean; version: string }>("/health");
+/** `choosing`: signed in to a folder that has never synced, so which courses sync is asked first. */
+export const health = () =>
+  api<{ root: string | null; canvas: string | null; set_up: boolean; choosing: boolean; version: string }>("/health");
 export const status = () => api<FileStatus[]>("/status");
 export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
 
@@ -425,6 +427,25 @@ export const hideCourses = (courses: number[], hidden: boolean, syncing?: boolea
 /** Hide a course (syncing: false also stops syncing it), or show it again (syncing: true resumes). */
 export const hideCourse = (course: number, hidden: boolean, syncing?: boolean) =>
   post<{ hidden: boolean; excluded: boolean }>(`/courses/${course}/hide`, { hidden, syncing: syncing ?? null });
+/** One of your courses on Canvas, to choose whether it syncs (dates are ISO, or null). */
+export interface CourseChoice {
+  id: number;
+  code: string;
+  name: string;
+  label: string;
+  term: string | null;
+  term_start: string | null;
+  term_end: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  favorite: boolean;
+  syncing: boolean; // syncs now
+}
+/** Your courses on Canvas (asks it). `chosen`: which sync was chosen before (not just `select`). */
+export const courseChoice = () =>
+  api<{ select: Prefs["select"]; chosen: boolean; courses: CourseChoice[] }>("/courses/choice");
+/** Which courses sync; the first choice starts the first sync. */
+export const chooseCourses = (sync: number[], skip: number[]) => put<SyncState>("/courses/choice", { sync, skip });
 export const arrangeSidebar = (order: Partial<SidebarOrder>) => post<SidebarOrder>("/sidebar", order);
 
 export interface DeletePreview {
@@ -495,7 +516,7 @@ export const setPrefs = (changes: Partial<Prefs>) => post<Prefs>("/prefs", chang
 export const account = () => api<AccountInfo>("/account");
 /** Whether the saved token still works (asks Canvas). */
 export const checkAccount = () => api<{ ok: boolean; user?: string; error?: string }>("/account/check");
-/** Sign in (or switch account / school): checks the token, then starts the first sync. */
+/** Sign in (or switch account / school): checks the token, then starts a sync (a folder that has never synced: once its courses are chosen). */
 export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
 export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
 export const signOut = () => post<AccountInfo>("/account/signout", {});

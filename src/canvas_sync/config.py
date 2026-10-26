@@ -418,6 +418,32 @@ def set_course_select(path: Path, select: str) -> None:
     path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
+@_writes
+def set_courses_syncing(path: Path, sync: list[int], skip: list[int], *, include: bool = False) -> None:
+    """Which courses sync, as chosen from the list of them: `skip` into `exclude`, `sync` out of
+    it (and into `include` too, if `select` wouldn't pick them)."""
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    courses = doc.setdefault("courses", tomlkit.table())
+    for key in ("exclude", "include"):
+        if key not in courses:
+            courses[key] = tomlkit.array()
+
+    def put(key: str, course_id: int, present: bool) -> None:
+        if present and course_id not in courses[key]:
+            courses[key].append(course_id)
+        elif not present and course_id in courses[key]:
+            courses[key].remove(course_id)
+
+    for course_id in sync:
+        put("exclude", course_id, False)
+        if include:
+            put("include", course_id, True)
+    for course_id in skip:
+        put("exclude", course_id, True)
+        put("include", course_id, False)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
 def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool | None = None) -> None:
     """Hide a course in the app, or show it again; `syncing` False also stops syncing it (into
     `exclude`), True takes it out of `exclude` again (it syncs if `select` picks it)."""

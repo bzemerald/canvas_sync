@@ -20,6 +20,7 @@ const SAYINGS: [RegExp, string][] = [
   [/not a folder/, t("这不是一个文件夹。")],
   [/not signed in/, t("还没有登录 Canvas。请到设置里登录。")],
   [/not set up/, t("先在主窗口里登录 Canvas。")],
+  [/could not list the courses/, t("没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。")],
 ];
 
 export function friendly(message: string): string {
