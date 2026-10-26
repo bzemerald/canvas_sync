@@ -141,6 +141,7 @@ class PrefsRequest(BaseModel):
     language: str | None = None
     auto_sync: int | None = None
     sync_on_launch: bool | None = None
+    launcher_key: str | None = None  # "": the usual
     select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
 
 
@@ -320,7 +321,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/prefs")
     def get_prefs() -> dict[str, Any]:
         p = prefs()
-        out: dict[str, Any] = {"language": p.language, "auto_sync": p.auto_sync, "sync_on_launch": p.sync_on_launch}
+        out: dict[str, Any] = {"language": p.language, "auto_sync": p.auto_sync, "sync_on_launch": p.sync_on_launch,
+                               "launcher_key": p.launcher_key}
         if account is not None and not missing():
             with engine() as e:
                 out["select"] = e.settings.select

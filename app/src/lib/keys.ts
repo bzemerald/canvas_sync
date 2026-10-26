@@ -64,11 +64,11 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
 export const shortcut = isMac
   ? {
       open: "⌘O", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
-      toggleChanges: "⌘⇧.", settings: "⌘,", launcher: "⌘⇧Space",
+      toggleChanges: "⌘⇧.", settings: "⌘,",
     }
   : {
       open: "Enter", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
-      toggleChanges: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", launcher: "Ctrl+Shift+Space",
+      toggleChanges: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,",
     };
 
 export const trashName = isMac ? t("废纸篓") : t("回收站");

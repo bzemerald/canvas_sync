@@ -49,12 +49,15 @@ def client(account: Account | None, tmp_path: Path, background: bool = False) ->
 def test_prefs(root, tmp_path, keychain):
     with client(Account(BASE, root), tmp_path) as api:
         assert api.get("/api/prefs").json() == {"language": "system", "auto_sync": 60, "sync_on_launch": True,
-                                                "select": "active"}
+                                                "launcher_key": "", "select": "active"}
         got = api.post("/api/prefs", json={"language": "en", "auto_sync": 180}).json()
         assert (got["language"], got["auto_sync"], got["sync_on_launch"]) == ("en", 180, True)
         assert AppPrefs.load(tmp_path / PREFS) == AppPrefs("en", 180, True)
         assert api.post("/api/prefs", json={"auto_sync": 7}).status_code == 400
         assert api.post("/api/prefs", json={"language": "fr"}).status_code == 400
+        assert api.post("/api/prefs", json={"launcher_key": "Control+Alt+KeyK"}).json()["launcher_key"] == "Control+Alt+KeyK"
+        assert api.post("/api/prefs", json={"launcher_key": "KeyK"}).status_code == 400  # no modifier
+        assert api.post("/api/prefs", json={"launcher_key": ""}).json()["launcher_key"] == ""
         assert api.post("/api/prefs", json={"select": "favorites"}).json()["select"] == "favorites"
         config = root / ".canvas" / "config.toml"
         assert Settings.load(config).select == "favorites" and "# Which courses" in config.read_text(encoding="utf-8")  # comments kept

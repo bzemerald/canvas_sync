@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -579,6 +580,8 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
 
 LANGUAGES = ("system", "zh", "en")
 AUTO_SYNC_MINUTES = (0, 30, 60, 180, 360, 1440)  # 0: off
+# The search window's keys: modifiers, then a key as the browser's KeyboardEvent.code names it.
+LAUNCHER_KEY = re.compile(r"((Control|Alt|Shift|Super)\+)+\w+")
 
 
 @dataclass
@@ -587,6 +590,7 @@ class AppPrefs:
     auto_sync: int = 60          # minutes between syncs while the app runs; 0: off
     sync_on_launch: bool = True  # sync when the app starts (unless it just did)
     meaning: bool = False        # search by meaning, too (meaning.py: an English model, downloaded)
+    launcher_key: str = ""       # what opens the search window, e.g. "Super+Shift+Space"; "": ⌘⇧Space / Ctrl+Shift+Space
     # The default arrangement of a course's tabs and overview, for courses not arranged for
     # themselves: their views (of no course in particular). []: the usual.
     tabs: list[Entry] = field(default_factory=list)
@@ -603,6 +607,7 @@ class AppPrefs:
         d = cls()
         language = data.get("language", d.language)
         auto_sync = data.get("auto_sync", d.auto_sync)
+        launcher_key = data.get("launcher_key", d.launcher_key)
         old = old_defaults(data)  # (tab_order, hidden_tabs, overview_order, overview_hidden)
 
         def default(place: str) -> list[Entry]:
@@ -613,6 +618,7 @@ class AppPrefs:
             auto_sync=auto_sync if auto_sync in AUTO_SYNC_MINUTES else d.auto_sync,
             sync_on_launch=bool(data.get("sync_on_launch", d.sync_on_launch)),
             meaning=bool(data.get("meaning", d.meaning)),
+            launcher_key=launcher_key if isinstance(launcher_key, str) and LAUNCHER_KEY.fullmatch(launcher_key) else d.launcher_key,
             tabs=default("tabs"),
             overview=default("overview"),
         )
@@ -633,6 +639,8 @@ class AppPrefs:
             raise ConfigError(f"language must be one of {LANGUAGES}")
         if self.auto_sync not in AUTO_SYNC_MINUTES:
             raise ConfigError(f"auto_sync must be one of {AUTO_SYNC_MINUTES} (minutes)")
+        if self.launcher_key and not LAUNCHER_KEY.fullmatch(self.launcher_key):
+            raise ConfigError("launcher_key is modifiers and a key, e.g. Super+Shift+Space")
         for e in [*self.tabs, *self.overview]:
             if e.thing.type != "view" or e.thing.course is not None:
                 raise ConfigError("a default arrangement has a course's views, of no course in particular")
@@ -644,6 +652,8 @@ class AppPrefs:
         doc["auto_sync"] = self.auto_sync
         doc["sync_on_launch"] = self.sync_on_launch
         doc["meaning"] = self.meaning
+        if self.launcher_key:
+            doc["launcher_key"] = self.launcher_key
         for place in ("tabs", "overview"):
             if getattr(self, place):
                 doc.add(tomlkit.nl())

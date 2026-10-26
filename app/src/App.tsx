@@ -8,6 +8,7 @@ import { MissingFolderPage } from "./components/MissingFolder";
 import { SignInPage } from "./components/SignIn";
 import * as api from "./lib/api";
 import { applyLanguage, type LangPref } from "./lib/i18n";
+import { loadLauncherKeys } from "./lib/launcherKeys";
 
 // One bundle serves both windows; the window's label picks the UI.
 const isLauncher = getCurrentWindow().label === "launcher";
@@ -29,7 +30,10 @@ export default function App() {
     // The language this window loaded with was remembered here; the backend's is the one chosen.
     void api.prefs().then((p) => applyLanguage(p.language), () => {});
     const off = listen<{ language: LangPref }>("prefs-changed", ({ payload }) => applyLanguage(payload.language));
-    if (!isLauncher) checkStep();
+    if (!isLauncher) {
+      checkStep();
+      void loadLauncherKeys().catch(() => {});
+    }
     return () => void off.then((f) => f());
   }, []);
 

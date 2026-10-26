@@ -264,6 +264,7 @@ export interface Prefs {
   language: LangPref;
   auto_sync: number; // minutes between automatic syncs; 0: off
   sync_on_launch: boolean;
+  launcher_key: string; // what opens the search window (launcherKeys.ts); "": the usual
   select?: "active" | "favorites"; // (once an account is set up)
 }
 

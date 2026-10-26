@@ -33,6 +33,7 @@ import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
 import type { KindId } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
+import { keysLabel, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
@@ -1740,10 +1741,11 @@ function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: str
 }
 
 function Welcome() {
+  const keys = useLauncherKeys();
   return (
     <div className="mx-auto max-w-md px-2 py-16 text-sm text-muted">
       <p className="mb-4 text-base text-fg">
-        {tx("在任何地方按 {key} 快速搜索。", { key: <kbd className="rounded border border-line bg-chip px-1.5">{shortcut.launcher}</kbd> })}
+        {tx("在任何地方按 {key} 快速搜索。", { key: <kbd className="rounded border border-line bg-chip px-1.5">{keysLabel(keys)}</kbd> })}
       </p>
       <p>
         {tx("输入课程名加关键词，例如 {a}、{b}、{c}。也可以按类型、时间、提交状态找，例如 {d}、{e}。缩写会自动展开（mt = midterm，hw3 = Homework 3 = Problem Set 3），拼错也能找到。", {

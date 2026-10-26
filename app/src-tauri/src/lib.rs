@@ -198,20 +198,58 @@ fn hide_after_full_screen(app: &AppHandle) {
     std::mem::forget(observer); // observes for the app's lifetime
 }
 
+/// The search window's usual keys: ⌘⇧Space, Ctrl+Shift+Space.
 fn launcher_shortcut() -> Shortcut {
     let modifier = if cfg!(target_os = "macos") { Modifiers::SUPER } else { Modifiers::CONTROL };
     Shortcut::new(Some(modifier | Modifiers::SHIFT), Code::Space)
 }
 
+/// Makes `keys` ("Super+Shift+KeyK"; "": the usual) open the search window instead of what
+/// did; None: nothing, while new keys are being pressed in 设置. Keys that can't be had (taken
+/// by another app, or not keys) leave the old ones.
+#[tauri::command]
+fn set_launcher_keys(app: AppHandle, keys: Option<String>) -> Result<(), String> {
+    let shortcuts = app.global_shortcut();
+    let new = match keys.as_deref() {
+        None => None,
+        Some("") => Some(launcher_shortcut()),
+        Some(k) => Some(k.parse::<Shortcut>().map_err(|e| e.to_string())?),
+    };
+    let state = app.state::<LauncherKeys>();
+    let mut current = state.0.lock().unwrap();
+    if new == *current {
+        return Ok(());
+    }
+    if let Some(old) = *current {
+        let _ = shortcuts.unregister(old);
+    }
+    if let Some(s) = new {
+        if let Err(e) = shortcuts.register(s) {
+            if let Some(old) = *current {
+                let _ = shortcuts.register(old);
+            }
+            return Err(e.to_string());
+        }
+    }
+    *current = new;
+    Ok(())
+}
+
+/// What opens the search window now (None while 设置 is listening for new keys).
+#[derive(Default)]
+struct LauncherKeys(Mutex<Option<Shortcut>>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(BackendState::default())
+        .manage(LauncherKeys::default())
         .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    if shortcut == &launcher_shortcut() && event.state() == ShortcutState::Pressed {
+                    let launcher = *app.state::<LauncherKeys>().0.lock().unwrap();
+                    if Some(*shortcut) == launcher && event.state() == ShortcutState::Pressed {
                         toggle_launcher(app);
                     }
                 })
@@ -231,7 +269,8 @@ pub fn run() {
                     ns_window.setLevel(objc2_app_kit::NSPopUpMenuWindowLevel);
                 }
             }
-            if let Err(e) = app.global_shortcut().register(launcher_shortcut()) {
+            // The usual keys until the main window has read the chosen ones (set_launcher_keys).
+            if let Err(e) = set_launcher_keys(app.handle().clone(), Some(String::new())) {
                 eprintln!("could not register the search shortcut: {e}");
             }
             Ok(())
@@ -265,6 +304,7 @@ pub fn run() {
             backend,
             hide_launcher,
             show_main,
+            set_launcher_keys,
             dragout::drag_out,
             #[cfg(target_os = "macos")]
             quicklook::quick_look

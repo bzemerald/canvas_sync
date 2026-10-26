@@ -7,7 +7,8 @@ import type { AccountInfo, Prefs, SyncState } from "../lib/api";
 import { shortDate } from "../lib/dates";
 import { edSaying, friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
-import { shortcut } from "../lib/keys";
+import { chooseLauncherKeys, keysLabel, keysOf, setKeys, useLauncherKeys } from "../lib/launcherKeys";
+import { isMac } from "../lib/keys";
 import { termRank } from "../lib/terms";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
@@ -167,9 +168,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
         </Section>
 
         <Section title={t("搜索")}>
-          <Row label={t("快捷搜索")} hint={t("在任何应用里按这个组合键，打开搜索窗口。")}>
-            <kbd className="rounded border border-line bg-chip px-1.5 py-0.5 text-xs">{shortcut.launcher}</kbd>
-          </Row>
+          <LauncherKeysRow />
           <MeaningRow />
         </Section>
 
@@ -404,6 +403,66 @@ function MeaningRow() {
       }
     >
       <Toggle on={state.on} onChange={turn} />
+    </Row>
+  );
+}
+
+/** The keys that open the search window: click, then press new ones (Esc: keep these). */
+function LauncherKeysRow() {
+  const keys = useLauncherKeys();
+  const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!listening) return;
+    // The current keys let go of, so pressing them again is heard here too.
+    void setKeys(null).catch(() => {});
+    let chose = false;
+    const stop = () => setListening(false);
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation(); // not the window's own keys (⌘F, ⌘,...)
+      if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey) return stop();
+      const got = keysOf(e);
+      if (got === null) return;
+      if (got === "no modifier") return setError(isMac ? t("要带上 ⌘、⌃ 或 ⌥。") : t("要带上 Ctrl、Alt 或 Win。"));
+      chose = true;
+      setListening(false);
+      void chooseLauncherKeys(got).then(() => setError(null), (err) => {
+        setError(t("这个组合键用不了（可能已被别的应用占用）：{why}", { why: friendly(String((err as Error)?.message ?? err)) }));
+        void setKeys(keys).catch(() => {});
+      });
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", stop);
+      if (!chose) void setKeys(keys).catch(() => {}); // stopped without new keys: the old ones again
+    };
+  }, [listening, keys]);
+  return (
+    <Row
+      label={t("快捷搜索")}
+      hint={
+        <>
+          {t("在任何应用里按这个组合键，打开搜索窗口。点它，再按新的组合键来更换。")}
+          {error && <span className="mt-1 block text-danger">{error}</span>}
+        </>
+      }
+    >
+      <span className="flex items-center gap-2">
+        {keys && !listening && (
+          <button onClick={() => void chooseLauncherKeys("").then(() => setError(null), () => {})} className="text-xs text-accent hover:underline">
+            {t("恢复默认")}
+          </button>
+        )}
+        <button
+          onClick={() => (setError(null), setListening(!listening))}
+          className={`min-w-24 rounded border px-2 py-0.5 text-xs ${listening ? "border-accent bg-selected text-accent" : "border-line bg-chip hover:border-fg-soft"}`}
+        >
+          {listening ? t("按下组合键…") : keysLabel(keys)}
+        </button>
+      </span>
     </Row>
   );
 }
