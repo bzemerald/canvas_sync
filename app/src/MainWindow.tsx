@@ -1,13 +1,13 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Clock, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
+  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
   Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { type Finder, FinderContext, FoundHere, FoundSearch, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
+import { type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
 } from "./components/CourseView";
@@ -46,7 +46,7 @@ import {
 import { useTrafficLights } from "./lib/window";
 import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
-import { locale, t, tx } from "./lib/i18n";
+import { locale, t } from "./lib/i18n";
 
 // A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually).
 // `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
@@ -54,7 +54,6 @@ import { locale, t, tx } from "./lib/i18n";
 // being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
 type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean };
 type View =
-  | { kind: "home" }
   | CourseView // first: opened on its first tab
   | { kind: "browse"; path: string; select?: string }
   | { kind: "search"; search: ThingOf<"search"> }
@@ -125,7 +124,7 @@ export function MainWindow() {
   const launcherKeys = useLauncherKeys();
   const [courseList, setCourseList] = useState<Course[]>([]);
   const [pinned, setPinned] = useState<Shown[]>([]);
-  const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "home" }], i: 0 });
+  const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "browse", path: "" }], i: 0 });
   const [query, setQuery] = useState("");
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
   const [showChanges, setShowChanges] = usePref("showChanges", false); // what you changed, in files
@@ -382,7 +381,7 @@ export function MainWindow() {
   useEffect(() => {
     if (!query.trim()) setWide(false);
   }, [query]);
-  const searching = view.kind === "home" || (filesView && query.trim() !== "" && !filtering);
+  const searching = filesView && query.trim() !== "" && !filtering;
   const searchPlaceholder =
     cv && course
       ? wide || courseWide
@@ -400,13 +399,13 @@ export function MainWindow() {
     () => (smart ? api.search(smart.query, { courses: smart.courses, kinds: smart.kinds, namesOnly: !smart.content, limit: 500 }) : Promise.resolve([])),
     [version],
   );
-  // What's typed is searched as on 搜索 (and in the search window), where the box is: the folder,
+  // What's typed is searched as in the search window, where the box is: the folder,
   // the course (what its tab shows a little first), or everything.
   const scope = useMemo((): Where => {
     if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : scopeCourses.length ? { courses: scopeCourses } : {}) };
     return cv ? { courses: [cv.id], kind: kindShown(tab) } : {};
   }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const { catalog, vocab, usage, names } = useCatalog([version], courseList, view.kind === "home" || query.trim() !== "");
+  const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "");
   const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
   const actions = useMemo(() => actionsFor(names), [names]);
   const box = useMemo(() => ({ query: filtering ? query : "", onQuery: setQuery, onWiden: () => setWide(true) }), [filtering, query]);
@@ -502,7 +501,7 @@ export function MainWindow() {
     if (!e) return;
     // A smart folder is only here: taken away, it's gone (撤销 brings it back).
     savePinned(without(pinned, x), e.type === "search" ? t("已删除智能文件夹“{name}”", { name: nameOf(e) }) : t("已取消置顶“{name}”", { name: nameOf(e) }));
-    if (view.kind === "search" && same(view.search, x)) go({ kind: "home" });
+    if (view.kind === "search" && same(view.search, x)) go({ kind: "browse", path: "" });
   };
   /** One of the open course's places as it should be. */
   const arrangeLayout = (place: Place, next: Shown[]) => {
@@ -1006,7 +1005,6 @@ export function MainWindow() {
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onClick={() => void showLauncher()} title={t("搜索")} keys={keysLabel(launcherKeys)} />
-          <NavItem icon={<Clock className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("最近")} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
           <PinnedSection
@@ -1115,10 +1113,9 @@ export function MainWindow() {
               />
             )}
             {view.kind === "search" && <SmartTitle folder={view.search} name={folderEntry ? nameOf(folderEntry) : nameOf(view.search)} courses={courseList} />}
-            {view.kind === "home" && <span className="text-sm font-medium">{t("最近")}</span>}
             {view.kind === "settings" && <span className="text-sm font-medium">{t("设置")}</span>}
           </div>
-          {view.kind !== "home" && view.kind !== "settings" && (
+          {view.kind !== "settings" && (
             <>
               {filesView && (
                 <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} compact />
@@ -1152,17 +1149,7 @@ export function MainWindow() {
           />
         )}
 
-        {view.kind === "home" ? (
-          <FoundSearch
-            query=""
-            onQuery={searchEverywhere}
-            {...finder}
-            actions={actions}
-            onOpen={openFound}
-            props={hitMenu}
-            welcome={<Welcome />}
-          />
-        ) : view.kind === "settings" ? (
+        {view.kind === "settings" ? (
           <Settings
             sync={sync}
             onSync={() => void startSync({}, t("全部课程"))}
@@ -1257,7 +1244,7 @@ export function MainWindow() {
           onClose={() => setHiding(null)}
           onDone={() => {
             say(t("已隐藏“{name}”", { name: hiding.term ?? hiding.courses[0].label }));
-            if (cv && hiding.courses.some((c) => c.id === cv.id)) go({ kind: "home" });
+            if (cv && hiding.courses.some((c) => c.id === cv.id)) go({ kind: "browse", path: "" });
             setHiding(null);
             refresh();
           }}
@@ -1744,26 +1731,6 @@ function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: str
   );
 }
 
-function Welcome() {
-  const keys = useLauncherKeys();
-  return (
-    <div className="mx-auto max-w-md px-2 py-16 text-sm text-muted">
-      <p className="mb-4 text-base text-fg">
-        {tx("在任何地方按 {key} 快速搜索。", { key: <kbd className="rounded border border-line bg-chip px-1.5">{keysLabel(keys)}</kbd> })}
-      </p>
-      <p>
-        {tx("输入课程名加关键词，例如 {a}、{b}、{c}。也可以按类型、时间、提交状态找，例如 {d}、{e}。缩写会自动展开（mt = midterm，hw3 = Homework 3 = Problem Set 3），拼错也能找到。", {
-          a: <code className="text-fg-soft">221 mt</code>,
-          b: <code className="text-fg-soft">cs70 hw3 sol</code>,
-          c: <code className="text-fg-soft">{t("期中")}</code>,
-          d: <code className="text-fg-soft">{t("cs70 本周截止")}</code>,
-          e: <code className="text-fg-soft">{t("未交")}</code>,
-        })}
-      </p>
-      <p className="mt-3">{t("左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。")}</p>
-    </div>
-  );
-}
 
 export function StartupError({ message }: { message: string }) {
   return (

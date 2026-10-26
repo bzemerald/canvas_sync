@@ -60,7 +60,7 @@ without the Canvas website or Finder.
     one place (`W`); `src/lib/queries.test.ts`: what should come first for what students type
     (run it after changing a weight);
     `src/components/Found.tsx`: how it's shown (the query's parts as chips), in the search
-    window and on 搜索.
+    window and under a page's search box.
   - `src/lib/api.ts`: every backend call and its types.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).

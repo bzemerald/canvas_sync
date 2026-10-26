@@ -111,7 +111,6 @@ export const en: Record<string, string | [string, string]> = {
   "设置": "Settings",
   "后退 ({back})": "Back ({back})",
   "前进 ({forward})": "Forward ({forward})",
-  "最近": "Recent",
   "在 {label} 中搜索": "Search {label}",
   "列表": "List",
   "图标": "Icons",
@@ -145,11 +144,6 @@ export const en: Record<string, string | [string, string]> = {
   "，": ", ",
   "没有新内容": "Nothing new",
   "Canvas 令牌可能过期了，到设置里更换": "Your Canvas token may have expired; replace it in Settings",
-  "在任何地方按 {key} 快速搜索。": "Press {key} anywhere to search.",
-  "输入课程名加关键词，例如 {a}、{b}、{c}。也可以按类型、时间、提交状态找，例如 {d}、{e}。缩写会自动展开（mt = midterm，hw3 = Homework 3 = Problem Set 3），拼错也能找到。":
-    "Type a course and keywords, like {a}, {b} or {c}. Kinds of things, times and where you are with an assignment work too, like {d} or {e}. Abbreviations expand (mt = midterm, hw3 = Homework 3 = Problem Set 3), and misspellings are caught.",
-  "左边选一门课可以浏览它的文件；右键课程、文件夹或文件可以单独同步或恢复。":
-    "Pick a course on the left to see what's in it; right-click a course, folder or file to sync or restore just that.",
   "后台服务没有启动": "The background service didn't start",
 
   // -- a course's page

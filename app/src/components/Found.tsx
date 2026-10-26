@@ -2,8 +2,8 @@
 // (courses, pages and tools, assignments, announcements, files and folders, things to do, what's
 // only inside), a few of each until asked for all; before anything is typed, what you opened
 // lately and what's due soon. Above it, how what's typed was read (lib/query.ts): a chip for each
-// part that narrows it down. Shared by the search window, the main window's 搜索 page and its search
-// box elsewhere (in a course, in a folder: `Scope`), inside a cmdk <Command> (arrows move, enter
+// part that narrows it down. Shared by the search window and the main window's search
+// box (in a course, in a folder: `Scope`), inside a cmdk <Command> (arrows move, enter
 // opens). And the same, narrowing a list (a course's tab) as you type: `useNarrowing`.
 import { Command } from "cmdk";
 import { AppWindow, CalendarDays, CircleCheck, MessagesSquare, RefreshCw, Settings as SettingsIcon, Sparkles, X } from "lucide-react";
@@ -224,35 +224,7 @@ export function completion(reading: Reading, f: Found | undefined): string | nul
   return `${reading.query.slice(0, start)}${word} ${reading.query.slice(end)}`.replace(/\s+$/, " ");
 }
 
-/** The main window's 最近 page: what was opened lately and what's due (searching is the search window's). */
-export function FoundSearch({ query, onQuery, catalog, vocab, usage, names, courses, actions, onOpen, props, welcome }: {
-  query: string;
-  onQuery: (q: string) => void;
-  catalog: Catalog | null;
-  vocab: Vocabulary;
-  usage: Usage;
-  names: Map<number, string>;
-  courses: Course[];
-  actions: Action[];
-  onOpen: (f: Found | undefined, how: How) => void;
-  props?: (f: Found) => object;
-  welcome: React.ReactNode; // with nothing typed and nothing to show
-}) {
-  const { reading, results, lately, due, listed, first, nothing, loading } = useFinding(query, catalog, vocab, usage, actions);
-  const { value, choose, list } = useChosen(query, listed, first);
-  return (
-    <Command shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
-      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => completion(reading, listed.get(value)), onQuery)}>
-      <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-        {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
-        {!query.trim() && !lately.length && !due.length && welcome}
-        <FoundList results={results} recent={lately} due={due} courses={courses} names={names} onOpen={(f) => onOpen(f, "open")} props={props} />
-      </Command.List>
-    </Command>
-  );
-}
-
-/** What the search box finds where it is (a course, a folder: `scope`): as on 搜索, under the box,
+/** What the search box finds where it is (a course, a folder: `scope`): as in the search window, under the box,
  * which stays in the header (`box`: its keys move through the list and open what's chosen). */
 export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note }: {
   box: React.RefObject<HTMLInputElement | null>;
