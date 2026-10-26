@@ -14,11 +14,13 @@ applied last, to every path, so a renamed folder keeps receiving what Canvas put
 from __future__ import annotations
 
 import fnmatch
+import mimetypes
 import posixpath
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from urllib.parse import unquote_plus
 
 from .config import Rule, Settings
 from .models import Course, RemoteFile, Source
@@ -38,6 +40,27 @@ def sanitize(name: str, max_len: int = 150) -> str:
         else:
             name = name[:max_len]
     return name
+
+
+def file_name(f: RemoteFile) -> str:
+    """The file's name on disk: its Canvas name, plus the extension Canvas adds on download
+    when the name has none (an instructor renamed "Week+10-answers.pdf" to "Week 10 Answers")."""
+    name = sanitize(f.name)
+    ctype = (f.raw.get("content-type") or "").lower()
+    if "/" not in ctype or ctype in ("unknown/unknown", "application/octet-stream"):
+        ctype = ""
+    uploaded = unquote_plus(f.raw.get("filename") or "")
+    own = PurePosixPath(uploaded).suffix.lower() if uploaded else ""
+    suffix = PurePosixPath(name).suffix.lower()
+    named_type = mimetypes.guess_type(name)[0]
+    if suffix and (suffix == own or named_type and named_type == (ctype or named_type)):
+        return name  # it has its extension ("1.5" doesn't count)
+    # The uploaded file's extension, if it's of the file's type; else the type's.
+    if own and (guess := mimetypes.guess_type(uploaded)[0]) and guess == (ctype or guess):
+        ext = own
+    else:
+        ext = mimetypes.guess_extension(ctype) if ctype else None
+    return sanitize(name + ext) if ext else name
 
 
 @dataclass(frozen=True)
@@ -132,7 +155,7 @@ class Layout:
         return result
 
     def place(self, cdir: PurePosixPath, course: Course, f: RemoteFile) -> Placement | None:
-        name = sanitize(f.name)
+        name = file_name(f)
 
         def path_in(src: Source) -> PurePosixPath:
             view_dir = self.s.view_dirs.get(src.kind, src.kind)
@@ -164,7 +187,7 @@ class Layout:
         return Placement(primary, links)
 
     def rule_for(self, course: Course, f: RemoteFile) -> Rule | None:
-        name = sanitize(f.name)
+        name = file_name(f)
         keys = ["/".join([s.kind, *map(sanitize, s.folder), name]).casefold() for s in f.sources]
         keys = keys or [name.casefold()]
         for rule in self.s.rules:

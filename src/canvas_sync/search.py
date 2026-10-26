@@ -465,7 +465,7 @@ class Index:
             places = [p for p in [r.path, *links.get(r.id, [])] if p]
             folder = " / ".join(dict.fromkeys(str(PurePosixPath(p).parent) for p in places))
             title = PurePosixPath(r.path).name if r.path else r.name
-            if title != r.name:
+            if r.name not in (title, PurePosixPath(title).stem):  # renamed (not just given its extension)
                 folder += f" / {r.name}"
             raw = json.loads(state.db.execute("SELECT raw FROM files WHERE id = ?", (r.id,)).fetchone()[0] or "{}")
             yield _Item(

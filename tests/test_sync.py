@@ -137,3 +137,41 @@ def test_name_clash_gets_suffix(root, fake):
     pull(root, fake)
     assert (root / MOD).read_bytes() == b"v1"
     assert (root / COURSE / "Modules/01 Week 1/LEC1 (2).pdf").read_bytes() == b"other"
+
+
+def test_name_without_extension_gets_its_type(root, fake):
+    fake.put(104, "Week 10 Answers", b"%PDF-1.4")
+    fake.files[104] |= {"filename": "Week+10-answers.pdf", "content-type": "application/pdf"}
+    pull(root, fake)
+    path = root / COURSE / "Files/Lectures/Week 10 Answers.pdf"
+    assert path.read_bytes() == b"%PDF-1.4"
+    assert pull(root, fake).actions == []
+
+
+def test_files_named_without_extension_are_moved_to_one(root, fake):
+    fake.put(104, "Week 10 Answers", b"%PDF-1.4")
+    pull(root, fake)  # no type known yet (as before): the name stays
+    old = root / COURSE / "Files/Lectures/Week 10 Answers"
+    assert old.is_file()
+    fake.files[104] |= {"content-type": "application/pdf"}
+    assert kinds(pull(root, fake)) == [("move", f"{COURSE}/Files/Lectures/Week 10 Answers.pdf")]
+    assert not old.exists() and old.with_name("Week 10 Answers.pdf").read_bytes() == b"%PDF-1.4"
+
+
+@pytest.mark.parametrize("name, filename, ctype, out", [
+    ("Week 10 Answers", "Week+10-answers.pdf", "application/pdf", "Week 10 Answers.pdf"),
+    ("Syllabus", "Syllabus.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Syllabus.docx"),
+    ("Lecture 1.5", "lec1.5.pdf", "application/pdf", "Lecture 1.5.pdf"),
+    ("Notes.PDF", "notes.pdf", "application/pdf", "Notes.PDF"),
+    ("photo.jpeg", "photo.jpg", "image/jpeg", "photo.jpeg"),
+    ("Logo.jfif", "Logo.jfif", "image/jpeg", "Logo.jfif"),
+    ("Quiz", "Quiz V2.docx-2.pdf", "application/pdf", "Quiz.pdf"),
+    ("Slides", "slides.pdf", None, "Slides.pdf"),
+    ("Mystery", "mystery", "unknown/unknown", "Mystery"),
+])
+def test_file_name_adds_the_extension_canvas_would(name, filename, ctype, out):
+    from canvas_sync.layout import file_name
+    from canvas_sync.models import RemoteFile
+
+    f = RemoteFile.from_api({"id": 1, "display_name": name, "filename": filename, "content-type": ctype}, 1)
+    assert file_name(f) == out
