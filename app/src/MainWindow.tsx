@@ -263,8 +263,9 @@ export function MainWindow() {
   /** Going to one of the course's tabs (or showing something there). */
   const toTab = (v: CourseView, x: Thing): CourseView => {
     const c = courseById(v.id);
-    const leaving = v.tab.type === "folder" || x.type === "folder"; // (a folder tab is at its folder; 文件 starts at the course's)
-    return { ...v, tab: x, item: undefined, select: undefined, first: false, path: x.type === "folder" ? x.path : leaving ? c?.dir ?? v.path : v.path };
+    // A folder tab is at its folder; 文件 starts at the course's, and so does clicking it again.
+    const fresh = v.tab.type === "folder" || x.type === "folder" || same(v.tab, x);
+    return { ...v, tab: x, item: undefined, select: undefined, first: false, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
   };
   // The first tab that shows something here (not one that opens a file, a tool or a link).
   const firstTab = (list: Shown[], id: number): Thing => thingOf(list.find((e) => !e.hidden && !opensElsewhere(e)) ?? viewOf(id, "overview"));
