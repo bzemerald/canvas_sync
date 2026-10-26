@@ -390,9 +390,10 @@ export async function media(url: string): Promise<string | null> {
   });
   return res.ok ? URL.createObjectURL(await res.blob()) : null;
 }
-/** `choosing`: signed in to a folder that has never synced, so which courses sync is asked first. */
+/** `choosing`: signed in to a folder that has never synced, so which courses sync is asked first.
+ * `folder_missing`: the sync folder isn't where it was (`root`). */
 export const health = () =>
-  api<{ root: string | null; canvas: string | null; set_up: boolean; choosing: boolean; version: string }>("/health");
+  api<{ root: string | null; canvas: string | null; set_up: boolean; choosing: boolean; folder_missing: boolean; version: string }>("/health");
 export const status = () => api<FileStatus[]>("/status");
 export const tree = (path: string) => api<Entry[]>(`/tree?${new URLSearchParams({ path })}`);
 
@@ -518,6 +519,8 @@ export const account = () => api<AccountInfo>("/account");
 export const checkAccount = () => api<{ ok: boolean; user?: string; error?: string }>("/account/check");
 /** Sign in (or switch account / school): checks the token, then starts a sync (a folder that has never synced: once its courses are chosen). */
 export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
+/** The sync folder went missing: where it is now (`isNew` false), or an empty one to sync into anew. */
+export const moveFolder = (root: string, isNew: boolean) => post<AccountInfo>("/account/folder", { root, new: isNew });
 export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
 export const signOut = () => post<AccountInfo>("/account/signout", {});
 /** What went wrong with Ed (see errors.ts: edSaying). */

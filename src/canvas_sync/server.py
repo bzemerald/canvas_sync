@@ -186,6 +186,11 @@ class HideRequest(BaseModel):
     courses: list[int] = []      # /courses/hide: which (a whole term)
 
 
+class FolderRequest(BaseModel):
+    root: str
+    new: bool  # True: an empty folder, to sync into anew; False: the old one, moved
+
+
 class ChoiceRequest(BaseModel):
     sync: list[int]  # the courses chosen
     skip: list[int]  # the rest
@@ -258,10 +263,16 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(401, "bad token")
 
     def ready(request: Request) -> None:
-        if account is None:
-            path = request.url.path
-            if path[path.find("/api") + 4:] not in SETUP_PATHS:
-                raise HTTPException(409, "not set up")
+        path = request.url.path
+        path = path[path.find("/api") + 4:]
+        if account is None and path not in SETUP_PATHS:
+            raise HTTPException(409, "not set up")
+        if missing() and path not in SETUP_PATHS | {"/account/folder"}:
+            raise HTTPException(409, "sync folder missing")
+
+    def missing() -> bool:
+        """The sync folder isn't where it was (moved, renamed or deleted)."""
+        return account is not None and not (account.root / META_DIR / "config.toml").exists()
 
     def prefs() -> AppPrefs:
         return AppPrefs.load(prefs_path)
@@ -292,7 +303,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def choosing() -> bool:
         """Signed in to a folder that has never synced: which courses to sync is chosen first
         (Canvas leaves most past courses "active", so syncing them all would bring every term)."""
-        if account is None:
+        if account is None or missing():
             return False
         with Engine(account.root) as e:
             return e.state.last_synced() is None
@@ -300,6 +311,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/health")
     def health() -> dict[str, Any]:
         return {"ok": True, "version": __version__, "set_up": account is not None, "choosing": choosing(),
+                "folder_missing": missing(),
                 "root": str(account.root) if account else None, "canvas": account.base_url if account else None}
 
     # -- preferences and the account --------------------------------------------------------
@@ -308,7 +320,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def get_prefs() -> dict[str, Any]:
         p = prefs()
         out: dict[str, Any] = {"language": p.language, "auto_sync": p.auto_sync, "sync_on_launch": p.sync_on_launch}
-        if account is not None:
+        if account is not None and not missing():
             with engine() as e:
                 out["select"] = e.settings.select
         return out
@@ -363,14 +375,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "token rejected")
         me = await _who(url, new_token)
         root = Path(req.root).expanduser() if req.root else (account.root if account else DEFAULT_ROOT.expanduser())
-        if root.exists() and not root.is_dir():
-            raise HTTPException(400, "not a folder")
-        ours = (root / META_DIR).is_dir()
-        if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
-            raise HTTPException(400, "folder not empty")
-        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
-            raise HTTPException(400, "folder belongs to another Canvas site")
-        new = Account(url, Engine.init_root(root), me.get("name") or None)
+        new = Account(url, sync_folder(root, url), me.get("name") or None)
         if account and account.base_url != url:
             account.clear_token()  # signed out of the old site
         new.save()
@@ -382,6 +387,37 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 start_sync(SyncRequest())  # what you signed in for
             except HTTPException:
                 pass
+        return account_info()
+
+    def sync_folder(root: Path, url: str, new: bool = True) -> Path:
+        """A folder to sync into, set up: an empty one (or not there yet), or one that has synced
+        before (only that, unless `new`)."""
+        if root.exists() and not root.is_dir():
+            raise HTTPException(400, "not a folder")
+        ours = (root / META_DIR / "config.toml").is_file()
+        if not new and not ours:
+            raise HTTPException(400, "not a sync folder")
+        if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
+            raise HTTPException(400, "folder not empty")
+        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
+            raise HTTPException(400, "folder belongs to another Canvas site")
+        return Engine.init_root(root)
+
+    @api.post("/account/folder")
+    async def move_folder(req: FolderRequest) -> dict[str, Any]:
+        """The sync folder went missing: where it is now, or a new one to sync into anew. The
+        account stays signed in; the first sync of a new one waits for the courses to be chosen."""
+        assert account is not None
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        account.root = sync_folder(Path(req.root).expanduser(), account.base_url, req.new)
+        account.save()
+        update_files()
+        if not choosing():
+            try:
+                start_sync(SyncRequest())
+            except HTTPException:
+                pass  # signed out
         return account_info()
 
     @api.post("/account/token")
@@ -1124,7 +1160,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         return max(times, default=None)
 
     def sync_if_due(within: timedelta) -> None:
-        if account is None or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
+        if account is None or missing() or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
             return
         try:
             start_sync(SyncRequest())

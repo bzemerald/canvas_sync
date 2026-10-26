@@ -662,4 +662,17 @@ export const en: Record<string, string | [string, string]> = {
   "在 Canvas 上的全部课程里勾选。没勾选的课不会下载。": "Tick them among all your courses on Canvas. Courses not ticked aren't downloaded.",
   "选择课程…": "Choose Courses…",
   "没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。": "Couldn't get the list of courses from Canvas. Check the network connection and try again.",
+  // the sync folder gone
+  "找不到同步文件夹": "Sync Folder Not Found",
+  "原来的同步文件夹不在了，可能被移动、改名或删除了：": "The sync folder isn't where it was. It may have been moved, renamed or deleted:",
+  "重新同步到一个文件夹": "Sync into a folder anew",
+  "选一个空文件夹（或者就用原来的位置），先选要同步的课程，再从 Canvas 重新下载。":
+    "Pick an empty folder (or keep the old place). You choose the courses to sync, then they're downloaded from Canvas again.",
+  "文件夹被移到了别处？": "Moved the folder?",
+  "选它现在的位置，下载过的文件、置顶和设置都接着用。": "Pick where it is now, and carry on with its files, pins and settings.",
+  "找到它…": "Locate It…",
+  "继续": "Continue",
+  "选择原来的同步文件夹": "Choose the Old Sync Folder",
+  "这里面没有同步过的内容。请选原来那个同步文件夹（里面有一个 .canvas 文件夹）。":
+    "Nothing has been synced there. Choose the old sync folder (it has a .canvas folder in it).",
 };

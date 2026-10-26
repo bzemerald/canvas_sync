@@ -125,6 +125,39 @@ def test_choose_courses(root, tmp_path, canvas, keychain):
         assert "# Which courses" in config.read_text(encoding="utf-8")
 
 
+def test_sync_folder_missing(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        api.post("/api/sync", json={})
+        wait_for_sync(api)
+        root.rename(tmp_path / "Moved")  # moved, renamed or deleted
+        h = api.get("/api/health").json()
+        assert (h["folder_missing"], h["choosing"]) == (True, False)
+        assert api.get("/api/courses").json()["detail"] == "sync folder missing"
+        assert api.get("/api/prefs").status_code == 200
+
+        def folder(path, new):
+            return api.post("/api/account/folder", json={"root": str(path), "new": new})
+        (tmp_path / "Other").mkdir()
+        (tmp_path / "Other" / "notes.txt").write_text("x")
+        assert folder(tmp_path / "Other", False).json()["detail"] == "not a sync folder"
+        assert folder(tmp_path / "Other", True).json()["detail"] == "folder not empty"
+
+        # Found where it went: it's used as it was, and syncs.
+        assert folder(tmp_path / "Moved", False).json()["root"] == str((tmp_path / "Moved").resolve())
+        assert Account.load().root == (tmp_path / "Moved").resolve()
+        assert api.get("/api/health").json()["folder_missing"] is False
+        assert wait_for_sync(api)["phase"] == "done"
+        assert [c["id"] for c in api.get("/api/courses").json()] == [1]
+
+        # Or a new one: its courses are chosen before it syncs.
+        (tmp_path / "Moved").rename(tmp_path / "Gone")
+        assert folder(tmp_path / "Fresh", True).json()["signed_in"]
+        assert api.get("/api/health").json()["choosing"] is True
+        assert api.get("/api/sync").json()["phase"] == "done"  # (the last one; none started)
+        assert api.get("/api/courses").json() == []
+
+
 def test_sign_out_and_in_again(root, tmp_path, canvas, keychain):
     keychain[BASE] = "old"
     canvas.valid_tokens = {"new"}
