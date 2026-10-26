@@ -2,7 +2,7 @@
 // anything there is to go to (lib/find.ts): things that open elsewhere (a file, a tool, a web
 // link, Canvas) open from here; the rest open in the main window, which comes forward.
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
@@ -30,6 +30,12 @@ export function Launcher() {
   const { reading, results, lately, due, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
+
+  // The main window searching something here (its "search all courses").
+  useEffect(() => {
+    const off = listen<{ query: string }>("launcher-query", ({ payload }) => setQuery(payload.query));
+    return () => void off.then((f) => f());
+  }, []);
 
   // Each time the window comes back, start from a selected query so typing replaces it.
   useEffect(() => {

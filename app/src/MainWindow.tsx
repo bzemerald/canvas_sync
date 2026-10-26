@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
+  ChevronLeft, ChevronRight, Clock, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
   Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -227,7 +227,7 @@ export function MainWindow() {
       if (command === "back") step(-1);
       else if (command === "forward") step(1);
       else if (command === "search" && searchBox.current) searchBox.current.focus();
-      else if (command === "search") go({ kind: "home" }); // a page without a box: 搜索
+      else if (command === "search") void showLauncher(); // a page without a box: the search window
       else if (command === "toggleChanges") setShowChanges(!showChanges);
       else if (command === "settings") go({ kind: "settings" });
       else return;
@@ -429,11 +429,8 @@ export function MainWindow() {
     return null;
   })();
 
-  /** What's typed, searched on 搜索 (all courses). */
-  const searchEverywhere = (q: string) => {
-    go({ kind: "home" });
-    setQuery(q);
-  };
+  /** What's typed, searched in all courses (in the search window). */
+  const searchEverywhere = (q: string) => void showLauncher(q);
 
   // -- actions --------------------------------------------------------------------------
   const signedOut = account !== null && !account.signed_in;
@@ -1009,6 +1006,7 @@ export function MainWindow() {
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onClick={() => void showLauncher()} title={t("搜索")} keys={keysLabel(launcherKeys)} />
+          <NavItem icon={<Clock className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("最近")} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
           <PinnedSection
@@ -1117,7 +1115,7 @@ export function MainWindow() {
               />
             )}
             {view.kind === "search" && <SmartTitle folder={view.search} name={folderEntry ? nameOf(folderEntry) : nameOf(view.search)} courses={courseList} />}
-            {view.kind === "home" && <span className="text-sm font-medium">{t("搜索所有课程")}</span>}
+            {view.kind === "home" && <span className="text-sm font-medium">{t("最近")}</span>}
             {view.kind === "settings" && <span className="text-sm font-medium">{t("设置")}</span>}
           </div>
           {view.kind !== "home" && view.kind !== "settings" && (
@@ -1156,9 +1154,8 @@ export function MainWindow() {
 
         {view.kind === "home" ? (
           <FoundSearch
-            input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程…")} autoFocus />}
-            query={query}
-            onQuery={setQuery}
+            query=""
+            onQuery={searchEverywhere}
             {...finder}
             actions={actions}
             onOpen={openFound}

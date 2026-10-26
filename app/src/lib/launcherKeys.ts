@@ -3,6 +3,7 @@
 // Written as the shell reads them: modifiers, then the key's KeyboardEvent.code ("Super+Shift+KeyK");
 // "": the usual (⌘⇧Space, Ctrl+Shift+Space).
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 import * as api from "./api";
 import { isMac } from "./keys";
@@ -32,8 +33,11 @@ export async function loadLauncherKeys() {
 /** Registers `keys` (null: none, while new ones are being pressed). Fails if they can't be had. */
 export const setKeys = (keys: string | null) => invoke<void>("set_launcher_keys", { keys });
 
-/** Opens the search window (as its keys do). */
-export const showLauncher = () => invoke<void>("show_launcher");
+/** Opens the search window (as its keys do), searching `query` if given. */
+export async function showLauncher(query?: string) {
+  if (query !== undefined) await emitTo("launcher", "launcher-query", { query }).catch(() => {});
+  await invoke<void>("show_launcher");
+}
 
 /** Makes `keys` open the search window, and remembers them. */
 export async function chooseLauncherKeys(keys: string) {

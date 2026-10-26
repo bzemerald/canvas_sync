@@ -224,9 +224,8 @@ export function completion(reading: Reading, f: Found | undefined): string | nul
   return `${reading.query.slice(0, start)}${word} ${reading.query.slice(end)}`.replace(/\s+$/, " ");
 }
 
-/** The main window's 搜索 page: `input` above (with how it reads below it), what it finds below. */
-export function FoundSearch({ input, query, onQuery, catalog, vocab, usage, names, courses, actions, onOpen, props, welcome }: {
-  input: React.ReactNode;
+/** The main window's 最近 page: what was opened lately and what's due (searching is the search window's). */
+export function FoundSearch({ query, onQuery, catalog, vocab, usage, names, courses, actions, onOpen, props, welcome }: {
   query: string;
   onQuery: (q: string) => void;
   catalog: Catalog | null;
@@ -244,10 +243,6 @@ export function FoundSearch({ input, query, onQuery, catalog, vocab, usage, name
   return (
     <Command shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
       onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => completion(reading, listed.get(value)), onQuery)}>
-      <div className="border-b border-line px-6 py-3">
-        {input}
-        <ReadingBar reading={reading} names={names} courses={courses} onQuery={onQuery} className="mt-2" />
-      </div>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
         {!query.trim() && !lately.length && !due.length && welcome}
