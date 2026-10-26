@@ -1,4 +1,5 @@
-"""Small preview images for the app's icon view: first page of a PDF, or the image itself.
+"""Small preview images for the app's file views: first page of a PDF, or the image itself;
+on macOS, what Quick Look draws for the rest (Office and iWork documents, videos...).
 
 Cached in <root>/.canvas/thumbs, keyed by path, size and mtime, so an edited file gets
 a fresh thumbnail.
@@ -7,14 +8,21 @@ a fresh thumbnail.
 from __future__ import annotations
 
 import hashlib
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 from .state import META_DIR
 from .text import PDFIUM_LOCK
 
 IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
-SUPPORTED = IMAGES | {".pdf"}
+# The system's Quick Look draws these (macOS only).
+QUICK_LOOK = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".key", ".pages", ".numbers", ".rtf",
+              ".heic", ".svg", ".mp4", ".mov", ".m4v"}
+SUPPORTED = IMAGES | {".pdf"} | (QUICK_LOOK if sys.platform == "darwin" else set())
 MAX_PX = 512
+QUICK_LOOK_TIMEOUT = 8  # seconds; it can hang on a broken file (good ones take a fraction of one)
 
 
 def thumbnail(root: Path, rel: str, px: int = 256) -> Path | None:
@@ -28,9 +36,14 @@ def thumbnail(root: Path, rel: str, px: int = 256) -> Path | None:
     out = root / META_DIR / "thumbs" / key[:2] / f"{key}.jpg"
     if out.exists():
         return out
+    failed = out.with_suffix(".none")  # tried before, and couldn't: not again (Quick Look is slow to fail)
+    if failed.exists():
+        return None
     try:
         img = _render(src, px)
     except Exception:
+        failed.parent.mkdir(parents=True, exist_ok=True)
+        failed.touch()
         return None
     from PIL import Image
 
@@ -48,6 +61,8 @@ def thumbnail(root: Path, rel: str, px: int = 256) -> Path | None:
 def _render(src: Path, px: int):  # -> PIL.Image.Image
     from PIL import Image, ImageOps
 
+    if src.suffix.lower() in QUICK_LOOK:
+        return _quick_look(src, px)
     if src.suffix.lower() == ".pdf":
         import pypdfium2 as pdfium
 
@@ -66,3 +81,14 @@ def _render(src: Path, px: int):  # -> PIL.Image.Image
         img = ImageOps.exif_transpose(im)
         img.thumbnail((px, px))
         return img.copy()
+
+
+def _quick_look(src: Path, px: int):  # -> PIL.Image.Image
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["qlmanage", "-t", "-s", str(px), "-o", tmp, str(src)], capture_output=True, timeout=QUICK_LOOK_TIMEOUT)
+        made = next(Path(tmp).glob("*.png"))  # none: StopIteration, so no thumbnail
+        with Image.open(made) as im:
+            im.thumbnail((px, px))
+            return im.copy()

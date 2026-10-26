@@ -2,6 +2,7 @@ import {
   File, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileVideo, Folder, Presentation,
   type LucideIcon,
 } from "lucide-react";
+import { isMac } from "../lib/keys";
 
 type Family = { icon: LucideIcon; color: string };
 
@@ -34,5 +35,9 @@ export function FileIcon({ name, dir = false, className = "size-4" }: { name: st
   return <Icon className={`${className} shrink-0 ${color}`} aria-hidden />;
 }
 
-const THUMBABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"]);
+// The backend draws these; on macOS, Quick Look draws more (thumbs.py).
+const THUMBABLE = new Set([
+  "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff",
+  ...(isMac ? ["docx", "doc", "pptx", "ppt", "xlsx", "xls", "key", "pages", "numbers", "rtf", "heic", "svg", "mp4", "mov", "m4v"] : []),
+]);
 export const hasThumbnail = (name: string) => THUMBABLE.has(extension(name));

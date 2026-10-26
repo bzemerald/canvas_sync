@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -287,3 +288,14 @@ def test_server_exits_when_the_app_goes_away(root, tmp_path):
         assert proc.wait(timeout=10) == 0
     finally:
         proc.kill()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Quick Look is macOS's")
+def test_quick_look_draws_other_documents(root, monkeypatch):
+    monkeypatch.setattr("canvas_sync.thumbs.QUICK_LOOK_TIMEOUT", 1)
+    (root / "notes.rtf").write_text(r"{\rtf1\ansi Hello}")
+    out = thumbnail(root, "notes.rtf", 64)
+    assert out is not None and max(Image.open(out).size) <= 64
+    (root / "broken.docx").write_bytes(b"not a document")
+    assert thumbnail(root, "broken.docx", 64) is None  # (Quick Look hangs on it)
+    assert thumbnail(root, "broken.docx", 64) is None  # and isn't asked again
