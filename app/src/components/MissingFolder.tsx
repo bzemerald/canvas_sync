@@ -44,8 +44,8 @@ export function MissingFolderPage({ root, onDone }: { root: string; onDone: () =
         </p>
         <div className="space-y-4 rounded-xl border border-line bg-panel p-5 text-sm">
           <div>
-            <p className="mb-1 font-medium">{t("重新同步到一个文件夹")}</p>
-            <p className="mb-2 text-xs text-muted">{t("选一个空文件夹（或者就用原来的位置），先选要同步的课程，再从 Canvas 重新下载。")}</p>
+            <p className="mb-1 font-medium">{t("重新同步到一个空文件夹")}</p>
+            <p className="mb-2 text-xs text-muted">{t("选一个空文件夹，先选要同步的课程，再从 Canvas 重新下载。")}</p>
             <div className="flex gap-2">
               <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5" title={target}>{target}</code>
               <Button onClick={() => void choose()} disabled={busy}>{t("选择…")}</Button>
@@ -54,7 +54,7 @@ export function MissingFolderPage({ root, onDone }: { root: string; onDone: () =
           </div>
           <div className="border-t border-line pt-4">
             <p className="mb-1 font-medium">{t("文件夹被移到了别处？")}</p>
-            <p className="mb-2 text-xs text-muted">{t("选它现在的位置，下载过的文件、置顶和设置都接着用。")}</p>
+            <p className="mb-2 text-xs text-muted">{t("选它现在的位置，下载过的文件和设置都接着用。")}</p>
             <Button onClick={() => void find()} disabled={busy}>{t("找到它…")}</Button>
           </div>
           {error && <p className="text-danger">{error}</p>}

@@ -62,23 +62,23 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSave }:
       <div className="space-y-4">
         <label className="block">
           <span className="mb-1 block text-xs text-muted">{t("名称")}</span>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("例如：期中 1 复习")}
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
             className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-muted">{t("搜索内容（和搜索框一样，可以用课程名和缩写）")}</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：mt1、hw sol、期中")} autoCorrect="off" autoCapitalize="off" spellCheck={false}
+          <span className="mb-1 block text-xs text-muted">{t("搜索内容")}</span>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：slide this week, hw sol, due today")} autoCorrect="off" autoCapitalize="off" spellCheck={false}
             className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
         </label>
         <label className="-mt-2 flex items-start gap-2 text-xs text-fg-soft">
             <input type="checkbox" className="mt-0.5" checked={content} onChange={(e) => setContent(e.target.checked)} />
             <span>
               {t("也匹配正文")}
-              <span className="block text-muted">{t("不勾选时只看文件名、标题和所在文件夹，比如 “mt” 只收进期中相关的材料，不收提到期中的讲义。")}</span>
+              <span className="block text-muted">{t("不勾选时只搜标题。")}</span>
             </span>
         </label>
         <fieldset>
-          <legend className="mb-1 text-xs text-muted">{t("类型（不选 = 全部）")}</legend>
+          <legend className="mb-1 text-xs text-muted">{t("筛选")}</legend>
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(KIND) as Kind[]).map((k) => (
               <button key={k} onClick={() => setKinds(toggle(kinds, k))}

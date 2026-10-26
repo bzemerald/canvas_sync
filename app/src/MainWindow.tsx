@@ -1020,7 +1020,7 @@ export function MainWindow() {
             }
             empty={
               <p className="px-2 py-1 text-xs leading-relaxed text-muted">
-                {t("把课程、文件夹、文件、公告、页面、工具、标签拖到这里，或者右键选“置顶”。点 + 新建智能文件夹（保存的搜索）。")}
+                {t("把课程、文件夹、文件、公告、页面、工具、标签拖到这里。")}
               </p>
             }
             render={renderPinned}
@@ -1152,7 +1152,7 @@ export function MainWindow() {
 
         {view.kind === "home" ? (
           <FoundSearch
-            input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程… 例如 221 mt")} autoFocus />}
+            input={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={t("搜索所有课程…")} autoFocus />}
             query={query}
             onQuery={setQuery}
             {...finder}

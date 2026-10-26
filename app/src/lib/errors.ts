@@ -18,7 +18,7 @@ const SAYINGS: [RegExp, string][] = [
   [/folder not empty/, t("这个文件夹里已经有别的东西了。请选一个空文件夹，或者以前用过的同步文件夹。")],
   [/another Canvas site/, t("这个文件夹在同步另一个 Canvas 网站的课程，请换一个文件夹。")],
   [/not a folder/, t("这不是一个文件夹。")],
-  [/not a sync folder/, t("这里面没有同步过的内容。请选原来那个同步文件夹（里面有一个 .canvas 文件夹）。")],
+  [/not a sync folder/, t("无法识别这个文件夹为同步文件夹。请选原来那个同步文件夹，或者从头开始。")],
   [/not signed in/, t("还没有登录 Canvas。请到设置里登录。")],
   [/not set up/, t("先在主窗口里登录 Canvas。")],
   [/could not list the courses/, t("没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。")],
@@ -32,7 +32,7 @@ export function friendly(message: string): string {
 const ED_SAYS: Record<string, string> = {
   "token rejected": t("Ed 不认这个令牌：可能填错了，或者已经被撤销。请在 Ed 上重新生成一个。"),
   "can't reach Ed": t("连不上 Ed。检查一下网络连接。"),
-  "Ed changed": t("Ed 改了它的接口，暂时读不懂。已经同步的内容都还在。"),
+  "Ed changed": t("Ed 改了它的接口，Canvas Sync 暂时读不懂。请等待应用更新。"),
 };
 
 /** What went wrong with Ed (EdError), said the way the app talks. */

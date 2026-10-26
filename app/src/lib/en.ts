@@ -42,8 +42,8 @@ export const en: Record<string, string | [string, string]> = {
   "只改这个标签的名字。": "Only this tab's name changes.",
   "打开失败": "Couldn't open it",
   "放在这里置顶": "Drop here to pin",
-  "把课程、文件夹、文件、公告、页面、工具、标签拖到这里，或者右键选“置顶”。点 + 新建智能文件夹（保存的搜索）。":
-    "Drag courses, folders, files, announcements, pages, tools or tabs here, or right-click one and choose Pin. + makes a smart folder (a saved search).",
+  "把课程、文件夹、文件、公告、页面、工具、标签拖到这里。":
+    "Drag courses, folders, files, announcements, pages, tools or tabs here.",
   "找不到这个文件了": "This file isn't there any more",
   "Canvas 上已经没有了": "No longer on Canvas",
   "上移": "Move up",
@@ -118,7 +118,7 @@ export const en: Record<string, string | [string, string]> = {
   "显示改动": "Show modifications",
   "在 Canvas 中打开这门课": "Open this course in Canvas",
   "编辑": "Edit",
-  "搜索所有课程… 例如 221 mt": "Search all courses… e.g. 221 mt",
+  "搜索所有课程…": "Search all courses…",
   "标记失败": "Couldn't mark as read",
   "已移到{trash}：{label}": "Moved to {trash}: {label}",
   "全部": "All",
@@ -324,9 +324,9 @@ export const en: Record<string, string | [string, string]> = {
   "没有这门课": "No such course",
   "按文字搜索“{text}”": "Search for “{text}” as text",
   "意思相近": "Similar in meaning",
-  "按意思搜索英文内容": "Search English text by meaning",
-  "用一个英文小模型（约 125 MB，打开时下载）按意思找正文：比如“can I get an extension”能找到写着 Flextensions 的公告。中文照旧按字词找。":
-    "Finds text by what it means, with a small English model (about 125 MB, downloaded when you turn this on): “can I get an extension” finds the announcement about Flextensions. What you type in Chinese is found by its words.",
+  "按意思搜索": "Search text by meaning",
+  "用一个英文小模型（约 125 MB，打开时下载）改善搜索，允许按意思找正文。":
+    "Makes searching smarter by using a small language model (125 MB, downloaded when you turn this on).",
   "正在下载模型… {pct}%": "Downloading the model… {pct}%",
   "正在整理正文… {done}/{total}": "Going through the text… {done}/{total}",
   "没能准备好：{error}": "Couldn't get it ready: {error}",
@@ -340,14 +340,12 @@ export const en: Record<string, string | [string, string]> = {
   "新建智能文件夹": "New smart folder",
   "现在匹配 {n} 项": ["1 match right now", "{n} matches right now"],
   "保存": "Save",
-  "例如：期中 1 复习": "e.g. Midterm 1 review",
-  "搜索内容（和搜索框一样，可以用课程名和缩写）": "Search for (like the search box: course names and abbreviations work)",
-  "例如：mt1、hw sol、期中": "e.g. mt1, hw sol, final",
-  "也匹配正文": "Also match text inside",
-  "不勾选时只看文件名、标题和所在文件夹，比如 “mt” 只收进期中相关的材料，不收提到期中的讲义。":
-    "Unchecked, only names, titles and folders count: “mt” then collects midterm materials, not lecture notes that mention the midterm.",
-  "类型（不选 = 全部）": "Kinds (none = all)",
-  "课程（不选 = 全部）": "Courses (none = all)",
+  "搜索内容": "Search for...",
+  "例如：slide this week, hw sol, due today": "e.g. slide this week...",
+  "也匹配正文": "Search for main text",
+  "不勾选时只搜标题。": "Only search titles if unchecked.",
+  "筛选": "Filter by",
+  "课程（不选 = 全部）": "Courses (leave empty to search all courses)",
 
   // -- status badges
   "已修改": "Edited",
@@ -401,14 +399,9 @@ export const en: Record<string, string | [string, string]> = {
   "课程文件都在这里。": "Where your course files are.",
   "自动同步": "Sync automatically",
   "应用开着时（包括窗口关掉、只在后台时）按这个间隔从 Canvas 拉取。":
-    "While the app is running (even with its window closed), it gets what's new from Canvas this often.",
+    "While the app is running or in background, it syncs from Canvas this often.",
   "打开应用时同步": "Sync when the app opens",
   "距离上次同步超过 10 分钟时。": "If the last sync was more than 10 minutes ago.",
-  "同步哪些课程": "Courses to sync",
-  "“当前的课程”是 Canvas 上还在进行中的课程；“收藏的课程”是你在 Canvas 课程列表里加了星标的。":
-    "“Current courses” are the ones still going on in Canvas; “Favorite courses” are the ones you starred in your Canvas course list.",
-  "当前的课程": "Current courses",
-  "收藏的课程": "Favorite courses",
   "上次同步": "Last synced",
   "正在同步…": "Syncing…",
   "还没有同步过": "Never",
@@ -418,9 +411,7 @@ export const en: Record<string, string | [string, string]> = {
   "快捷搜索": "Quick search",
   "在任何应用里按这个组合键，打开搜索窗口。": "Press this in any app to open the search window.",
   "高级": "Advanced",
-  "同步规则": "Sync rules",
-  "文件放在哪个文件夹、冲突怎么处理、文件大小上限等，都在同步文件夹的配置文件里，可以直接编辑。":
-    "Which folder files go in, what to do about conflicts, a size limit and more live in the sync folder's config file, which you can edit.",
+  "编辑高级同步规则": "Edit advanced sync rules",
   "打开配置文件": "Open config file",
   "版本": "Version",
   "退出登录？": "Sign out?",
@@ -446,13 +437,13 @@ export const en: Record<string, string | [string, string]> = {
   "正在连接…": "Connecting…",
   "连接": "Connect",
   "打开 Ed 的令牌页": "Open Ed's token page",
-  "每个 Ed 课程是哪门课：按课号和学期自动对上，也可以改。": "Which course each Ed course is: matched by course number and term, and yours to change.",
+  "每个 Ed 课程是哪门课。": "Select which Canvas course each Ed course links to.",
   "不属于任何课程": "None of your courses",
   "只看已对上的": "Only the matched ones",
   "还有 {n} 个没对上课程的 Ed 课程": ["1 more Ed course that isn't one of your courses", "{n} more Ed courses that aren't any of your courses"],
   "Ed 不认这个令牌：可能填错了，或者已经被撤销。请在 Ed 上重新生成一个。": "Ed doesn't accept this token: it may be mistyped, or revoked. Create a new one on Ed.",
   "连不上 Ed。检查一下网络连接。": "Can't reach Ed. Check your internet connection.",
-  "Ed 改了它的接口，暂时读不懂。已经同步的内容都还在。": "Ed changed how it answers, and the app can't read it for now. What's already synced is still here.",
+  "Ed 改了它的接口，Canvas Sync 暂时读不懂。请等待应用更新。": "Ed changed its interface, and Canvas Sync doesn't understand it for now. Please wait for an app update.",
   "Ed：{why}": "Ed: {why}",
   "课程@@ed": "Courses",
   "在 Ed 中打开": "Open in Ed",
@@ -486,7 +477,7 @@ export const en: Record<string, string | [string, string]> = {
     "In Canvas, go to Account → Settings and click “+ New Access Token”, then paste it here. It's only kept on this computer.",
   "选择…": "Choose…",
   "课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。":
-    "Course files download here. Choose an empty folder, or one you've synced into before.",
+    "Course files download here. Choose an empty folder if it's your first time using Canvas Sync.",
   "正在登录…": "Signing in…",
   "登录": "Sign in",
   "连接 Canvas": "Connect to Canvas",
@@ -494,14 +485,14 @@ export const en: Record<string, string | [string, string]> = {
     "Once you sign in, your course files sync to this computer, and announcements, assignments and grades are right here too.",
 
   // -- what the backend says, said plainly
-  "找不到这个文件了（可能已经在别处删除或移动）": "That file isn't there any more (it may have been deleted or moved elsewhere)",
+  "找不到这个文件了（可能已经在别处删除或移动）": "Can't find the file (it may have been deleted or moved elsewhere)",
   "这个不能改": "This can't be changed",
-  "这里已经有同名的文件夹了": "There's already a folder with that name here",
+  "这里已经有同名的文件夹了": "The name is already taken by another folder",
   "名称不能为空，也不能以“.”开头": "Names can't be empty or start with “.”",
   "正在同步，等同步完成再试": "Syncing; try again once it's done",
   "这个文件夹不能重命名": "This folder can't be renamed",
   "令牌无效或已经过期。请在 Canvas 上重新生成一个。": "That token isn't valid, or it expired. Make a new one in Canvas.",
-  "连不上这个网址。检查一下网址和网络连接。": "Couldn't reach that address. Check it, and your internet connection.",
+  "连不上这个网址。检查一下网址和网络连接。": "Couldn't reach that address. Make sure it's spelled correctly and check your internet connection.",
   "这个网址不是 Canvas。请填学校 Canvas 的网址。": "That address isn't Canvas. Enter your school's Canvas address.",
   "网址不对。例如 bcourses.berkeley.edu": "That isn't a web address. For example: bcourses.berkeley.edu",
   "只支持 https 网址：令牌不能明文传输。": "Only https addresses work: the token mustn't travel unencrypted.",
@@ -644,8 +635,6 @@ export const en: Record<string, string | [string, string]> = {
   "文件管理器": "Files",
   // choosing which courses sync
   "选择要同步的课程": "Choose the courses to sync",
-  "Canvas 上往往还挂着以前学期的课。已经勾好了正在进行的课程，看看对不对。":
-    "Canvas often still lists courses from past terms. The ones going on now are ticked: check that they're right.",
   "开始同步": "Start syncing",
   "正在读取 Canvas 上的课程…": "Getting your courses from Canvas…",
   "Canvas 上没有找到你的课程。": "No courses of yours on Canvas.",
@@ -659,20 +648,19 @@ export const en: Record<string, string | [string, string]> = {
     "Courses not ticked aren't downloaded. New courses you star on Canvas sync by themselves; you can choose again in Settings any time.",
   "重试": "Try again",
   "要同步的课程": "Courses to sync",
-  "在 Canvas 上的全部课程里勾选。没勾选的课不会下载。": "Tick them among all your courses on Canvas. Courses not ticked aren't downloaded.",
   "选择课程…": "Choose Courses…",
   "没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。": "Couldn't get the list of courses from Canvas. Check the network connection and try again.",
   // the sync folder gone
   "找不到同步文件夹": "Sync Folder Not Found",
   "原来的同步文件夹不在了，可能被移动、改名或删除了：": "The sync folder isn't where it was. It may have been moved, renamed or deleted:",
-  "重新同步到一个文件夹": "Sync into a folder anew",
-  "选一个空文件夹（或者就用原来的位置），先选要同步的课程，再从 Canvas 重新下载。":
-    "Pick an empty folder (or keep the old place). You choose the courses to sync, then they're downloaded from Canvas again.",
+  "重新同步到一个空文件夹": "Start over",
+  "选一个空文件夹，先选要同步的课程，再从 Canvas 重新下载。":
+    "Pick an empty folder. Choose the courses to sync, then they're downloaded from Canvas again.",
   "文件夹被移到了别处？": "Moved the folder?",
-  "选它现在的位置，下载过的文件、置顶和设置都接着用。": "Pick where it is now, and carry on with its files, pins and settings.",
-  "找到它…": "Locate It…",
+  "选它现在的位置，下载过的文件和设置都接着用。": "Pick where it is now, and carry on with its files and settings.",
+  "找到它…": "Locate…",
   "继续": "Continue",
   "选择原来的同步文件夹": "Choose the Old Sync Folder",
-  "这里面没有同步过的内容。请选原来那个同步文件夹（里面有一个 .canvas 文件夹）。":
-    "Nothing has been synced there. Choose the old sync folder (it has a .canvas folder in it).",
+  "无法识别这个文件夹为同步文件夹。请选原来那个同步文件夹，或者从头开始。":
+    "This folder isn't recognized as a synced folder. Please choose the old sync folder or start from scratch.",
 };

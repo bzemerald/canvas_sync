@@ -116,8 +116,8 @@ export function AddCardDialog({ course, hidden, onClose, onAdd }: {
       {kind === "search" && (
         <div className="space-y-3 pb-2">
           <label className="block">
-            <span className="mb-1 block text-xs text-muted">{t("搜索内容（和搜索框一样，可以用课程名和缩写）")}</span>
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：mt1、hw sol、期中")}
+            <span className="mb-1 block text-xs text-muted">{t("搜索内容")}</span>
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：slide this week, hw sol, due today")}
               autoCorrect="off" autoCapitalize="off" spellCheck={false} className={input} />
           </label>
           <label className="flex items-start gap-2 text-xs text-fg-soft">

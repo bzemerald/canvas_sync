@@ -145,16 +145,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
               <Row label={t("打开应用时同步")} hint={t("距离上次同步超过 10 分钟时。")}>
                 <Toggle on={prefs.sync_on_launch} onChange={(v) => void update({ sync_on_launch: v })} />
               </Row>
-              {prefs.select && (
-                <Row label={t("同步哪些课程")} hint={t("“当前的课程”是 Canvas 上还在进行中的课程；“收藏的课程”是你在 Canvas 课程列表里加了星标的。")}>
-                  <select value={prefs.select} onChange={(e) => void update({ select: e.target.value as Prefs["select"] })}
-                    className="rounded-md border border-line bg-bg px-2 py-1 text-sm">
-                    <option value="active">{t("当前的课程")}</option>
-                    <option value="favorites">{t("收藏的课程")}</option>
-                  </select>
-                </Row>
-              )}
-              <Row label={t("要同步的课程")} hint={t("在 Canvas 上的全部课程里勾选。没勾选的课不会下载。")}>
+              <Row label={t("要同步的课程")}>
                 <Button onClick={() => setChoosing(true)} disabled={!account?.signed_in}>{t("选择课程…")}</Button>
               </Row>
               <Row label={t("上次同步")}>
@@ -183,7 +174,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
         </Section>
 
         <Section title={t("高级")}>
-          <Row label={t("同步规则")} hint={t("文件放在哪个文件夹、冲突怎么处理、文件大小上限等，都在同步文件夹的配置文件里，可以直接编辑。")}>
+          <Row label={t("编辑高级同步规则")}>
             <Button onClick={() => void api.openConfig().catch((e) => setError(friendly(e.message)))}>{t("打开配置文件")}</Button>
           </Row>
           {version && <Row label={t("版本")}><span className="text-sm text-muted">{version}</span></Row>}
@@ -326,7 +317,7 @@ function EdSection({ syncing }: { syncing: boolean }) {
       {state.courses.length > 0 && (
         <div className="px-4 py-3">
           <p className="text-sm">{t("课程@@ed")}</p>
-          <p className="mt-0.5 mb-2 text-xs leading-relaxed text-muted">{t("每个 Ed 课程是哪门课：按课号和学期自动对上，也可以改。")}</p>
+          <p className="mt-0.5 mb-2 text-xs leading-relaxed text-muted">{t("每个 Ed 课程是哪门课。")}</p>
           <div className="space-y-1.5">
             {[...linked, ...(showAll ? others : [])].map((c) => (
               <div key={c.id} className={`flex items-center gap-3 ${c.archived && c.course === null ? "opacity-60" : ""}`}>
@@ -404,10 +395,10 @@ function MeaningRow() {
       : null);
   return (
     <Row
-      label={t("按意思搜索英文内容")}
+      label={t("按意思搜索")}
       hint={
         <>
-          {t("用一个英文小模型（约 125 MB，打开时下载）按意思找正文：比如“can I get an extension”能找到写着 Flextensions 的公告。中文照旧按字词找。")}
+          {t("用一个英文小模型（约 125 MB，打开时下载）改善搜索，允许按意思找正文。")}
           {status && <span className={`mt-1 block ${state.phase === "failed" || error ? "text-danger" : "text-fg-soft"}`}>{status}</span>}
         </>
       }

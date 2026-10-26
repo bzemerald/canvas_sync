@@ -145,8 +145,7 @@ export function ChooseCoursesPage({ onDone }: { onDone: () => void }) {
   return (
     <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
       <div className="w-full max-w-lg">
-        <h1 className="mb-1 text-xl font-semibold">{t("选择要同步的课程")}</h1>
-        <p className="mb-5 text-sm text-muted">{t("Canvas 上往往还挂着以前学期的课。已经勾好了正在进行的课程，看看对不对。")}</p>
+        <h1 className="mb-5 text-xl font-semibold">{t("选择要同步的课程")}</h1>
         <div className="rounded-xl border border-line bg-panel p-5">
           <ChooseCourses submitLabel={t("开始同步")} onDone={onDone} />
         </div>
