@@ -44,8 +44,9 @@ import {
   view as viewOf, without,
 } from "./lib/things";
 import { useTrafficLights } from "./lib/window";
+import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
-import { t, tx } from "./lib/i18n";
+import { locale, t, tx } from "./lib/i18n";
 
 // A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually).
 // `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
@@ -1711,6 +1712,7 @@ const CHANGE: Record<string, (n: number) => string> = {
 function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: string; onFix: () => void }) {
   if (!sync || sync.phase === "idle") return null;
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
+  const finished = sync.finished_at ?? sync.last_synced; // when it ended
   const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t("，"));
   return (
     <div className="mx-4 mb-2 rounded-md bg-chip px-2.5 py-2 text-xs text-fg-soft">
@@ -1719,6 +1721,7 @@ function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: str
           {PHASE[sync.phase]}{label && sync.scope.length > 0 ? ` · ${label}` : ""}
         </span>
         {sync.running && pct !== null && <span className="shrink-0">{sync.done}/{sync.total}</span>}
+        {!sync.running && finished && <span className="shrink-0 text-muted" title={new Date(finished).toLocaleString(locale)}>{shortDate(finished)}</span>}
       </div>
       {sync.running && pct !== null && (
         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-line">
