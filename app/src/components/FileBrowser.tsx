@@ -288,7 +288,7 @@ export function FileBrowser({
                 role="treeitem"
                 aria-expanded={e.type === "dir" && !e.deleted ? expanded.has(e.path) : undefined}
                 {...itemProps(e)}
-                className={`grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] items-center gap-3 rounded-md px-3 py-1 text-sm ${shade(e)} ${e.deleted ? "opacity-55" : ""}`}
+                className={`grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] items-center gap-3 rounded-md px-3 py-0.5 text-sm ${shade(e)} ${e.deleted ? "opacity-55" : ""}`}
               >
                 <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: depth * 18 }}>
                   {e.type === "dir" && !e.deleted ? (
@@ -308,7 +308,11 @@ export function FileBrowser({
                       {e.new && <NewDot label={e.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} />}
                     </span>
                   )}
-                  <span data-ql={e.path} className="flex shrink-0"><MarkedIcon e={e} marked={marked} className="size-4" /></span>
+                  {e.type === "dir" ? (
+                    <span data-ql={e.path} className="flex size-6 shrink-0 items-center justify-center"><MarkedIcon e={e} marked={marked} className="size-4" /></span>
+                  ) : (
+                    <span className="shrink-0"><Thumb path={e.path} name={e.name} mtime={e.mtime} size={24} iconClass="size-4" /></span>
+                  )}
                   {renaming === e.path ? (
                     <RenameInput initial={e.name} onSubmit={(n) => onRename(e, n)} onCancel={onRenameCancel} className="flex-1 text-sm" />
                   ) : (
