@@ -74,9 +74,8 @@ without the Canvas website or Finder.
   `npm run check:i18n` (it must report nothing missing and nothing unused).
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
   terminal (check `ps`). Frontend edits hot-reload. The Python server keeps running old code
-  until the app restarts: `touch app/src-tauri/.gitignore`, and tauri dev relaunches it without
-  relinking the exe. (Not `lib.rs`: on Windows, Smart App Control judges each newly linked exe
-  and may block it.)
+  until the app restarts: `touch app/src-tauri/src/lib.rs`, and tauri dev rebuilds and
+  relaunches it.
 
 ## Conventions
 
