@@ -573,7 +573,6 @@ export const en: Record<string, string | [string, string]> = {
   "设为所有课程的默认排列": "Make this the default for every course",
   "恢复默认（和其他课程一样）": "Back to the default (like other courses)",
   "设为所有课程的默认概览": "Make this every course's default overview",
-  "这门课单独排过": "Arranged for this course",
   "添加卡片": "Add a card",
   "新卡片": "New",
   "这门课自带的卡片（隐藏中）": "This course's own (hidden)",

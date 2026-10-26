@@ -415,7 +415,6 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     <div ref={zone.ref} className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
         <div className="mb-2 flex items-center justify-end gap-2">
-          {own && <span className="text-xs text-muted">{t("这门课单独排过")}</span>}
           <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg">
             <Plus className="size-3.5" />
             {t("添加卡片")}
