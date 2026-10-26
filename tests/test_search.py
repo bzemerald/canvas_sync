@@ -265,6 +265,7 @@ def test_names_first_then_content_and_names_only(root, course):
         assert "Midterm 1 Solutions.pdf" in names and "Week 5 slides.pdf" not in names
 
 
+@pytest.mark.links
 def test_search_within_a_folder(root, fake):
     """The search box on a course's 文件 tab keeps to the folder you're in, counting files that
     are there as view links (stored in another view)."""

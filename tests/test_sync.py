@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from canvas_sync import Engine, Kind
 from fake_canvas import COURSE, kinds, pull, set_config
 
@@ -11,6 +13,7 @@ MOD = f"{COURSE}/Modules/01 Week 1/lec1.pdf"
 FILES = f"{COURSE}/Files/Lectures/lec1.pdf"
 
 
+@pytest.mark.links
 def test_first_pull_stores_once_and_links_other_views(root, fake):
     plan = pull(root, fake)
     assert kinds(plan) == [("download", MOD), ("link", FILES)]
@@ -36,6 +39,7 @@ def test_conflict_keeps_your_edit_beside_new_version(root, fake):
     assert (root / MOD).with_name("lec1 (mine).pdf").read_bytes() == b"my notes"
 
 
+@pytest.mark.links
 def test_local_delete_is_respected_and_restorable(root, fake):
     pull(root, fake)
     (root / MOD).unlink()
@@ -47,6 +51,7 @@ def test_local_delete_is_respected_and_restorable(root, fake):
     assert (root / MOD).read_bytes() == b"v1"
 
 
+@pytest.mark.links
 def test_restore_discards_edits(root, fake):
     pull(root, fake)
     (root / MOD).write_bytes(b"oops")
@@ -57,6 +62,7 @@ def test_restore_discards_edits(root, fake):
     assert (root / MOD).read_bytes() == b"v1"
 
 
+@pytest.mark.links
 def test_moving_a_file_in_finder_is_remembered(root, fake):
     pull(root, fake)
     mine = root / COURSE / "My Slides" / "lec1.pdf"
@@ -99,6 +105,7 @@ def test_hidden_files_tab_still_finds_module_files(root, fake):
     assert kinds(plan) == [("download", MOD)]
 
 
+@pytest.mark.links
 def test_files_linked_from_a_module_page_land_in_that_module(root, fake):
     fake.put(102, "paper.pdf", b"p", folder=10)
     fake.pages["readings"] = {"url": "readings", "title": "Readings", "body": '<a href="/courses/1/files/102/download">paper</a>'}
@@ -113,6 +120,7 @@ def test_rules_relocate_files(root, fake):
     assert kinds(pull(root, fake)) == [("download", f"{COURSE}/Slides/lec1.pdf")]
 
 
+@pytest.mark.links
 def test_layout_change_moves_files_and_relinks(root, fake):
     pull(root, fake)
     set_config(root, 'views = ["modules", "files"]', 'views = ["files", "modules"]')

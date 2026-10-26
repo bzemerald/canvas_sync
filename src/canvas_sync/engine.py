@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from send2trash import send2trash
@@ -16,7 +16,7 @@ from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename, update_sk
 from .discover import discover_course
 from .execute import EventHandler, Executor
 from .layout import Layout, sanitize
-from .local import clone_file, is_regular, sha256_file
+from .local import can_symlink, clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
 from .search import Hit, Index, IndexStats, ProgressHandler
@@ -41,7 +41,7 @@ class Engine:
         self.meta = self.root / META_DIR
         if not (self.meta / "config.toml").exists():
             raise NotInitialized(f"{self.root} is not set up yet (run `canvas init`)")
-        self.settings = Settings.load(self.meta / "config.toml")
+        self.settings = self._settings()
         self.state = State(self.meta / "state.db")
         self.layout = Layout(self.settings, self.state.courses())
         self.client = client
@@ -352,8 +352,14 @@ class Engine:
         names |= {p[len(rel) + 1:].split("/")[0] for p in paths if p.startswith(rel + "/") and "/" in p[len(rel) + 1:]}
         return sorted(self.layout.canonical(f"{rel}/{n}") for n in names)
 
+    def _settings(self) -> Settings:
+        s = Settings.load(self.meta / "config.toml")
+        if not can_symlink(self.meta):  # Windows without Developer Mode: files only in their first view
+            s = replace(s, link_other_views=False)
+        return s
+
     def _reload(self) -> None:
-        self.settings = Settings.load(self.meta / "config.toml")
+        self.settings = self._settings()
         self.layout = Layout(self.settings, self.state.courses())
 
     def restorable(self, scope: Scope) -> list[FileStatus]:
