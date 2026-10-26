@@ -29,6 +29,7 @@ def names(root: Path) -> dict[str, str]:
     return Settings.load(root / ".canvas/config.toml").folder_names
 
 
+@pytest.mark.links
 def test_renamed_folder_syncs_like_before(root, fake: FakeCanvas):
     pull(root, fake)
     assert rename(root, WEEK1, "Week 1 - Vectors") == f"{MOD}/Week 1 - Vectors"
@@ -51,6 +52,7 @@ def test_renamed_folder_syncs_like_before(root, fake: FakeCanvas):
     assert not (root / WEEK1).exists()
 
 
+@pytest.mark.links
 def test_rename_the_folder_links_point_into_and_its_parents(root, fake):
     pull(root, fake)
     rename(root, MOD, "课件")
@@ -76,7 +78,7 @@ def test_a_rename_no_course_goes_through_changes_nothing(root, fake):
     # (Left over: a term folder renamed "fa26" from a name no course has, then back.)
     pull(root, fake)
     cfg = root / ".canvas/config.toml"
-    cfg.write_text(cfg.read_text().replace("[folder_names]\n", '[folder_names]\nfa26 = "Fall 2026"\n'))
+    cfg.write_text(cfg.read_text(encoding="utf-8").replace("[folder_names]\n", '[folder_names]\nfa26 = "Fall 2026"\n'), encoding="utf-8")
     assert rename(root, MOD, "课件") == f"{COURSE}/课件"
     assert names(root) == {"fa26": "Fall 2026", MOD: "课件"}  # (not under "fa26/")
     with Engine(root) as e:
@@ -165,7 +167,7 @@ def test_pinned_courses(api, root):
     save_pinned(cfg, [Entry(Thing("folder", path=COURSE))])
     course = {"type": "course", "course": 1, "title": "", "hidden": False, "name": "MATH 221", "exists": True, "in_course": 1}
     assert api.get("/api/pinned").json() == [course]
-    assert 'type = "course"' in cfg.read_text()
+    assert 'type = "course"' in cfg.read_text(encoding="utf-8")
     api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
     assert api.get("/api/pinned").json()[0]["name"] == "Linear Algebra"  # by id: renaming doesn't matter
     api.post("/api/rename", json={"path": "Fall 2026", "name": "2026 秋"})

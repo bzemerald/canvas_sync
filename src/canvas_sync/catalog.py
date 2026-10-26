@@ -168,7 +168,7 @@ def abbreviations(e: Engine) -> dict[str, list[str]]:
 def _note_start(path: Path) -> str:
     """A note's first line (what it's about), for finding it by."""
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return ""
     return next((line.strip() for line in text.splitlines() if line.strip()), "")[:120]

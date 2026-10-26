@@ -158,7 +158,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
     fake.tabs = [{"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3}]
     pull(root, fake)
     cfg = root / ".canvas/config.toml"
-    cfg.write_text(cfg.read_text() + OLD_CONFIG)
+    cfg.write_text(cfg.read_text(encoding="utf-8") + OLD_CONFIG, encoding="utf-8")
     (tmp_path / "prefs.toml").write_text(OLD_PREFS)
     with client(root, tmp_path) as api:
         r = api.get("/api/courses/1/layout").json()
@@ -184,7 +184,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
     assert [(p["type"], p["title"]) for p in pinned] == [
         ("search", "Midterm"), ("folder", ""), ("doc", ""), ("link", "Course website"), ("search", "Old")]
 
-    text = cfg.read_text()
+    text = cfg.read_text(encoding="utf-8")
     for old in ("hidden_tabs", "tab_items", "cards =", "hidden_links", "smart_folders", "x:t1", "name = "):
         assert old not in text, old
     assert "# How canvas-sync lays out" in text  # (comments kept)
@@ -192,7 +192,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
     prefs = AppPrefs.load(tmp_path / "prefs.toml")
     assert [(e.thing.view, e.hidden) for e in prefs.tabs][:4] == [("overview", False), ("files", False), ("modules", False),
                                                                    ("announcements", False)]
-    assert "tab_order" not in (tmp_path / "prefs.toml").read_text() and prefs.language == "en"
+    assert "tab_order" not in (tmp_path / "prefs.toml").read_text(encoding="utf-8") and prefs.language == "en"
     assert other["tabs"][1]["view"] == "files"  # (the default's order)
 
 
@@ -288,4 +288,4 @@ def test_pinning_anything(root, tmp_path, fake: FakeCanvas):
         api.post("/api/courses/1/hide", json={"hidden": True})
         assert [p["type"] for p in api.get("/api/pinned").json()] == ["link", "search"]
     assert [e.thing.type for e in load_pinned(root / ".canvas/config.toml")] == ["link", "search"]
-    assert tomlkit.parse((root / ".canvas/config.toml").read_text())["pinned"][0]["title"] == "Site"
+    assert tomlkit.parse((root / ".canvas/config.toml").read_text(encoding="utf-8"))["pinned"][0]["title"] == "Site"

@@ -57,7 +57,7 @@ def test_prefs(root, tmp_path, keychain):
         assert api.post("/api/prefs", json={"language": "fr"}).status_code == 400
         assert api.post("/api/prefs", json={"select": "favorites"}).json()["select"] == "favorites"
         config = root / ".canvas" / "config.toml"
-        assert Settings.load(config).select == "favorites" and "# Which courses" in config.read_text()  # comments kept
+        assert Settings.load(config).select == "favorites" and "# Which courses" in config.read_text(encoding="utf-8")  # comments kept
         assert api.post("/api/prefs", json={"select": "all"}).status_code == 400
     (tmp_path / PREFS).write_text("language = 3\nauto_sync = \"soon\"\n")  # edited by hand, badly
     assert AppPrefs.load(tmp_path / PREFS) == AppPrefs()

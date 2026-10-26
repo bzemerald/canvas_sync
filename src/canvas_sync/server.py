@@ -618,7 +618,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 return FileResponse(account.root / rec.path)
         cache = account.root / META_DIR / "cache" / "media" / hashlib.sha1(target.encode()).hexdigest()
         if cache.exists() and cache.with_suffix(".type").exists():
-            return FileResponse(cache, media_type=cache.with_suffix(".type").read_text())
+            return FileResponse(cache, media_type=cache.with_suffix(".type").read_text(encoding="utf-8"))
         try:
             if on_canvas:
                 token = account.token()
@@ -639,7 +639,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(415, "not an image")
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(body)
-        cache.with_suffix(".type").write_text(ctype.split(";")[0])
+        cache.with_suffix(".type").write_text(ctype.split(";")[0], encoding="utf-8")
         return Response(body, media_type=ctype, headers={"Cache-Control": "max-age=86400"})
 
     @api.get("/tree")
@@ -857,7 +857,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/courses/{course_id}/notes/{note}")
     def read_note(course_id: int, note: str) -> dict[str, str]:
         f = note_file(course_id, note)
-        return {"text": f.read_text() if f.exists() else ""}
+        return {"text": f.read_text(encoding="utf-8") if f.exists() else ""}
 
     @api.put("/courses/{course_id}/notes/{note}")
     def write_note(course_id: int, note: str, req: NoteRequest) -> dict[str, str]:
@@ -867,7 +867,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         f = note_file(course_id, note)
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".tmp")
-        tmp.write_text(req.text)
+        tmp.write_text(req.text, encoding="utf-8")
         tmp.replace(f)
         return {"text": req.text}
 

@@ -53,7 +53,7 @@ class Engine:
         meta = root / META_DIR
         meta.mkdir(parents=True, exist_ok=True)
         if not (meta / "config.toml").exists():
-            (meta / "config.toml").write_text(SETTINGS_TEMPLATE)
+            (meta / "config.toml").write_text(SETTINGS_TEMPLATE, encoding="utf-8")
         State(meta / "state.db").close()
         return root
 

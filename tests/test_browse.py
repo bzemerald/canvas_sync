@@ -42,6 +42,7 @@ def entries(root: Path, rel: str) -> dict[str, dict]:
 # -- partial pulls ----------------------------------------------------------------
 
 
+@pytest.mark.links
 def test_pull_one_folder(root, fake):
     pull(root, fake)
     add_week2(fake)
@@ -51,6 +52,7 @@ def test_pull_one_folder(root, fake):
     assert kinds(pull(root, fake)) == [("download", NOTES)]  # the rest comes with a full pull
 
 
+@pytest.mark.links
 def test_pull_a_view_fetches_the_real_file(root, fake):
     pull(root, fake)
     add_week2(fake)
@@ -110,6 +112,7 @@ def test_restore_folder_brings_back_deleted_and_fixes_moved_in_place(root, fake)
 # -- folder listing ---------------------------------------------------------------
 
 
+@pytest.mark.links
 def test_list_dir_marks_canvas_files_links_changes_and_deletions(root, fake):
     add_week2(fake)
     pull(root, fake)
@@ -159,7 +162,7 @@ def test_smart_folders_are_saved_in_config_keeping_comments(root):
     syllabi = Entry(Thing("search", query="", kinds=("syllabus",)), "Syllabi")
     save_pinned(cfg, [mt1, syllabi])
     assert load_pinned(cfg) == [mt1, syllabi]
-    assert "# How canvas-sync lays out" in cfg.read_text()
+    assert "# How canvas-sync lays out" in cfg.read_text(encoding="utf-8")
 
 
 def test_search_by_kind_alone(root, fake):

@@ -121,9 +121,9 @@ def kinds(plan) -> list[tuple[str, str | None]]:
 
 def set_config(root: Path, old: str, new: str) -> None:
     cfg = root / ".canvas" / "config.toml"
-    text = cfg.read_text()
+    text = cfg.read_text(encoding="utf-8")
     assert old in text
-    cfg.write_text(text.replace(old, new))
+    cfg.write_text(text.replace(old, new), encoding="utf-8")
 
 
 def make_pdf(text: str) -> bytes:
