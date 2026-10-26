@@ -159,6 +159,16 @@ fn show_main(app: AppHandle) {
     }
 }
 
+/// The search window, from the main window's sidebar.
+#[tauri::command]
+fn show_launcher(app: AppHandle) {
+    if let Some(w) = app.get_webview_window(LAUNCHER) {
+        let _ = w.center();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 fn toggle_launcher(app: &AppHandle) {
     let Some(w) = app.get_webview_window(LAUNCHER) else { return };
     if w.is_visible().unwrap_or(false) {
@@ -304,6 +314,7 @@ pub fn run() {
             backend,
             hide_launcher,
             show_main,
+            show_launcher,
             set_launcher_keys,
             dragout::drag_out,
             #[cfg(target_os = "macos")]

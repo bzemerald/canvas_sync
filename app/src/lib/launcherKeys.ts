@@ -32,6 +32,9 @@ export async function loadLauncherKeys() {
 /** Registers `keys` (null: none, while new ones are being pressed). Fails if they can't be had. */
 export const setKeys = (keys: string | null) => invoke<void>("set_launcher_keys", { keys });
 
+/** Opens the search window (as its keys do). */
+export const showLauncher = () => invoke<void>("show_launcher");
+
 /** Makes `keys` open the search window, and remembers them. */
 export async function chooseLauncherKeys(keys: string) {
   if (keys === USUAL) keys = "";

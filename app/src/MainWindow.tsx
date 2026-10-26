@@ -33,7 +33,7 @@ import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
 import type { KindId } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
-import { keysLabel, useLauncherKeys } from "./lib/launcherKeys";
+import { keysLabel, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
@@ -122,6 +122,7 @@ const kindShown = (tab: Thing | null): KindId | undefined =>
   !tab ? undefined : isView(tab) ? VIEW_FINDS[tab.view] : tab.type === "doc" ? tab.kind : tab.type === "module" ? "module" : tab.type === "folder" ? "file" : undefined;
 
 export function MainWindow() {
+  const launcherKeys = useLauncherKeys();
   const [courseList, setCourseList] = useState<Course[]>([]);
   const [pinned, setPinned] = useState<Shown[]>([]);
   const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "home" }], i: 0 });
@@ -225,7 +226,8 @@ export function MainWindow() {
       const command = appCommand(e, typingIn(e.target));
       if (command === "back") step(-1);
       else if (command === "forward") step(1);
-      else if (command === "search") searchBox.current?.focus();
+      else if (command === "search" && searchBox.current) searchBox.current.focus();
+      else if (command === "search") go({ kind: "home" }); // a page without a box: 搜索
       else if (command === "toggleChanges") setShowChanges(!showChanges);
       else if (command === "settings") go({ kind: "settings" });
       else return;
@@ -1006,7 +1008,7 @@ export function MainWindow() {
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          <NavItem icon={<Search className="size-4" />} active={view.kind === "home"} onClick={() => go({ kind: "home" })} title={t("搜索")} />
+          <NavItem icon={<Search className="size-4" />} active={false} onClick={() => void showLauncher()} title={t("搜索")} keys={keysLabel(launcherKeys)} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
           <PinnedSection
@@ -1094,7 +1096,7 @@ export function MainWindow() {
           )}
         </nav>
         <div className="border-t border-line px-2 py-2">
-          <NavItem icon={<SettingsIcon className="size-4" />} active={view.kind === "settings"} onClick={() => go({ kind: "settings" })} title={t("设置")} />
+          <NavItem icon={<SettingsIcon className="size-4" />} active={view.kind === "settings"} onClick={() => go({ kind: "settings" })} title={t("设置")} keys={shortcut.settings} />
         </div>
       </aside>
 
@@ -1569,10 +1571,11 @@ function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search">; name
   );
 }
 
-function NavItem({ icon, title, subtitle, active, count, muted, onClick, onMenu }: {
+function NavItem({ icon, title, subtitle, keys, active, count, muted, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
   subtitle?: string;
+  keys?: string; // its shortcut, shown on the right
   active: boolean;
   muted?: boolean;
   count?: number; // new things in it
@@ -1591,6 +1594,7 @@ function NavItem({ icon, title, subtitle, active, count, muted, onClick, onMenu 
           <span className="block truncate">{title}</span>
           {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
         </span>
+        {keys && <span className="shrink-0 text-xs text-muted">{keys}</span>}
         {!!count && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
       </button>
       {onMenu && (
