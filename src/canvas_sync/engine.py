@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from send2trash import send2trash
@@ -16,7 +16,7 @@ from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename, update_sk
 from .discover import discover_course
 from .execute import EventHandler, Executor
 from .layout import Layout, sanitize
-from .local import clone_file, is_regular, sha256_file
+from .local import can_symlink, clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
 from .search import Hit, Index, IndexStats, ProgressHandler
@@ -41,7 +41,7 @@ class Engine:
         self.meta = self.root / META_DIR
         if not (self.meta / "config.toml").exists():
             raise NotInitialized(f"{self.root} is not set up yet (run `canvas init`)")
-        self.settings = Settings.load(self.meta / "config.toml")
+        self.settings = self._settings()
         self.state = State(self.meta / "state.db")
         self.layout = Layout(self.settings, self.state.courses())
         self.client = client
@@ -53,7 +53,7 @@ class Engine:
         meta = root / META_DIR
         meta.mkdir(parents=True, exist_ok=True)
         if not (meta / "config.toml").exists():
-            (meta / "config.toml").write_text(SETTINGS_TEMPLATE)
+            (meta / "config.toml").write_text(SETTINGS_TEMPLATE, encoding="utf-8")
         State(meta / "state.db").close()
         return root
 
@@ -83,15 +83,17 @@ class Engine:
 
     async def courses(self) -> list[Course]:
         """Current courses, plus any ids listed under `include` in the config."""
+        return [Course.from_api(d) for d in await self.course_data()]
+
+    async def course_data(self) -> list[dict]:
+        """`courses()` as Canvas gives them (with their terms' dates)."""
         api = self._api()
-        listed = [
-            Course.from_api(d) for d in await api.courses() if not d.get("access_restricted_by_date")
-        ]
-        known = {c.id for c in listed}
+        listed = [d for d in await api.courses() if not d.get("access_restricted_by_date")]
+        known = {d["id"] for d in listed}
         extra = [i for i in self.settings.include if i not in known]
         for d in await asyncio.gather(*(api.course(i, ["term"]) for i in extra), return_exceptions=True):
             if isinstance(d, dict):
-                listed.append(Course.from_api(d))
+                listed.append(d)
         return listed
 
     def is_selected(self, course: Course) -> bool:
@@ -353,8 +355,14 @@ class Engine:
         names |= {p[len(rel) + 1:].split("/")[0] for p in paths if p.startswith(rel + "/") and "/" in p[len(rel) + 1:]}
         return sorted(self.layout.canonical(f"{rel}/{n}") for n in names)
 
+    def _settings(self) -> Settings:
+        s = Settings.load(self.meta / "config.toml")
+        if not can_symlink(self.meta):  # Windows without Developer Mode: files only in their first view
+            s = replace(s, link_other_views=False)
+        return s
+
     def _reload(self) -> None:
-        self.settings = Settings.load(self.meta / "config.toml")
+        self.settings = self._settings()
         self.layout = Layout(self.settings, self.state.courses())
 
     def restorable(self, scope: Scope) -> list[FileStatus]:

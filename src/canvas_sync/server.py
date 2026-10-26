@@ -37,12 +37,13 @@ from . import __version__, content
 from . import ed, meaning
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
+from .models import Course
 from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, migrate, needs_migration, save_course_place, save_pinned,
-    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_ed_courses,
+    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
 )
 from .engine import Engine
 from .local import open_path
@@ -186,6 +187,16 @@ class HideRequest(BaseModel):
     courses: list[int] = []      # /courses/hide: which (a whole term)
 
 
+class FolderRequest(BaseModel):
+    root: str
+    new: bool  # True: an empty folder, to sync into anew; False: the old one, moved
+
+
+class ChoiceRequest(BaseModel):
+    sync: list[int]  # the courses chosen
+    skip: list[int]  # the rest
+
+
 class SidebarRequest(BaseModel):
     terms: list[str] | None = None    # the terms in order (Canvas's names for them)
     courses: list[int] | None = None  # course ids in order
@@ -253,10 +264,16 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(401, "bad token")
 
     def ready(request: Request) -> None:
-        if account is None:
-            path = request.url.path
-            if path[path.find("/api") + 4:] not in SETUP_PATHS:
-                raise HTTPException(409, "not set up")
+        path = request.url.path
+        path = path[path.find("/api") + 4:]
+        if account is None and path not in SETUP_PATHS:
+            raise HTTPException(409, "not set up")
+        if missing() and path not in SETUP_PATHS | {"/account/folder"}:
+            raise HTTPException(409, "sync folder missing")
+
+    def missing() -> bool:
+        """The sync folder isn't where it was (moved, renamed or deleted)."""
+        return account is not None and not (account.root / META_DIR / "config.toml").exists()
 
     def prefs() -> AppPrefs:
         return AppPrefs.load(prefs_path)
@@ -284,9 +301,18 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         for p in req.paths:
             inside(p)
 
+    def choosing() -> bool:
+        """Signed in to a folder that has never synced: which courses to sync is chosen first
+        (Canvas leaves most past courses "active", so syncing them all would bring every term)."""
+        if account is None or missing():
+            return False
+        with Engine(account.root) as e:
+            return e.state.last_synced() is None
+
     @api.get("/health")
     def health() -> dict[str, Any]:
-        return {"ok": True, "version": __version__, "set_up": account is not None,
+        return {"ok": True, "version": __version__, "set_up": account is not None, "choosing": choosing(),
+                "folder_missing": missing(),
                 "root": str(account.root) if account else None, "canvas": account.base_url if account else None}
 
     # -- preferences and the account --------------------------------------------------------
@@ -295,7 +321,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def get_prefs() -> dict[str, Any]:
         p = prefs()
         out: dict[str, Any] = {"language": p.language, "auto_sync": p.auto_sync, "sync_on_launch": p.sync_on_launch}
-        if account is not None:
+        if account is not None and not missing():
             with engine() as e:
                 out["select"] = e.settings.select
         return out
@@ -350,24 +376,49 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "token rejected")
         me = await _who(url, new_token)
         root = Path(req.root).expanduser() if req.root else (account.root if account else DEFAULT_ROOT.expanduser())
-        if root.exists() and not root.is_dir():
-            raise HTTPException(400, "not a folder")
-        ours = (root / META_DIR).is_dir()
-        if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
-            raise HTTPException(400, "folder not empty")
-        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
-            raise HTTPException(400, "folder belongs to another Canvas site")
-        new = Account(url, Engine.init_root(root), me.get("name") or None)
+        new = Account(url, sync_folder(root, url), me.get("name") or None)
         if account and account.base_url != url:
             account.clear_token()  # signed out of the old site
         new.save()
         new.set_token(new_token)
         account = new
         update_files()
-        try:
-            start_sync(SyncRequest())  # what you signed in for
-        except HTTPException:
-            pass
+        if not choosing():  # (else the first sync starts once the courses are chosen)
+            try:
+                start_sync(SyncRequest())  # what you signed in for
+            except HTTPException:
+                pass
+        return account_info()
+
+    def sync_folder(root: Path, url: str, new: bool = True) -> Path:
+        """A folder to sync into, set up: an empty one (or not there yet), or one that has synced
+        before (only that, unless `new`)."""
+        if root.exists() and not root.is_dir():
+            raise HTTPException(400, "not a folder")
+        ours = (root / META_DIR / "config.toml").is_file()
+        if not new and not ours:
+            raise HTTPException(400, "not a sync folder")
+        if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
+            raise HTTPException(400, "folder not empty")
+        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
+            raise HTTPException(400, "folder belongs to another Canvas site")
+        return Engine.init_root(root)
+
+    @api.post("/account/folder")
+    async def move_folder(req: FolderRequest) -> dict[str, Any]:
+        """The sync folder went missing: where it is now, or a new one to sync into anew. The
+        account stays signed in; the first sync of a new one waits for the courses to be chosen."""
+        assert account is not None
+        if job.running:
+            raise HTTPException(409, "wait for the sync to finish")
+        account.root = sync_folder(Path(req.root).expanduser(), account.base_url, req.new)
+        account.save()
+        update_files()
+        if not choosing():
+            try:
+                start_sync(SyncRequest())
+            except HTTPException:
+                pass  # signed out
         return account_info()
 
     @api.post("/account/token")
@@ -491,6 +542,40 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                     "excluded": c.id in e.settings.exclude,   # not synced
                 })
             return out
+
+    @api.get("/courses/choice")
+    async def course_choice() -> dict[str, Any]:
+        """Your courses on Canvas, to choose which sync: each with its term's dates and its own,
+        and whether it syncs now. `chosen`: the config already says which (not just `select`)."""
+        assert account is not None
+        if not (token := account.token()):
+            raise HTTPException(400, "not signed in to Canvas")
+        try:
+            async with CanvasClient(account.base_url, token) as client:
+                with Engine(account.root, client) as e:
+                    out = []
+                    for d in await e.course_data():
+                        c, term = Course.from_api(d), d.get("term") or {}
+                        out.append({
+                            "id": c.id, "code": c.code, "name": c.name, "label": course_label(c, e.settings),
+                            "term": c.term, "term_start": term.get("start_at"), "term_end": term.get("end_at"),
+                            "start_at": d.get("start_at"), "end_at": d.get("end_at"),
+                            "favorite": c.is_favorite, "syncing": e.is_selected(c),
+                        })
+                    s = e.settings
+                    return {"select": s.select, "chosen": bool(s.include or s.exclude), "courses": out}
+        except (CanvasError, httpx.HTTPError) as err:
+            raise HTTPException(502, f"could not list the courses: {err}")
+
+    @api.put("/courses/choice")
+    async def choose_courses(req: ChoiceRequest) -> dict[str, Any]:
+        """Which courses sync, as chosen; the first sync starts when this is the first choice."""
+        first = choosing()
+        with engine() as e:
+            set_courses_syncing(config(), req.sync, req.skip, include=e.settings.select != "active")
+        if first:
+            start_sync(SyncRequest())
+        return sync_state()
 
     @api.get("/search")
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
@@ -619,7 +704,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 return FileResponse(account.root / rec.path)
         cache = account.root / META_DIR / "cache" / "media" / hashlib.sha1(target.encode()).hexdigest()
         if cache.exists() and cache.with_suffix(".type").exists():
-            return FileResponse(cache, media_type=cache.with_suffix(".type").read_text())
+            return FileResponse(cache, media_type=cache.with_suffix(".type").read_text(encoding="utf-8"))
         try:
             if on_canvas:
                 token = account.token()
@@ -640,7 +725,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(415, "not an image")
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(body)
-        cache.with_suffix(".type").write_text(ctype.split(";")[0])
+        cache.with_suffix(".type").write_text(ctype.split(";")[0], encoding="utf-8")
         return Response(body, media_type=ctype, headers={"Cache-Control": "max-age=86400"})
 
     @api.get("/tree")
@@ -858,7 +943,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/courses/{course_id}/notes/{note}")
     def read_note(course_id: int, note: str) -> dict[str, str]:
         f = note_file(course_id, note)
-        return {"text": f.read_text() if f.exists() else ""}
+        return {"text": f.read_text(encoding="utf-8") if f.exists() else ""}
 
     @api.put("/courses/{course_id}/notes/{note}")
     def write_note(course_id: int, note: str, req: NoteRequest) -> dict[str, str]:
@@ -868,7 +953,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         f = note_file(course_id, note)
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".tmp")
-        tmp.write_text(req.text)
+        tmp.write_text(req.text, encoding="utf-8")
         tmp.replace(f)
         return {"text": req.text}
 
@@ -1077,7 +1162,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         return max(times, default=None)
 
     def sync_if_due(within: timedelta) -> None:
-        if account is None or not _due(last_synced(), within, datetime.now(timezone.utc)):
+        if account is None or missing() or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
             return
         try:
             start_sync(SyncRequest())
@@ -1216,6 +1301,7 @@ def serve(account: Account | None, port: int = 0, token: str | None = None, exit
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", port))
+    sock.listen(128)  # connections made before uvicorn is up wait instead of being refused
     print(json.dumps({"port": sock.getsockname()[1], "token": token}), flush=True)
     config = uvicorn.Config(create_app(account, token, background=True), log_level="warning")
     uvicorn.Server(config).run(sockets=[sock])

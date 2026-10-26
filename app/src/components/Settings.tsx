@@ -9,6 +9,7 @@ import { edSaying, friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
 import { shortcut } from "../lib/keys";
 import { termRank } from "../lib/terms";
+import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { SignInForm, inputClass } from "./SignIn";
@@ -31,6 +32,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const changed = (a: AccountInfo) => {
@@ -152,6 +154,9 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
                   </select>
                 </Row>
               )}
+              <Row label={t("要同步的课程")} hint={t("在 Canvas 上的全部课程里勾选。没勾选的课不会下载。")}>
+                <Button onClick={() => setChoosing(true)} disabled={!account?.signed_in}>{t("选择课程…")}</Button>
+              </Row>
               <Row label={t("上次同步")}>
                 <span className="flex items-center gap-3 text-sm">
                   <span className="text-muted">{sync?.running ? t("正在同步…") : last ? shortDate(last) : t("还没有同步过")}</span>
@@ -197,6 +202,20 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
           }
         >
           <p className="text-fg-soft">{t("这台电脑上保存的令牌会被删除，之后不能再同步或打开外部工具。已经下载的文件、置顶和设置都会保留，重新登录后接着用。")}</p>
+        </Dialog>
+      )}
+      {choosing && (
+        <Dialog title={t("要同步的课程")} onClose={() => setChoosing(false)}>
+          <div className="pb-3">
+            <ChooseCourses
+              submitLabel={t("保存")}
+              onCancel={() => setChoosing(false)}
+              onDone={(_, added) => {
+                setChoosing(false);
+                if (added.length && !sync?.running) onSync(); // (what was ticked comes now)
+              }}
+            />
+          </div>
         </Dialog>
       )}
       {switching && account && (

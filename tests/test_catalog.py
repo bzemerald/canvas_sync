@@ -31,6 +31,7 @@ def by_type(things: list[dict], type_: str) -> list[dict]:
     return [t for t in things if t["type"] == type_]
 
 
+@pytest.mark.links
 def test_catalog_names_everything_of_the_courses(root, course):
     pull(root, course)
     with Engine(root) as e:

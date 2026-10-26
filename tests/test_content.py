@@ -240,6 +240,7 @@ def test_what_a_course_had_when_first_synced_isnt_news_unless_recent(root, cours
     assert (set(n["file"]), set(n["announcement"]), n["assignment"], n["page"]) == ({"101"}, {"7"}, {}, {})
 
 
+@pytest.mark.links
 def test_new_files_in_the_file_browser(root, fake):
     pull(root, fake)
     fake.put(102, "lec2.pdf", b"l2")

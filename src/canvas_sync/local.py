@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import functools
 import hashlib
 import os
 import shutil
@@ -51,6 +52,21 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+@functools.cache
+def can_symlink(folder: Path) -> bool:
+    """Whether symlinks can be made in `folder`. Windows allows them only to admins or
+    with Developer Mode on."""
+    if sys.platform != "win32":
+        return True
+    probe = folder / f".symlink-probe-{os.getpid()}"
+    try:
+        os.symlink("target", probe)
+    except OSError:
+        return False
+    probe.unlink()
+    return True
 
 
 def is_regular(path: Path) -> bool:

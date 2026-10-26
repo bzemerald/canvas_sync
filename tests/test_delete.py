@@ -38,6 +38,7 @@ def new_module_file(fake: FakeCanvas, fid: int, name: str, also_in_files: bool =
     fake.modules[0]["items"].append({"type": "File", "content_id": fid})
 
 
+@pytest.mark.links
 def test_delete_a_file_keeps_it_deleted_and_restorable(root, fake, no_real_trash):
     pull(root, fake)
     with Engine(root) as e:
@@ -54,6 +55,7 @@ def test_delete_a_file_keeps_it_deleted_and_restorable(root, fake, no_real_trash
     assert kinds(pull(root, fake)) == [("link", LINK)]
 
 
+@pytest.mark.links
 def test_deleting_a_view_link_deletes_its_file(root, fake):
     pull(root, fake)
     with Engine(root) as e:
@@ -105,6 +107,7 @@ def test_delete_your_own_files_and_folders(root, fake, no_real_trash):
         e.delete([".canvas"])
 
 
+@pytest.mark.links
 def test_untrack_a_file_keeps_it_as_yours(root, fake):
     pull(root, fake)
     with Engine(root) as e:
@@ -186,6 +189,7 @@ def two_weeks(fake: FakeCanvas) -> None:
     fake.module(2, "Week 2", [{"type": "File", "content_id": 200}])
 
 
+@pytest.mark.links
 def test_resuming_a_folder_in_one_not_synced_resumes_the_way_to_it(root, fake):
     two_weeks(fake)
     pull(root, fake)
@@ -201,6 +205,7 @@ def test_resuming_a_folder_in_one_not_synced_resumes_the_way_to_it(root, fake):
     assert kinds(pull(root, fake)) == [("download", f"{WEEK1}/next.pdf"), ("link", LINK), ("update", MOD)]
 
 
+@pytest.mark.links
 def test_resuming_one_file_in_a_folder_not_synced(root, fake):
     pull(root, fake)
     with Engine(root) as e:
@@ -211,6 +216,7 @@ def test_resuming_one_file_in_a_folder_not_synced(root, fake):
     assert kinds(pull(root, fake)) == [("link", LINK), ("update", MOD)]
 
 
+@pytest.mark.links
 def test_links_in_a_folder_not_synced_stay(root, fake):
     pull(root, fake)
     with Engine(root) as e:
@@ -252,6 +258,7 @@ def test_restoring_a_file_in_a_deleted_folder_syncs_it_again(root, fake):
     assert ("update", MOD) in kinds(pull(root, fake))
 
 
+@pytest.mark.links
 def test_resuming_in_a_renamed_folder(root, fake):
     two_weeks(fake)
     pull(root, fake)

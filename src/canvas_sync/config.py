@@ -216,7 +216,7 @@ class Settings:
     @classmethod
     def load(cls, path: Path) -> Settings:
         try:
-            data: dict[str, Any] = tomlkit.parse(path.read_text()).unwrap()
+            data: dict[str, Any] = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
         except Exception as e:
             raise ConfigError(f"{path}: {e}") from e
         d = cls()
@@ -296,7 +296,7 @@ def _pinned(data: dict[str, Any]) -> list[Entry]:
 
 
 def load_pinned(path: Path) -> list[Entry]:
-    return _pinned(tomlkit.parse(path.read_text()).unwrap())
+    return _pinned(tomlkit.parse(path.read_text(encoding="utf-8")).unwrap())
 
 
 def _dump(doc: Any) -> str:
@@ -323,7 +323,7 @@ def _rows(items: list[Entry], home: int | None = None) -> Any:
 @_writes
 def save_pinned(path: Path, items: list[Entry]) -> None:
     """置顶, in order."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     for key in ("pinned", "smart_folders"):
         if key in doc:
             del doc[key]
@@ -334,14 +334,14 @@ def save_pinned(path: Path, items: list[Entry]) -> None:
             t.update(e.to_dict(compact=True))
             aot.append(t)
         doc["pinned"] = aot
-    path.write_text(_dump(doc))
+    path.write_text(_dump(doc), encoding="utf-8")
 
 
 @_writes
 def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
     """Every thing in every place (置顶, courses' pages) as `change` makes it."""
     s = Settings.load(path)
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     pinned = [Entry(change(e.thing), e.title, e.hidden) for e in s.pinned]
     for course, layout in s.course_layouts.items():
         for place in PLACES:
@@ -349,7 +349,7 @@ def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
             moved = [Entry(change(e.thing), e.title, e.hidden) for e in now]
             if moved != now:
                 _put_place(doc, course, place, moved)
-    path.write_text(_dump(doc))
+    path.write_text(_dump(doc), encoding="utf-8")
     if pinned != s.pinned:
         save_pinned(path, pinned)
 
@@ -357,13 +357,13 @@ def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
 @_writes
 def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list[int] | None = None) -> None:
     """The sidebar's order of terms and of courses (within their terms), as dragged in the app."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     table = doc.setdefault("sidebar", tomlkit.table())
     if terms is not None:
         table["term_order"] = list(dict.fromkeys(terms))
     if courses is not None:
         table["course_order"] = list(dict.fromkeys(courses))
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 @_writes
@@ -371,7 +371,7 @@ def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str]
                         remove: list[str] = ()) -> None:  # type: ignore[assignment]
     """Drop from [layout] skip_folders those at or under `remove_under`, and those in `remove`;
     then add `add`."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     layout = doc.setdefault("layout", tomlkit.table())
     current = [str(x) for x in layout.get("skip_folders", [])]
     gone = lambda p: p in remove or any(p == r or p.startswith(r + "/") for r in remove_under)  # noqa: E731
@@ -380,14 +380,14 @@ def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str]
         arr = tomlkit.array()
         arr.extend(wanted)
         layout["skip_folders"] = arr
-        path.write_text(tomlkit.dumps(doc))
+        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 @_writes
 def record_folder_rename(path: Path, canonical: str, name: str | None, old: str, new: str) -> None:
     """Remember that the folder Canvas names would put at `canonical` is called `name`
     (None: its own name again), and point what's anywhere in the app at `old` or below to `new`."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     names = doc.get("folder_names")
     if names is None:
         names = doc["folder_names"] = tomlkit.table()
@@ -395,7 +395,7 @@ def record_folder_rename(path: Path, canonical: str, name: str | None, old: str,
         names.pop(canonical, None)
     else:
         names[canonical] = name
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
     change_things(path, lambda t: t.moved(old, new))
 
 
@@ -416,9 +416,35 @@ def set_course_select(path: Path, select: str) -> None:
     """Sync the active courses or the favorites, keeping the file's comments."""
     if select not in CHOICES["select"]:
         raise ConfigError(f"select must be one of {sorted(CHOICES['select'])}")
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     doc.setdefault("courses", tomlkit.table())["select"] = select
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+@_writes
+def set_courses_syncing(path: Path, sync: list[int], skip: list[int], *, include: bool = False) -> None:
+    """Which courses sync, as chosen from the list of them: `skip` into `exclude`, `sync` out of
+    it (and into `include` too, if `select` wouldn't pick them)."""
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    courses = doc.setdefault("courses", tomlkit.table())
+    for key in ("exclude", "include"):
+        if key not in courses:
+            courses[key] = tomlkit.array()
+
+    def put(key: str, course_id: int, present: bool) -> None:
+        if present and course_id not in courses[key]:
+            courses[key].append(course_id)
+        elif not present and course_id in courses[key]:
+            courses[key].remove(course_id)
+
+    for course_id in sync:
+        put("exclude", course_id, False)
+        if include:
+            put("include", course_id, True)
+    for course_id in skip:
+        put("exclude", course_id, True)
+        put("include", course_id, False)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool | None = None) -> None:
@@ -430,7 +456,7 @@ def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool
 @_writes
 def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, syncing: bool | None = None) -> None:
     """set_course_hidden for several courses at once (a whole term)."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     courses = doc.setdefault("courses", tomlkit.table())
     for key in ("hidden", "exclude", "include"):
         if key not in courses:
@@ -448,13 +474,13 @@ def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, synci
             put("exclude", course_id, not syncing)
             if not syncing:
                 put("include", course_id, False)
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 @_writes
 def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> None:
     """A course's icon in the app ({icon, color} or {emoji}); None: back to the app's pick."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     icons = doc.setdefault("course_icons", tomlkit.table())
     key = str(course_id)
     if icon is None:
@@ -464,17 +490,17 @@ def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> 
         value = tomlkit.inline_table()
         value.update({k: v for k, v in icon.items() if k in ICON_KEYS and v})
         icons[key] = value
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 @_writes
 def set_ed_courses(path: Path, links: dict[int, int]) -> None:
     """Which Ed course is each of these courses' ([ed.courses]; 0: none)."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     courses = doc.setdefault("ed", tomlkit.table()).setdefault("courses", tomlkit.table())
     for course_id, ed_id in links.items():
         courses[str(course_id)] = ed_id
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 def _put_place(doc: Any, course_id: int, place: str, items: list[Entry]) -> None:
@@ -496,14 +522,14 @@ def save_course_place(path: Path, course_id: int, place: str, items: list[Entry]
     """One of a course's places as arranged for it (tabs, overview, links); [] : nothing of its own."""
     if place not in PLACES:
         raise ConfigError(f"no place {place!r}; places are {PLACES}")
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     _put_place(doc, course_id, place, items)
-    path.write_text(_dump(doc))
+    path.write_text(_dump(doc), encoding="utf-8")
 
 
 def needs_migration(path: Path) -> bool:
     """config.toml has things written the old way (before things had a type: see things.py)."""
-    data = tomlkit.parse(path.read_text()).unwrap()
+    data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
     layouts = [v for v in data.get("course_layouts", {}).values() if isinstance(v, dict)]
     return "smart_folders" in data or any(is_old(x) for x in data.get("pinned", [])) or any(map(is_old_layout, layouts))
 
@@ -514,11 +540,11 @@ def migrate(path: Path, tools: Callable[[int], list[int]] | None = None) -> bool
     order. True if there was any."""
     if not needs_migration(path):
         return False
-    data = tomlkit.parse(path.read_text()).unwrap()
+    data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
     old_layouts = {int(k): v for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict) and is_old_layout(v)}
     s = Settings.load(path)
     save_pinned(path, s.pinned)
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     for course, table in old_layouts.items():
         doc["course_layouts"][str(course)] = tomlkit.table()
         layout = CourseLayout.parse(table, course, tools(course) if tools else None)
@@ -526,14 +552,14 @@ def migrate(path: Path, tools: Callable[[int], list[int]] | None = None) -> bool
             _put_place(doc, course, place, getattr(layout, place))
         if str(course) in doc["course_layouts"] and not doc["course_layouts"][str(course)]:
             del doc["course_layouts"][str(course)]
-    path.write_text(_dump(doc))
+    path.write_text(_dump(doc), encoding="utf-8")
     return True
 
 
 @_writes
 def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
     """Move a course id into `include` (sync=True) or `exclude`, keeping the file's comments."""
-    doc = tomlkit.parse(path.read_text())
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     courses = doc.setdefault("courses", tomlkit.table())
     add, remove = ("include", "exclude") if sync else ("exclude", "include")
     for key in (add, remove):
@@ -543,7 +569,7 @@ def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
         courses[remove].remove(course_id)
     if course_id not in courses[add]:
         courses[add].append(course_id)
-    path.write_text(tomlkit.dumps(doc))
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 # -- account ------------------------------------------------------------------
@@ -571,7 +597,7 @@ class AppPrefs:
         """What's saved; anything missing or unrecognized is the default."""
         path = path or PREFS_FILE
         try:
-            data = tomlkit.parse(path.read_text()).unwrap() if path.exists() else {}
+            data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap() if path.exists() else {}
         except Exception:
             data = {}
         d = cls()
@@ -596,7 +622,7 @@ class AppPrefs:
         """app.toml as an older version wrote it (tab_order, overview_order...), the way this one does."""
         path = path or PREFS_FILE
         try:
-            data = tomlkit.parse(path.read_text()).unwrap() if path.exists() else {}
+            data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap() if path.exists() else {}
         except Exception:
             return
         if any(k in data for k in ("tab_order", "hidden_tabs", "overview_order", "overview_hidden")):
@@ -623,7 +649,7 @@ class AppPrefs:
                 doc.add(tomlkit.nl())
                 doc.add(tomlkit.comment(f"Every course's {place}, unless arranged for itself (as in config.toml)."))
                 doc[place] = _rows(getattr(self, place))
-        path.write_text(tomlkit.dumps(doc))
+        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 @dataclass
@@ -638,7 +664,7 @@ class Account:
     def load(cls) -> Account | None:
         data: dict[str, Any] = {}
         if ACCOUNT_FILE.exists():
-            data = tomlkit.parse(ACCOUNT_FILE.read_text()).unwrap()
+            data = tomlkit.parse(ACCOUNT_FILE.read_text(encoding="utf-8")).unwrap()
         url = os.environ.get("CANVAS_URL") or data.get("base_url")
         root = os.environ.get("CANVAS_ROOT") or data.get("root")
         if not url or not root:
@@ -654,7 +680,7 @@ class Account:
         for key in ("user", "ed_region", "ed_user"):
             if getattr(self, key):
                 doc[key] = getattr(self, key)
-        ACCOUNT_FILE.write_text(tomlkit.dumps(doc))
+        ACCOUNT_FILE.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
     def token(self) -> str | None:
         return os.environ.get("CANVAS_TOKEN") or get_secret(self.base_url)

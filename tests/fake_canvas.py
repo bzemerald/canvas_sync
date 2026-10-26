@@ -35,6 +35,7 @@ class FakeCanvas:
         self.launch_url = f"{BASE}/courses/1/external_tools/sessionless_launch?verifier=v"
         self.seen_auth: list[str | None] = []
         self.valid_tokens: set[str] | None = None  # None: any token works
+        self.others: list[dict] = []  # more courses in the list (nothing else of them answers)
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
             listed: bool = True) -> None:
@@ -53,7 +54,7 @@ class FakeCanvas:
         public = lambda f: {k: v for k, v in f.items() if not k.startswith("_")}  # noqa: E731
         routes = {
             "/api/v1/users/self": lambda: {"id": 42, "name": "Test"},
-            "/api/v1/courses": lambda: [self.course],
+            "/api/v1/courses": lambda: [self.course, *self.others],
             "/api/v1/courses/1": lambda: self.course,
             "/api/v1/courses/1/folders": lambda: self.folders,
             "/api/v1/courses/1/modules": lambda: self.modules,
@@ -121,9 +122,9 @@ def kinds(plan) -> list[tuple[str, str | None]]:
 
 def set_config(root: Path, old: str, new: str) -> None:
     cfg = root / ".canvas" / "config.toml"
-    text = cfg.read_text()
+    text = cfg.read_text(encoding="utf-8")
     assert old in text
-    cfg.write_text(text.replace(old, new))
+    cfg.write_text(text.replace(old, new), encoding="utf-8")
 
 
 def make_pdf(text: str) -> bytes:

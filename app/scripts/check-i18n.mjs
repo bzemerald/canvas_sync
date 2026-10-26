@@ -4,8 +4,9 @@
 //   npm run check:i18n -- --keys  print every key (to fill in en.ts)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SRC = new URL("../src", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const HAN = /[一-鿿]/;
 const KEY = /\bt[x]?\(\s*"((?:[^"\\]|\\.)*)"/g;
 
@@ -21,7 +22,7 @@ const stripComments = (code) =>
 const keys = new Map(); // key -> first place it's used
 const loose = [];
 for (const f of files(SRC)) {
-  const rel = relative(SRC, f);
+  const rel = relative(SRC, f).replaceAll("\\", "/");
   if (rel === "lib/en.ts") continue;
   const source = readFileSync(f, "utf8");
   const original = source.split("\n");

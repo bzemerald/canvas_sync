@@ -67,12 +67,15 @@ fn backend_path(app: &AppHandle) -> PathBuf {
 fn start_backend(app: &AppHandle) {
     let state = app.state::<BackendState>();
     let path = backend_path(app);
-    let spawned = Command::new(&path)
-        .args(["serve", "--exit-with-stdin"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+    let mut command = Command::new(&path);
+    command.args(["serve", "--exit-with-stdin"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW); // no console window for it in release builds
+    }
+    let spawned = command.spawn();
     let mut child = match spawned {
         Ok(c) => c,
         Err(e) => {

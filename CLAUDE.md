@@ -80,7 +80,9 @@ without the Canvas website or Finder.
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
   terminal (check `ps`). Frontend edits hot-reload. The Python server keeps running old code
   until the app restarts: `touch app/src-tauri/src/lib.rs`, and tauri dev rebuilds and
-  relaunches it.
+  relaunches it. On Windows, don't: that relinks the exe, and Smart App Control judges each new
+  exe and may block it ("An Application Control policy has blocked this file"). Restart tauri
+  dev instead (with nothing changed, cargo reuses the exe); cargo is in `~/.cargo/bin`.
 
 ## Conventions
 
@@ -137,9 +139,9 @@ without the Canvas website or Finder.
   - The Canvas token is in the keychain; so is Ed's (`edstem:<region>`), its region and your name
     there in `~/.config/canvas-sync/config.toml`.
 
-## Checking the app's UI (macOS)
+## Checking the app's UI
 
-The tools are in `.claude/ui-test/`. Build them once with `.claude/ui-test/build.sh`.
+The tools are in `.claude/ui-test/`. On macOS, build them once with `.claude/ui-test/build.sh`.
 
 - `idle.sh [seconds]`: the user may be at the Mac, and their clicks mix with yours.
   - Drive the UI only after 3 idle minutes; wait for that in the background.
@@ -150,6 +152,20 @@ The tools are in `.claude/ui-test/`. Build them once with `.claude/ui-test/build
   halved they're in window points.
 - `bin/mouse click|rclick|dclick|move|scroll|drag|press|dragto|release ...`: input in window
   points. Use `press`/`dragto`/`release` to screenshot mid-drag.
+
+On Windows, drive the page itself instead of the mouse, over WebView2's remote debugging:
+
+- Start the app with it: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222
+  npm run tauri dev` (in the background; it ends with your session, so tell the user to start
+  theirs again afterwards).
+- `node .claude/ui-test/cdp.mjs "<js>" [seconds]`: runs JS in the main window (click with
+  `.click()`, read with `innerText`), and prints the console errors and exceptions that follow.
+  That's how a blank window turns into a stack trace. (It also replays what was logged before.)
+- `powershell -File .claude/ui-test/win.ps1 shot out.png`: the window as drawn, even behind
+  others; `win.ps1 idle`: seconds since the user's last input. It doesn't take the mouse, but
+  still wait for 3 idle minutes: the user sees the app change.
+- WebView2 is Chromium: what works in WebKit on the Mac may not (`scrollIntoView` returns a
+  promise, so an effect written `() => el.scrollIntoView()` crashes React).
 
 Rules, learned the hard way:
 
