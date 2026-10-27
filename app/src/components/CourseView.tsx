@@ -577,6 +577,30 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
     onSeen(); // the counts in the tabs and the sidebar
   };
 
+  // Keys, like a mail client's: ↑ ↓ (Home, End) go through the list; space pages through what's open.
+  const listEl = useRef<HTMLUListElement>(null);
+  const pane = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) listEl.current?.focus();
+  }, [kind]);
+  const onKeyDown = (ev: React.KeyboardEvent) => {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || (ev.target as HTMLElement).closest("select")) return;
+    if (ev.key === " ") {
+      pane.current?.scrollBy({ top: (ev.shiftKey ? -0.85 : 0.85) * pane.current.clientHeight, behavior: "smooth" });
+      ev.preventDefault();
+      return;
+    }
+    const rows = Array.from(listEl.current?.querySelectorAll<HTMLElement>("[data-item]") ?? []);
+    const i = rows.findIndex((el) => el.dataset.item === current);
+    const to = ev.key === "ArrowDown" ? (i < 0 ? 0 : i + 1) : ev.key === "ArrowUp" ? i - 1 : ev.key === "Home" ? 0 : ev.key === "End" ? rows.length - 1 : null;
+    if (to === null) return;
+    ev.preventDefault();
+    const row = rows[to];
+    if (!row) return;
+    onSelect(row.dataset.item!);
+    row.scrollIntoView({ block: "nearest" });
+  };
+
   if (kind === "syllabus") {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -586,7 +610,10 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
   }
   return (
     <div className="flex min-h-0 flex-1">
-      <ul className="w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("列表")}>
+      <ul ref={listEl} tabIndex={0} data-keys onKeyDown={onKeyDown}
+        // A row clicked: the list keeps the keys (a row's own would click it again).
+        onFocus={(e) => e.target !== listEl.current && (e.target as HTMLElement).closest("[data-item]") && listEl.current?.focus({ preventScroll: true })}
+        className="focus-quiet w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("列表")}>
         {searching && !narrowing.loading && <li><FilterNote n={list?.length ?? 0} box={box} narrowing={narrowing} /></li>}
         {list === null && <li><Loading className="px-2 py-3 text-sm" /></li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
@@ -595,7 +622,7 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
           <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
       </ul>
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div ref={pane} className="min-w-0 flex-1 overflow-y-auto">
         {current && (
           <ItemView
             key={`${kind}:${current}`}
@@ -615,7 +642,7 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
   const props = useThing();
   return (
     <li>
-      <button onClick={onClick} {...props(thing)} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
+      <button data-item={it.id} onClick={onClick} {...props(thing)} className={`block w-full rounded-md px-2.5 py-2 text-left ${active ? "bg-selected" : "hover:bg-chip"}`}>
         <div className="flex items-center gap-2">
           {it.new && <NewDot />}
           <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
@@ -669,7 +696,7 @@ function PostList({ course, list, current, onSelect }: { course: number; list: I
       {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("没有这样的帖子")}</li>}
       {shown.map((p) => (
         <li key={p.id}>
-          <button onClick={() => onSelect(p.id)} {...thing(docThing(course, p))}
+          <button data-item={p.id} onClick={() => onSelect(p.id)} {...thing(docThing(course, p))}
             className={`block w-full rounded-md px-2.5 py-2 text-left ${p.id === current ? "bg-selected" : "hover:bg-chip"}`}>
             <div className="flex items-center gap-2">
               {p.new && <NewDot />}
@@ -734,7 +761,7 @@ function AssignmentList({ course, list, current, onSelect }: { course: number; l
           <ul>
             {xs.map((a) => (
               <li key={a.id}>
-                <button onClick={() => onSelect(a.id)} {...thing(docThing(course, a))}
+                <button data-item={a.id} onClick={() => onSelect(a.id)} {...thing(docThing(course, a))}
                   className={`block w-full rounded-md px-2.5 py-2 text-left ${a.id === current ? "bg-selected" : "hover:bg-chip"}`}>
                   <div className="flex items-center gap-2">
                     {a.new && <NewDot />}
