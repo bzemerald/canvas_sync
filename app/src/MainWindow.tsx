@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CompletionGhost, type Finder, FinderContext, FoundHere, type How, TabKey, actionsFor, canvasUrl, rememberCourse, useCatalog,
+  CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog,
 } from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
@@ -1543,7 +1543,6 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
         />
         <CompletionGhost query={value} completion={completion ?? null} className={compact ? "text-sm" : ""} />
       </div>
-      {completion && <TabKey />}
     </div>
   );
 }

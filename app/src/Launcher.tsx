@@ -8,7 +8,7 @@ import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CompletionGhost, FoundList, type How, ReadingBar, TabKey, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding,
+  CompletionGhost, FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding,
 } from "./components/Found";
 import { isMac } from "./components/Result";
 import * as api from "./lib/api";
@@ -149,7 +149,6 @@ export function Launcher() {
               />
               <CompletionGhost query={query} completion={completed} className="text-lg" />
             </div>
-            {completed && <TabKey className="text-xs" />}
             {loading && slow && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
           </div>
           <ReadingBar reading={reading} names={names} courses={courses} onQuery={setQuery} className="-mt-1 px-4 pb-2.5 pl-12" />

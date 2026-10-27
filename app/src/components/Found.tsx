@@ -206,36 +206,56 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
   return true;
 }
 
-/** The query with its last word finished as a course's name: the chosen result's, if it's a course
- * (and the word is on its way to it), else the first course found whose name the word starts
- * (a file named with the course's code may come first): "neur" ⇥ "neu100a ", which then narrows
- * search to that course. */
+/** The query finished as a course's name: the chosen result's, if it's a course, else the first
+ * course found whose name what's typed starts (a file named with the course's code may come
+ * first). What's typed goes on as typed ("neu 1" ⇥ "neu 100a "), over the last few words; when
+ * it's something else ("multivar"), its last word becomes the name ("m53 "). Either narrows search
+ * to that course. */
 export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = []): string | null {
-  const last = reading.parts.at(-1);
-  if (!last || /\s$/.test(reading.query) || (last.role !== "word" && last.role !== "series")) return null;
-  const typed = key(last.text);
+  const { query, parts } = reading;
+  const last = parts.at(-1);
+  if (!last || /\s$/.test(query) || (last.role !== "word" && last.role !== "series")) return null;
+  const end = last.spans[0][1];
+  // What may be the start of a name, longest first: the last words, up to three, typed together.
+  const starts: { at: number; typed: string }[] = [];
+  for (let i = parts.length - 1; i >= 0 && i >= parts.length - 3; i--) {
+    const p = parts[i];
+    if (p.role !== "word" && p.role !== "series") break;
+    if (i < parts.length - 1 && query.slice(p.spans[0][1], parts[i + 1].spans[0][0]).trim()) break;
+    starts.unshift({ at: p.spans[0][0], typed: key(query.slice(p.spans[0][0], end)) });
+  }
   const courseOf = (x: Found | undefined) => {
     if (!x || x.type !== "thing" || x.entry.type !== "course") return null;
     const id = x.entry.course;
-    return reading.parts.some((p) => p.role === "course" && p.courses.includes(id)) ? null : x.entry; // (it says so already)
+    return parts.some((p) => p.role === "course" && p.courses.includes(id)) ? null : x.entry; // (it says so already)
   };
-  const starts = (keys: string[] = []) => keys.some((k) => k.startsWith(typed) && k !== typed);
-  const c = courseOf(f) ?? [...found].map(courseOf).find((e) => e && starts(e.keys));
+  // The course's name that goes on from what's typed: what the app calls it, else any of its words.
+  const goingOn = (c: CatalogEntry) => {
+    const keys = c.keys ?? [];
+    const own = key(c.name ?? "");
+    for (const { typed } of starts) {
+      const k = [own, ...keys].find((k) => keys.includes(k) && k.startsWith(typed) && k !== typed);
+      if (k) return { typed, k };
+    }
+    return null;
+  };
+  const tail = (s: string) => `${s} ${query.slice(end)}`.replace(/\s+$/, " ");
+  const chosen = courseOf(f);
+  const c = chosen ?? [...found].map(courseOf).find((e) => e && goingOn(e));
   if (!c) return null;
-  // What's typed finished, else what the app calls the course ("neu100a"), else its shortest code.
+  const on = goingOn(c);
+  if (on) return tail(query.slice(0, end) + on.k.slice(on.typed.length));
+  // Something else typed: its last word becomes what the app calls the course, else its shortest code.
   const keys = c.keys ?? [];
   const own = key(c.name ?? "");
-  const word = keys.find((k) => k.startsWith(typed) && k !== typed)
-    ?? (keys.includes(own) && own.length <= 10 ? own : undefined)
+  const word = (keys.includes(own) && own.length <= 10 ? own : undefined)
     ?? keys.filter((k) => /^\p{L}/u.test(k) && /\d/.test(k)).sort((a, b) => a.length - b.length)[0]
     ?? keys[0];
-  if (!word) return null;
-  const [start, end] = last.spans[0];
-  return `${reading.query.slice(0, start)}${word} ${reading.query.slice(end)}`.replace(/\s+$/, " ");
+  return word ? tail(query.slice(0, last.spans[0][0]) + word) : null;
 }
 
-/** What ⇥ would make of the query, faint in the box: the rest of the word after what's typed, or
- * "→ neu100a" when it changes what's typed. Over the input (in a `relative` box), in its type. */
+/** What ⇥ would make of the query, faint in the box, and the key: the rest of the name after
+ * what's typed, or "→ m53" when it changes what's typed. Over the input (in a `relative` box), in its type. */
 export function CompletionGhost({ query, completion, className }: { query: string; completion: string | null; className: string }) {
   if (!completion) return null;
   const done = completion.trimEnd();
@@ -245,11 +265,12 @@ export function CompletionGhost({ query, completion, className }: { query: strin
     <span aria-hidden className={`pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre ${className}`}>
       <span className="invisible">{query}</span>
       <span className="text-muted/70">{rest}</span>
+      <TabKey className="ml-2" />
     </span>
   );
 }
 
-/** The key that completes it, beside the box. */
+/** The key that completes it, after what it would add. */
 export function TabKey({ className = "" }: { className?: string }) {
   return (
     <kbd title={t("按 Tab 补全")} className={`shrink-0 rounded border border-line px-1 font-sans text-[10px] leading-4 text-muted ${className}`}>
