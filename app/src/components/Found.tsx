@@ -15,7 +15,7 @@ import { en } from "../lib/en";
 import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, type Scope, dueSoon, find, narrow, prepare, recent, vocabulary } from "../lib/find";
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
-import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, singular, without } from "../lib/query";
+import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular, without } from "../lib/query";
 import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
@@ -252,7 +252,7 @@ export function completion(reading: Reading, f: Found | undefined, found: Iterab
   const keys = c.keys ?? [];
   const own = key(c.name ?? "");
   const word = (keys.includes(own) && own.length <= 10 ? own : undefined)
-    ?? keys.filter((k) => /^\p{L}/u.test(k) && /\d/.test(k)).sort((a, b) => a.length - b.length)[0]
+    ?? shortCode(keys)
     ?? keys[0];
   return word ? tail(query.slice(0, last.spans[0][0]) + word) : null;
 }

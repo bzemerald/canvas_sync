@@ -3,6 +3,13 @@
 export const en: Record<string, string | [string, string]> = {
   // -- the search window
   "搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中": "Search your courses… e.g. 221 mt, cs70 hw3 sol, final",
+  "搜索课程内容… 例如 {example}": "Search your courses… e.g. {example}",
+  "{course} 的答案：{name}": "Answers in {course}: {name}",
+  "{course} 的 {name}": "{course}: {name}",
+  "{course} 的公告": "{course}'s announcements",
+  "{course} 这周要交的作业": "{course}'s assignments due this week",
+  "{course} 还没交的作业": "{course}'s assignments not handed in",
+  "{course} 在 Ed 上的帖子和公告": "{course}'s posts and announcements on Ed",
   "没有结果": "No results",
   "打开": "Open",
   "在 {app} 中显示": "Show in {app}",

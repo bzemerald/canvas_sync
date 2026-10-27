@@ -16,7 +16,9 @@ import type { Hit } from "./lib/api";
 import type { Found } from "./lib/find";
 import { useLoaded } from "./lib/useLoaded";
 import { friendly } from "./lib/errors";
-import { t } from "./lib/i18n";
+import { lang, t } from "./lib/i18n";
+import { type Example, examples, seeded } from "./lib/examples";
+import { termRank } from "./lib/terms";
 import { type Thing, isView, thingKey, thingOf, thingOfHit } from "./lib/things";
 
 const mod = isMac ? "⌘" : "Ctrl";
@@ -41,6 +43,28 @@ export function Launcher() {
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
   const completed = completion(reading, listed.get(value), listed.values()); // what ⇥ would make of the query
+  // Ways to search, from your current courses: new ones for each time the window comes up, made
+  // as it goes away (and once, when what they're made from is first in), so nothing changes while
+  // it's up, nor as it comes up and what it knows reloads.
+  const round = useRef(0);
+  const made = useRef({ catalog, vocab, courses });
+  made.current = { catalog, vocab, courses };
+  const [ahead, setAhead] = useState<{ tips: Example[]; pick: number } | null>(null);
+  const makeTips = () => {
+    const { catalog, vocab, courses } = made.current;
+    if (!catalog) return null;
+    // (Of the newest term you sync: what you're taking now.)
+    const synced = courses.filter((c) => !c.hidden && !c.excluded);
+    const newest = Math.max(0, ...synced.map((c) => termRank(c.term)));
+    const current = synced.filter((c) => termRank(c.term) === newest).map((c) => c.id);
+    const n = ++round.current;
+    const tips = examples(catalog, vocab, current, Date.now(), lang, 6, seeded(n));
+    return { tips, pick: tips.length ? n % tips.length : 0 };
+  };
+  useEffect(() => {
+    if (!ahead && catalog && courses.length) setAhead(makeTips());
+  }, [catalog, courses]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tips = ahead?.tips ?? [];
 
   // The main window searching something here (its "search all courses").
   useEffect(() => {
@@ -55,7 +79,7 @@ export function Launcher() {
         setShown((n) => n + 1);
         input.current?.focus();
         input.current?.select();
-      }
+      } else setAhead((was) => makeTips() ?? was); // (for next time: it's hidden now)
     });
     return () => void off.then((f) => f());
   }, []);
@@ -144,7 +168,9 @@ export function Launcher() {
                 spellCheck={false}
                 value={query}
                 onValueChange={setQuery}
-                placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
+                placeholder={tips.length
+                  ? t("搜索课程内容… 例如 {example}", { example: tips[ahead!.pick].query })
+                  : t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
                 className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
               />
               <CompletionGhost query={query} completion={completed} className="text-lg" />
@@ -159,7 +185,7 @@ export function Launcher() {
           {!error && query.trim() && !loading && nothing && (
             <Command.Empty className="px-3 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>
           )}
-          {!error && !query.trim() && !lately.length && !due.length && <Tips />}
+          {!error && !query.trim() && !lately.length && !due.length && <Tips examples={tips} onQuery={(q) => { setQuery(q); input.current?.focus(); }} />}
           <FoundList results={results} recent={lately} due={due} courses={courses} names={names} onOpen={(f) => void open(f, "open")} />
         </Command.List>
 
@@ -179,23 +205,26 @@ function Key({ children }: { children: React.ReactNode }) {
   return <kbd className="rounded border border-line bg-chip px-1 font-sans text-[11px] text-fg-soft">{children}</kbd>;
 }
 
-function Tips() {
-  const examples: [string, string][] = [
-    ["221 mt", t("MATH 221 里和 midterm 有关的一切")],
-    ["cs70 hw3 sol", t("CS 70 第 3 次作业的答案")],
-    ["53 ps 3", t("MATH 53 的第 3 次作业，叫 HW 3 还是 Problem Set 3 都行")],
-    [t("cs70 本周截止"), t("CS 70 这周要交的作业")],
-    [t("未交"), t("所有还没交的作业")],
-    [t("期中"), t("所有课程的期中相关内容")],
-  ];
+// Until your courses' own are known (examples.ts), or if they give none.
+const SOME: Example[] = [
+  ["221 mt", t("MATH 221 里和 midterm 有关的一切")],
+  ["cs70 hw3 sol", t("CS 70 第 3 次作业的答案")],
+  ["53 ps 3", t("MATH 53 的第 3 次作业，叫 HW 3 还是 Problem Set 3 都行")],
+  [t("cs70 本周截止"), t("CS 70 这周要交的作业")],
+  [t("未交"), t("所有还没交的作业")],
+  [t("期中"), t("所有课程的期中相关内容")],
+].map(([query, what]) => ({ query, what, shows: "number", course: 0 }));
+
+/** Ways to search, each an example from your courses: clicking one searches it. */
+function Tips({ examples, onQuery }: { examples: Example[]; onQuery: (q: string) => void }) {
   return (
     <div className="px-3 py-4 text-sm text-muted">
       <p className="mb-3">{t("课程名、类型、时间或提交状态，加上关键词；缩写和拼错也行：")}</p>
       <ul className="space-y-1.5">
-        {examples.map(([q, what]) => (
-          <li key={q} className="flex gap-3">
-            <code className="w-32 shrink-0 text-fg-soft">{q}</code>
-            <span>{what}</span>
+        {(examples.length ? examples : SOME).map(({ query, what }) => (
+          <li key={query} className="flex gap-3">
+            <button onClick={() => onQuery(query)} className="w-40 shrink-0 truncate text-left font-mono text-fg-soft hover:text-accent">{query}</button>
+            <span className="min-w-0 truncate">{what}</span>
           </li>
         ))}
       </ul>

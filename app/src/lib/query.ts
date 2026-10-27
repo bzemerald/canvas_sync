@@ -79,6 +79,10 @@ export const spaced = (s: string) => s.replace(SEP, " ").replace(WORD_BREAK, " "
 /** Letters and digits only, lower-cased: how course words are compared ("CS 70" is "cs70"). */
 export const key = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
+/** A course's shortest code with its number, of its keys ("phys7b", not "physics7blec001"). */
+export const shortCode = (keys: string[]): string | undefined =>
+  keys.filter((k) => /^\p{L}/u.test(k) && /\d/.test(k)).sort((a, b) => a.length - b.length)[0];
+
 /** A word without its plural ending ("labs": lab, "quizzes": quiz; "class" stays). Of a phrase,
  * the last word's. */
 export function singular(w: string): string {

@@ -55,7 +55,7 @@ export interface Scope {
  * language), and what kind of thing it is, in words. */
 export type Describe = (e: CatalogEntry) => { names: string[]; aliases: string[]; kind: string[] };
 
-interface Prepared {
+export interface Prepared {
   entry: CatalogEntry;
   key: string;
   names: string[]; // each also with its parts spaced out ("HW3_sol.pdf": "HW 3 sol pdf")
