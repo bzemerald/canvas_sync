@@ -252,7 +252,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
     const input = box.current;
     if (!input) return;
     const pass = (e: KeyboardEvent) => {
-      if (e.isComposing || !["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(e.key)) return;
+      if (e.isComposing || !["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(e.key) || (e.key === "Tab" && e.ctrlKey)) return; // (⌃⇥: the next tab)
       const copy = new KeyboardEvent("keydown", { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, bubbles: true, cancelable: true });
       root.current?.dispatchEvent(copy);
       if (copy.defaultPrevented || e.key !== "Tab") e.preventDefault();

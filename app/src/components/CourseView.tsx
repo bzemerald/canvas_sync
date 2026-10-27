@@ -25,6 +25,7 @@ import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
 import { SourceTag, ThingIcon, onTheWeb, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
+import { tabCommand } from "../lib/keys";
 
 /** Where each kind of document is listed. */
 export const KIND_VIEW: Record<DocKind, ViewName> = {
@@ -109,6 +110,30 @@ export function CourseTabs({
   const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
   const extra = !loaded || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
   const name = (e: Shown) => thingName(e, things.courses, "tab");
+
+  // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them. Going round, not to one that opens
+  // somewhere else (a tool, a link).
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const command = tabCommand(ev);
+      if (command === null || !visible.length) return;
+      let next: Shown | undefined;
+      if (typeof command === "number") next = command === 9 ? visible.at(-1) : visible[command - 1];
+      else {
+        const round = visible.filter((e) => same(e, tab) || !opensElsewhere(e));
+        const i = round.findIndex((e) => same(e, tab));
+        const step = command === "next" ? 1 : -1;
+        next = i < 0 ? round.at(step > 0 ? 0 : -1) : round[(i + step + round.length) % round.length];
+      }
+      if (!next) return;
+      ev.preventDefault();
+      if (same(next, tab)) return;
+      if (opensElsewhere(next)) things.open(next);
+      else onTab(next);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const takeAway = (e: Shown) => {
     onArrange(without(entries, e));
