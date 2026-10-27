@@ -1509,7 +1509,13 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
         value={value}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => e.key === "Escape" && onChange("")}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+          // Cleared and left: the keys go to the page (its list), as before searching.
+          onChange("");
+          e.currentTarget.blur();
+          requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-keys]")?.focus());
+        }}
         // A query ("mt", "hw3 sol"), not prose: no autocorrect or capitals.
         autoCorrect="off"
         autoCapitalize="off"

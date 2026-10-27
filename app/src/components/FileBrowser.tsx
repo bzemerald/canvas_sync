@@ -252,7 +252,7 @@ export function FileBrowser({
   const shade = (e: Entry) => (sel.has(e.path) ? "bg-selected" : "hover:bg-chip");
 
   return (
-    <div ref={box} tabIndex={0} onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
+    <div ref={box} tabIndex={0} data-keys onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
       {mode === "list" && (
         <div className="grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] gap-3 border-b border-line px-6 py-1.5 text-xs text-muted">
           <SortHeader label={t("名称")} k="name" sort={sort} setSort={setSort} />

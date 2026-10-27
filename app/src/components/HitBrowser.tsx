@@ -90,6 +90,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
     <div
       ref={scroller}
       tabIndex={0}
+      data-keys
       onKeyDown={onKeyDown}
       onMouseDown={marquee.onMouseDown}
       className="focus-quiet relative min-h-0 flex-1 overflow-y-auto px-4 py-3 pb-10"
