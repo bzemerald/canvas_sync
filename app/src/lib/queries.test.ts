@@ -36,7 +36,7 @@ const things: CatalogEntry[] = [
   course(NEU, "NEU 100A", "Fall 2026", ["NEU 100A-LEC-001", "Cellular and Molecular Neurobiology"], ["100a", "neu100a"]),
   course(M53, "M53-lec", "Fall 2026", ["MATH 53-LEC-002", "Multivariable Calculus"], ["53", "m53lec", "math53"]),
   course(M53D, "M53-dis", "Fall 2026", ["MATH 53-DIS-205", "Multivariable Calculus"], ["53", "m53dis", "math53"]),
-  course(PHYS, "PHYS 7B", "Fall 2026", ["PHYSICS 7B-LEC-001", "Physics for Scientists and Engineers"], ["7b", "phys7b", "physics7b"]),
+  course(PHYS, "PHYS 7B", "Fall 2026", ["PHYSICS 7B-LEC-001", "Physics for Scientists and Engineers"], ["7b", "phys7b", "physics7b", "physics7blec001"]),
   course(NEU198, "NEU 198", "Fall 2026", ["Introduction to Neurotechnology"], ["198", "neu198"]),
   course(CS61A, "CS 61A", "Fall 2025", ["Structure and Interpretation of Computer Programs"], ["61a", "cs61a"]),
   course(M54, "MATH 54", "Spring 2026", ["MATH 54-LEC-002", "Linear Algebra and Differential Equations"], ["54", "math54"]),
@@ -282,3 +282,11 @@ describe("where you were", () => {
     expect(courseOf(find(read("midterm", vocab, NOW), catalog, none, [], [], NOW, EE).top ?? undefined)).toBe(EE);
   });
 });
+
+describe("a course alone", () => {
+  it("finds the course, however its name is put together", () => {
+    expect(search("physics7blec001 ").top).toBe("PHYS 7B");
+    expect(search("phys7b ").top).toBe("PHYS 7B");
+  });
+});
+

@@ -229,12 +229,15 @@ export function completion(reading: Reading, f: Found | undefined, found: Iterab
     const id = x.entry.course;
     return parts.some((p) => p.role === "course" && p.courses.includes(id)) ? null : x.entry; // (it says so already)
   };
-  // The course's name that goes on from what's typed: what the app calls it, else any of its words.
+  // The course's word that goes on from what's typed: what the app calls it, if that's short; else
+  // the shortest with its number ("phys" ⇥ "phys7b", not "physics7blec001speliotopoulos").
   const goingOn = (c: CatalogEntry) => {
     const keys = c.keys ?? [];
     const own = key(c.name ?? "");
+    const order = [...(own.length <= 10 ? [own] : []), ...keys.filter((k) => /\d/.test(k)).sort((a, b) => a.length - b.length),
+      ...[...keys].sort((a, b) => a.length - b.length)];
     for (const { typed } of starts) {
-      const k = [own, ...keys].find((k) => keys.includes(k) && k.startsWith(typed) && k !== typed);
+      const k = order.find((k) => keys.includes(k) && k.startsWith(typed) && k !== typed);
       if (k) return { typed, k };
     }
     return null;

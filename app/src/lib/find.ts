@@ -336,6 +336,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
     terms = courseParts.map((p) => ({ role: "word", quoted: false, spans: p.spans, text: p.text.toLowerCase() }));
     only = null;
   }
+  const onlyCourse = !parts.some(isTerm) && !narrowed && courseParts.length > 0;
   const picks = picked(query, usage, now);
   const ctx: Context = { catalog, usage, picks, now, here, kind: scope.kind };
   const found = new Map<string, Found>();
@@ -420,6 +421,13 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
     // "53 grades" did.)
     if (total < 0 || (!named && !picks.has(p.key))) continue;
     found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: total / terms.length + bonus(p, ctx) });
+  }
+  // The course named is found, however it's said ("physics7blec001": no word of its name starts so).
+  if (onlyCourse) {
+    for (const id of courseParts.flatMap((c) => c.courses)) {
+      const p = catalog.courses.get(id);
+      if (p && !found.has(p.key)) found.set(p.key, { type: "thing", key: p.key, entry: p.entry, score: rankings.EQUAL + bonus(p, ctx) });
+    }
   }
 
   // By name, as the index has it, as good as a word starting a name; and what's only inside, in
