@@ -15,6 +15,8 @@ const things: CatalogEntry[] = [
   ...[1, 2, 3].map((n) => entry({ type: "file", path: `EE 16A/Worksheet ${n}.pdf`, name: `Worksheet ${n}.pdf`, in_course: 16 })),
   entry({ type: "doc", course: 61, kind: "page", id: "w", name: "Workshop signup", in_course: 61 }),
   entry({ type: "doc", course: 16, kind: "announcement", id: "a", name: "Room change", in_course: 16 }),
+  ...["Office Hours", "Office Hours Queue", "Office Hours (week 2)", "Grades Released", "Homework Help"].map((name, i) =>
+    entry({ type: "doc", course: 61, kind: "page", id: `p${i}`, name, in_course: 61 })),
 ];
 const KINDS: Record<string, KindId> = { announcement: "announcement", page: "page" };
 const catalog = prepare(things, (e) => ({ names: [e.name ?? ""], aliases: [], kind: [] }));
@@ -35,6 +37,11 @@ describe("going on from the word being typed", () => {
 
   it("keeps what's typed as it was typed", () => {
     expect(complete("Wor")).toBe("Worksheet ");
+  });
+
+  it("by the names that have the query's other words too", () => {
+    expect(complete("office h")).toBe("office hours ");
+    expect(complete("h")).toBeNull();
   });
 
   it("not once it's done, or in quotes", () => {

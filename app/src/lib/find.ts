@@ -131,11 +131,10 @@ export function vocabulary(catalog: Catalog, kinds: Record<string, KindId>): Voc
   return { courses, kinds, series: catalog.series, abbreviations: catalog.abbreviations };
 }
 
-/** A word of things' names, for going on from what's typed (`likelyWord`): how many things have
- * it in their names, by course and kind (`${course}|${kind}`; an older term's, a fifth each); how
- * it's mostly written; if it's one of the app's words for a kind, how many things there are of
- * the kind (so); how much you've used it. */
-export interface NameWord { word: string; n: Map<string, number>; of: Map<string, number> | null; used: number }
+/** A word of things' names, for going on from what's typed (`likelyWord`): the things that have
+ * it in their names, each counting 1 (an older term's, a fifth); how it's mostly written; if it's
+ * one of the app's words for a kind, the things of the kind; how much you've used it. */
+export interface NameWord { word: string; things: Map<Prepared, number>; of: Map<Prepared, number> | null; used: number }
 
 const LATIN = /^\p{Script=Latin}{4,}$/u;
 
@@ -151,26 +150,22 @@ export function nameWords(catalog: Catalog, usage: Usage, kinds: Record<string, 
   const at = (w: string) => {
     const k = singular(w);
     let nw = out.get(k);
-    if (!nw) out.set(k, (nw = { word: w, n: new Map(), of: null, used: 0 }));
+    if (!nw) out.set(k, (nw = { word: w, things: new Map(), of: null, used: 0 }));
     const f = forms.get(k) ?? new Map<string, number>();
     forms.set(k, f.set(w, (f.get(w) ?? 0) + 1));
     return nw;
   };
-  const things = new Map<string, number>(); // (by course and kind)
+  const things = new Map<Prepared, number>();
   for (const p of catalog.entries) {
     if (p.entry.type === "course") continue;
     const ws = wordsOf(p.starts);
     if (p.entry.type === "file") ws.delete(p.entry.path.match(/\.(\w+)$/)?.[1].toLowerCase() ?? "");
     const by = p.course === null || p.term === catalog.latestTerm ? 1 : 0.2;
-    const where = `${p.course ?? ""}|${p.kind}`;
-    things.set(where, (things.get(where) ?? 0) + by);
-    for (const w of ws) {
-      const nw = at(w);
-      nw.n.set(where, (nw.n.get(where) ?? 0) + by);
-    }
+    things.set(p, by);
+    for (const w of ws) at(w).things.set(p, by);
   }
   for (const [w, kind] of Object.entries(kinds)) {
-    if (LATIN.test(w)) at(w).of = new Map([...things].filter(([where]) => where.endsWith(`|${kind}`)));
+    if (LATIN.test(w)) at(w).of = new Map([...things].filter(([p]) => p.kind === kind));
   }
   const use = (ws: Set<string>, by: number) => {
     for (const w of ws) {
@@ -189,23 +184,30 @@ export function nameWords(catalog: Catalog, usage: Usage, kinds: Record<string, 
 
 /** The word what's typed (`typed`, the start of one) most likely goes on to, when that's clear:
  * the one more things have in their names, in the courses and of the kind the query says (if it
- * says any), and that you've used more; a word for a kind of thing there is there, more. null: not sure, or it's a word already. */
-export function likelyWord(typed: string, words: Map<string, NameWord>, courses: number[] = [], kind: KindId | null = null): string | null {
+ * says any), and that you've used more; a word for a kind of thing there is there, more. Of the
+ * things whose names have the query's other words too (`others`: "midterm r" ⇥ review), when
+ * there are enough of them (then a letter is enough). null: not sure, or it's a word already. */
+export function likelyWord(typed: string, words: Map<string, NameWord>, courses: number[] = [], kind: KindId | null = null,
+  others: string[] = []): string | null {
   typed = typed.toLowerCase();
-  if (!/^\p{Script=Latin}{2,}$/u.test(typed)) return null;
-  const here = (counts: Map<string, number>) => {
+  if (!/^\p{Script=Latin}+$/u.test(typed)) return null;
+  const self = words.get(singular(typed));
+  const candidates = [...words.values()].filter((nw) => nw !== self && nw.word.length > typed.length && nw.word.startsWith(typed));
+  const isHere = (p: Prepared) => (!courses.length || (p.course !== null && courses.includes(p.course))) && (!kind || p.kind === kind);
+  const along = others.flatMap((w) => words.get(singular(w)) ?? []).filter((nw) => nw !== self).map((nw) => nw.things);
+  const count = (things: Map<Prepared, number>, together: boolean) => {
     let n = 0;
-    for (const [where, c] of counts) {
-      const [course, k] = where.split("|");
-      if ((!courses.length || courses.includes(Number(course))) && (!kind || k === kind)) n += c;
-    }
+    for (const [p, by] of things) if (isHere(p) && (!together || along.every((t) => t.has(p)))) n += by;
     return n;
   };
-  // (A word for a kind, more: it narrows search down; only if there's something of the kind here.)
-  const score = (nw: NameWord) => here(nw.n) + (nw.of && here(nw.of) > 0 ? W.kindWord : 0) + W.usedWord * nw.used;
-  const self = words.get(singular(typed));
+  const together = along.length > 0 && candidates.reduce((n, nw) => n + count(nw.things, true), 0) >= W.togetherLeast;
+  if (typed.length < (together ? 1 : 2)) return null;
+  // (A word for a kind, more: it narrows search down; only if there's something of the kind here.
+  // With the other words, they say enough.)
+  const score = (nw: NameWord) => together ? count(nw.things, true)
+    : count(nw.things, false) + (nw.of && count(nw.of, false) > 0 ? W.kindWord : 0) + W.usedWord * nw.used;
   const scores: [string, number][] = self ? [["", score(self)]] : []; // (as it is: a word already)
-  for (const nw of words.values()) if (nw !== self && nw.word.length > typed.length && nw.word.startsWith(typed)) scores.push([nw.word, score(nw)]);
+  for (const nw of candidates) scores.push([nw.word, score(nw)]);
   const best = scores.filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
   return best.length && best[0][0] && sure(best.map(([, s]) => s), typed) ? best[0][0] : null;
 }
@@ -213,7 +215,7 @@ export function likelyWord(typed: string, words: Map<string, NameWord>, courses:
 /** Whether the best of these scores (best first) is clear enough to complete to. */
 function sure(scores: number[], typed: string): boolean {
   const [top, next = 0] = scores;
-  const all = scores.reduce((a, b) => a + b, 0);
+  const all = scores.filter((s) => s > W.sureNoise).reduce((a, b) => a + b, 0);
   return top >= W.sureShare * all && top >= W.sureLead * next && (typed.length >= 3 || top >= W.sureLeast);
 }
 
@@ -257,8 +259,10 @@ const W = {
   kindWord: 10, // for one of the app's words for a kind (which narrows search down to the kind)
   usedWord: 0.5, // for each time you typed it and opened something
   openedWord: 0.5, // (of that) for each time you opened what has it in its name
+  togetherLeast: 3, // only the things with the query's other words in their names, if they have this many of them
   // and it's completed to when it's clearly the best (to be tuned):
-  sureShare: 0.6, // this much of all the words' scores
+  sureShare: 0.5, // this much of all the words' scores (but those of no more than this:)
+  sureNoise: 1, // (a word only one thing has says little)
   sureLead: 2, // this many times the next one's
   sureLeast: 2, // and, with only two letters typed, at least this
 };

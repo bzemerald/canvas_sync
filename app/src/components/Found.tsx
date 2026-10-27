@@ -212,7 +212,8 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
  * first). What's typed goes on as typed ("neu 1" ⇥ "neu 100a "), over the last few words; when
  * it's something else ("multivar"), its last word becomes the name ("m53 "). Either narrows search
  * to that course. Else, the word being typed finished as the word of names it most likely is
- * (`words`: "ann" ⇥ "announcements ", "cs70 dis" ⇥ "cs70 discussion "), if that's clear. */
+ * (`words`: "ann" ⇥ "announcements ", "cs70 dis" ⇥ "cs70 discussion ", "midterm r" ⇥ "midterm
+ * review "), if that's clear. */
 export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = [], words?: Map<string, NameWord>): string | null {
   const { query, parts } = reading;
   const last = parts.at(-1);
@@ -252,7 +253,9 @@ export function completion(reading: Reading, f: Found | undefined, found: Iterab
     const courses = parts.flatMap((p) => (p.role === "course" ? p.courses : []));
     const kind = parts.find((p): p is PartOf<"kind"> => p.role === "kind")?.kind ?? null;
     const typed = query.slice(last.spans[0][0], end);
-    const w = likelyWord(typed, words, courses, kind);
+    const others = parts.slice(0, -1).flatMap((p) =>
+      p.role === "word" && !p.quoted ? [p.text.toLowerCase()] : p.role === "series" ? p.name.split(" ") : []);
+    const w = likelyWord(typed, words, courses, kind, others);
     return w ? tail(query.slice(0, end) + w.slice(typed.length)) : null;
   }
   const on = goingOn(c);

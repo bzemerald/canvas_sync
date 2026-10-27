@@ -338,6 +338,17 @@ describe("going on from a word being typed", () => {
     expect(likelyWord("w", words)).toBeNull();
   });
 
+  it("by the names that have the query's other words too, when there are enough of them", () => {
+    const more = wordsOf([...base, ...files(16, "EE 16A", ["Midterm Review 1.pdf", "Midterm Review 2.pdf", "Midterm Review 3.pdf",
+      "Grades Released 1.pdf", "Grades Released 2.pdf", "Grades Released 3.pdf", "Homework Schedule.pdf"])]);
+    expect(likelyWord("r", more, [], null, ["midterm"])).toBe("review");
+    expect(likelyWord("re", more)).toBeNull();
+    expect(likelyWord("r", more)).toBeNull();
+    // (one name with both: not enough to go by)
+    expect(likelyWord("s", more, [], null, ["homework"])).toBeNull();
+    expect(likelyWord("wor", more, [], null, ["homework"])).toBe("worksheet");
+  });
+
   it("not as a file's extension, a little word, or a course's own word", () => {
     expect(likelyWord("pd", words)).toBeNull();
     expect(likelyWord("mp", words)).toBeNull();
