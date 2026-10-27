@@ -15,6 +15,8 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 mod dragout;
 #[cfg(target_os = "macos")]
+mod panel;
+#[cfg(target_os = "macos")]
 mod quicklook;
 
 const LAUNCHER: &str = "launcher";
@@ -163,9 +165,7 @@ fn show_main(app: AppHandle) {
 #[tauri::command]
 fn show_launcher(app: AppHandle) {
     if let Some(w) = app.get_webview_window(LAUNCHER) {
-        let _ = w.center();
-        let _ = w.show();
-        let _ = w.set_focus();
+        present(&w);
     }
 }
 
@@ -174,7 +174,21 @@ fn toggle_launcher(app: &AppHandle) {
     if w.is_visible().unwrap_or(false) {
         let _ = w.hide();
     } else {
-        let _ = w.center();
+        present(&w);
+    }
+}
+
+/// Shows the search window, centered, taking the keys. (On macOS without bringing the app
+/// forward: over what you're in, an app full screen too, as Spotlight.)
+fn present(w: &tauri::WebviewWindow) {
+    let _ = w.center();
+    #[cfg(target_os = "macos")]
+    {
+        let w = w.clone();
+        let _ = w.clone().run_on_main_thread(move || panel::show(&w));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -278,6 +292,10 @@ pub fn run() {
                     let ns_window = unsafe { &*(ns_window as *const objc2_app_kit::NSWindow) };
                     ns_window.setLevel(objc2_app_kit::NSPopUpMenuWindowLevel);
                 }
+            }
+            #[cfg(target_os = "macos")]
+            if let Some(w) = app.get_webview_window(LAUNCHER) {
+                panel::make_panel(&w);
             }
             // The usual keys until the main window has read the chosen ones (set_launcher_keys).
             if let Err(e) = set_launcher_keys(app.handle().clone(), Some(String::new())) {
