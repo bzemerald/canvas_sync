@@ -30,6 +30,14 @@ export function Launcher() {
   const { catalog, vocab, usage, names } = useCatalog([shown], courses);
   const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
   const { reading, results, lately, due, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions);
+  // Searching, said only when it takes a while (it mostly answers at once: a dot would only flash).
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!loading) return;
+    const timer = setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(timer);
+  }, [loading]);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
   const completed = completion(reading, listed.get(value)); // what ⇥ would make of the query
@@ -142,7 +150,7 @@ export function Launcher() {
               <CompletionGhost query={query} completion={completed} className="text-lg" />
             </div>
             {completed && <TabKey className="text-xs" />}
-            {loading && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
+            {loading && slow && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
           </div>
           <ReadingBar reading={reading} names={names} courses={courses} onQuery={setQuery} className="-mt-1 px-4 pb-2.5 pl-12" />
         </div>
