@@ -13,7 +13,7 @@
 // Nothing here draws or says anything (no i18n): what things are called comes from `describe`.
 import { matchSorterWithRankInfo, rankings } from "match-sorter";
 import type { CatalogEntry, Hit, Usage } from "./api";
-import { CJK, type KindId, type Part, type PartOf, type Reading, type Source, type Status, type Vocabulary, little, seriesIn, seriesNear, singular, spaced } from "./query";
+import { CJK, type KindId, type Part, type PartOf, type Reading, type Source, type Status, type Vocabulary, STOPWORDS, little, seriesIn, seriesNear, singular, spaced } from "./query";
 import { termRank } from "./terms";
 import { type ViewName, isView, thingKey, thingOfHit } from "./things";
 
@@ -131,6 +131,92 @@ export function vocabulary(catalog: Catalog, kinds: Record<string, KindId>): Voc
   return { courses, kinds, series: catalog.series, abbreviations: catalog.abbreviations };
 }
 
+/** A word of things' names, for going on from what's typed (`likelyWord`): how many things have
+ * it in their names, by course and kind (`${course}|${kind}`; an older term's, a fifth each); how
+ * it's mostly written; if it's one of the app's words for a kind, how many things there are of
+ * the kind (so); how much you've used it. */
+export interface NameWord { word: string; n: Map<string, number>; of: Map<string, number> | null; used: number }
+
+const LATIN = /^\p{Script=Latin}{4,}$/u;
+
+/** The words of names (Latin letters, 4 or more; not little words, a course's own words or a
+ * file's extension), by the word without its plural ending; with the app's words for kinds
+ * (`kinds`), and what you typed before opening something and what you open. */
+export function nameWords(catalog: Catalog, usage: Usage, kinds: Record<string, KindId>): Map<string, NameWord> {
+  const out = new Map<string, NameWord>();
+  const forms = new Map<string, Map<string, number>>();
+  const own = new Set([...catalog.courses.values()].flatMap((p) => p.entry.keys ?? []));
+  const wordsOf = (names: string[]) =>
+    new Set(names.flatMap((s) => spaced(s).toLowerCase().split(" ")).filter((w) => LATIN.test(w) && !STOPWORDS.has(w) && !own.has(w)));
+  const at = (w: string) => {
+    const k = singular(w);
+    let nw = out.get(k);
+    if (!nw) out.set(k, (nw = { word: w, n: new Map(), of: null, used: 0 }));
+    const f = forms.get(k) ?? new Map<string, number>();
+    forms.set(k, f.set(w, (f.get(w) ?? 0) + 1));
+    return nw;
+  };
+  const things = new Map<string, number>(); // (by course and kind)
+  for (const p of catalog.entries) {
+    if (p.entry.type === "course") continue;
+    const ws = wordsOf(p.starts);
+    if (p.entry.type === "file") ws.delete(p.entry.path.match(/\.(\w+)$/)?.[1].toLowerCase() ?? "");
+    const by = p.course === null || p.term === catalog.latestTerm ? 1 : 0.2;
+    const where = `${p.course ?? ""}|${p.kind}`;
+    things.set(where, (things.get(where) ?? 0) + by);
+    for (const w of ws) {
+      const nw = at(w);
+      nw.n.set(where, (nw.n.get(where) ?? 0) + by);
+    }
+  }
+  for (const [w, kind] of Object.entries(kinds)) {
+    if (LATIN.test(w)) at(w).of = new Map([...things].filter(([where]) => where.endsWith(`|${kind}`)));
+  }
+  const use = (ws: Set<string>, by: number) => {
+    for (const w of ws) {
+      const nw = out.get(singular(w));
+      if (nw) nw.used += by;
+    }
+  };
+  for (const pick of usage.picks) use(wordsOf([pick.query]), pick.count);
+  for (const [k, o] of Object.entries(usage.opened)) {
+    const p = catalog.byKey.get(k);
+    if (p) use(wordsOf(p.starts), W.openedWord * o.count);
+  }
+  for (const [k, nw] of out) nw.word = [...forms.get(k)!].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
+  return out;
+}
+
+/** The word what's typed (`typed`, the start of one) most likely goes on to, when that's clear:
+ * the one more things have in their names, in the courses and of the kind the query says (if it
+ * says any), and that you've used more; a word for a kind of thing there is there, more. null: not sure, or it's a word already. */
+export function likelyWord(typed: string, words: Map<string, NameWord>, courses: number[] = [], kind: KindId | null = null): string | null {
+  typed = typed.toLowerCase();
+  if (!/^\p{Script=Latin}{2,}$/u.test(typed)) return null;
+  const here = (counts: Map<string, number>) => {
+    let n = 0;
+    for (const [where, c] of counts) {
+      const [course, k] = where.split("|");
+      if ((!courses.length || courses.includes(Number(course))) && (!kind || k === kind)) n += c;
+    }
+    return n;
+  };
+  // (A word for a kind, more: it narrows search down; only if there's something of the kind here.)
+  const score = (nw: NameWord) => here(nw.n) + (nw.of && here(nw.of) > 0 ? W.kindWord : 0) + W.usedWord * nw.used;
+  const self = words.get(singular(typed));
+  const scores: [string, number][] = self ? [["", score(self)]] : []; // (as it is: a word already)
+  for (const nw of words.values()) if (nw !== self && nw.word.length > typed.length && nw.word.startsWith(typed)) scores.push([nw.word, score(nw)]);
+  const best = scores.filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
+  return best.length && best[0][0] && sure(best.map(([, s]) => s), typed) ? best[0][0] : null;
+}
+
+/** Whether the best of these scores (best first) is clear enough to complete to. */
+function sure(scores: number[], typed: string): boolean {
+  const [top, next = 0] = scores;
+  const all = scores.reduce((a, b) => a + b, 0);
+  return top >= W.sureShare * all && top >= W.sureLead * next && (typed.length >= 3 || top >= W.sureLeast);
+}
+
 /** The words of a query (lower-cased, as typed: "cs70 hw3"). */
 export const words = (query: string) => query.toLowerCase().split(/\s+/).filter((w) => spaced(w));
 const normal = (query: string) => words(query).join(" ");
@@ -166,6 +252,15 @@ const W = {
   dueSoon: 0.3, // due within the week, and not handed in
   fresh: 0.2, // new in the last two weeks (less as it ages)
   post: 1, // a post on Ed: what's said about a thing, after the thing itself
+  // Going on from a word being typed (likelyWord): a word's score is how many things have it in
+  // their names, and
+  kindWord: 10, // for one of the app's words for a kind (which narrows search down to the kind)
+  usedWord: 0.5, // for each time you typed it and opened something
+  openedWord: 0.5, // (of that) for each time you opened what has it in its name
+  // and it's completed to when it's clearly the best (to be tuned):
+  sureShare: 0.6, // this much of all the words' scores
+  sureLead: 2, // this many times the next one's
+  sureLeast: 2, // and, with only two letters typed, at least this
 };
 
 /** How well `word` matches each item's values (`values`, then `others`: a little less), by item;

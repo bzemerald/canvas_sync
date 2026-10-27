@@ -31,7 +31,7 @@ export function Launcher() {
   const courses = useLoaded("courses", api.courses, [shown]).value ?? NO_COURSES; // (their icons)
   const { catalog, vocab, usage, names } = useCatalog([shown], courses);
   const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
-  const { reading, results, lately, due, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions);
+  const { reading, results, lately, due, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions);
   // Searching, said only when it takes a while (it mostly answers at once: a dot would only flash).
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -42,7 +42,7 @@ export function Launcher() {
   }, [loading]);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
-  const completed = completion(reading, listed.get(value), listed.values()); // what ⇥ would make of the query
+  const completed = completion(reading, listed.get(value), listed.values(), words); // what ⇥ would make of the query
   // Ways to search, from your current courses: new ones for each time the window comes up, made
   // as it goes away (and once, when what they're made from is first in), so nothing changes while
   // it's up, nor as it comes up and what it knows reloads.

@@ -12,7 +12,7 @@ import * as api from "../lib/api";
 import type { CatalogEntry, Course, Usage } from "../lib/api";
 import { shortDate, untilDue } from "../lib/dates";
 import { en } from "../lib/en";
-import { type Action, type Catalog, type Describe, type Found, type GroupId, type Results, type Scope, dueSoon, find, narrow, prepare, recent, vocabulary } from "../lib/find";
+import { type Action, type Catalog, type Describe, type Found, type GroupId, type NameWord, type Results, type Scope, dueSoon, find, likelyWord, nameWords, narrow, prepare, recent, vocabulary } from "../lib/find";
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular, without } from "../lib/query";
@@ -172,7 +172,8 @@ export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabu
   }, [results, lately, due]);
   const first = results ? results.top?.key ?? results.groups[0]?.items[0]?.key ?? "" : lately[0]?.key ?? due[0]?.key ?? "";
   const nothing = !!results && !results.top && !results.groups.length;
-  return { reading, results, lately, due, listed, first, nothing, error, loading };
+  const words = useMemo(() => (catalog ? nameWords(catalog, usage, vocab.kinds) : undefined), [catalog, usage, vocab]); // (for completing)
+  return { reading, results, lately, due, listed, first, nothing, error, loading, words };
 }
 
 export type How = "open" | "reveal" | "canvas"; // ↵, ⌘↵ (in its folder), ⌘⇧↵ (on Canvas)
@@ -210,8 +211,9 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
  * course found whose name what's typed starts (a file named with the course's code may come
  * first). What's typed goes on as typed ("neu 1" ⇥ "neu 100a "), over the last few words; when
  * it's something else ("multivar"), its last word becomes the name ("m53 "). Either narrows search
- * to that course. */
-export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = []): string | null {
+ * to that course. Else, the word being typed finished as the word of names it most likely is
+ * (`words`: "ann" ⇥ "announcements ", "cs70 dis" ⇥ "cs70 discussion "), if that's clear. */
+export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = [], words?: Map<string, NameWord>): string | null {
   const { query, parts } = reading;
   const last = parts.at(-1);
   if (!last || /\s$/.test(query) || (last.role !== "word" && last.role !== "series")) return null;
@@ -245,7 +247,14 @@ export function completion(reading: Reading, f: Found | undefined, found: Iterab
   const tail = (s: string) => `${s} ${query.slice(end)}`.replace(/\s+$/, " ");
   const chosen = courseOf(f);
   const c = chosen ?? [...found].map(courseOf).find((e) => e && goingOn(e));
-  if (!c) return null;
+  if (!c) {
+    if (!words || last.role !== "word" || last.quoted) return null;
+    const courses = parts.flatMap((p) => (p.role === "course" ? p.courses : []));
+    const kind = parts.find((p): p is PartOf<"kind"> => p.role === "kind")?.kind ?? null;
+    const typed = query.slice(last.spans[0][0], end);
+    const w = likelyWord(typed, words, courses, kind);
+    return w ? tail(query.slice(0, end) + w.slice(typed.length)) : null;
+  }
   const on = goingOn(c);
   if (on) return tail(query.slice(0, end) + on.k.slice(on.typed.length));
   // Something else typed: its last word becomes what the app calls the course, else its shortest code.
@@ -297,10 +306,10 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   onCompletion?: (completion: string | null) => void; // what ⇥ would make of the query (for the box to show)
 }) {
   const { catalog, vocab, usage, names, courses } = finder;
-  const { reading, results, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions, scope);
+  const { reading, results, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions, scope);
   const { value, choose, list } = useChosen(query, listed, first);
   const root = useRef<HTMLDivElement>(null);
-  const done = completion(reading, listed.get(value), listed.values());
+  const done = completion(reading, listed.get(value), listed.values(), words);
   useEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // In a course, its things needn't each say so.

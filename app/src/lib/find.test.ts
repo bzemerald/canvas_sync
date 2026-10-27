@@ -1,7 +1,7 @@
 // What search finds for what you type (find.ts), on a small catalog of a few courses.
 import { describe, expect, it } from "vitest";
 import type { CatalogEntry, Hit, Usage } from "./api";
-import { type Action, type Describe, type Found, type Scope, dueSoon, find, narrow, prepare, recent, spaced, vocabulary } from "./find";
+import { type Action, type Describe, type Found, type Scope, dueSoon, find, likelyWord, nameWords, narrow, prepare, recent, spaced, vocabulary } from "./find";
 import { type KindId, key, read } from "./query";
 import { type Thing, thingKey } from "./things";
 
@@ -288,5 +288,59 @@ describe("before anything is typed", () => {
       picks: [],
     };
     expect(recent(catalog, usage).map((f) => f.key)).toEqual(["view:70:grades", "course:221"]);
+  });
+});
+
+describe("going on from a word being typed", () => {
+  const files = (course: number, dir: string, names: string[]) => names.map((n) => file(`Fall 2026/${dir}/${n}`, course));
+  const base = [
+    course(16, "EE 16A", "Fall 2026", ["ee16a", "16a"]),
+    course(61, "CS 61A", "Fall 2026", ["cs61a", "61a"]),
+    course(9, "OLD 9", "Spring 2025", ["old9"]),
+    ...files(16, "EE 16A", ["Worksheet 1.pdf", "Worksheet 2.pdf", "Worksheet 3.pdf", "Worksheet 4.pdf", "Recording 1.mp4", "Recording 2.mp4"]),
+    ...files(61, "CS 61A", ["Discussion 1.pdf", "Discussion 2.pdf"]),
+    doc(61, "page", "w", "Workshop signup"),
+    doc(16, "announcement", "a", "Room change"),
+    ...[1, 2, 3, 4, 5].map((n) => file(`Spring 2025/OLD 9/Recitation ${n}.pdf`, 9)),
+  ];
+  const NONE: Usage = { opened: {}, picks: [] };
+  const wordsOf = (things: CatalogEntry[], usage = NONE) => nameWords(prepare(things, describeEntry, ABBR), usage, KINDS);
+  const words = wordsOf(base);
+
+  it("finishes it as the word most names have", () => {
+    expect(likelyWord("wor", words)).toBe("worksheet");
+    expect(likelyWord("Dis", words)).toBe("discussion");
+  });
+
+  it("by the names in the course said, and of the kind said", () => {
+    expect(likelyWord("wor", words, [61])).toBe("workshop");
+    expect(likelyWord("wor", words, [], "page")).toBe("workshop");
+  });
+
+  it("finishes the app's words for kinds, with no names having them, where there's something of the kind", () => {
+    expect(likelyWord("ann", words)).toBe("announcement");
+    expect(likelyWord("ann", words, [61])).toBeNull();
+  });
+
+  it("counts an older term's names for less", () => {
+    expect(likelyWord("rec", words)).toBe("recording");
+  });
+
+  it("counts what you've typed and opened", () => {
+    const usage: Usage = { opened: {}, picks: [{ query: "cs61a workshop", key: "doc:61:page:w", count: 20, last: day(-1) }] };
+    expect(likelyWord("wor", wordsOf(base, usage))).toBe("workshop");
+  });
+
+  it("not when it isn't clear, or it's a word already", () => {
+    const even = wordsOf([...base, ...files(61, "CS 61A", ["Workshop 1.pdf", "Workshop 2.pdf", "Workshop 3.pdf"])]);
+    expect(likelyWord("wor", even)).toBeNull();
+    expect(likelyWord("worksheet", words)).toBeNull();
+    expect(likelyWord("w", words)).toBeNull();
+  });
+
+  it("not as a file's extension, a little word, or a course's own word", () => {
+    expect(likelyWord("pd", words)).toBeNull();
+    expect(likelyWord("mp", words)).toBeNull();
+    expect(likelyWord("ee1", words)).toBeNull();
   });
 });
