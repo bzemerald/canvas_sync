@@ -679,6 +679,7 @@ export const en: Record<string, string | [string, string]> = {
   "搜索框": "Search box",
   "选择结果": "Choose a result",
   "补全课程名": "Complete a course's name",
+  "按 Tab 补全": "Press Tab to complete",
   "清空并离开搜索框": "Clear and leave the search box",
   "好": "OK",
 };

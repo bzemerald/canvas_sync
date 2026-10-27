@@ -7,7 +7,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding } from "./components/Found";
+import {
+  CompletionGhost, FoundList, type How, ReadingBar, TabKey, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding,
+} from "./components/Found";
 import { isMac } from "./components/Result";
 import * as api from "./lib/api";
 import type { Hit } from "./lib/api";
@@ -30,6 +32,7 @@ export function Launcher() {
   const { reading, results, lately, due, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
+  const completed = completion(reading, listed.get(value)); // what ⇥ would make of the query
 
   // The main window searching something here (its "search all courses").
   useEffect(() => {
@@ -100,7 +103,7 @@ export function Launcher() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const primary = isMac ? e.metaKey : e.ctrlKey;
-    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how), () => completion(reading, listed.get(value)), setQuery)) return;
+    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how), () => completed, setQuery)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       if (query) setQuery("");
@@ -124,17 +127,21 @@ export function Launcher() {
         <div className="border-b border-line" data-tauri-drag-region>
           <div className="flex items-center gap-3 px-4" data-tauri-drag-region>
             <Search className="size-5 shrink-0 text-muted" aria-hidden />
-            <Command.Input
-              ref={input}
-              autoFocus
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={query}
-              onValueChange={setQuery}
-              placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
-              className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
-            />
+            <div className="relative min-w-0 flex-1">
+              <Command.Input
+                ref={input}
+                autoFocus
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={query}
+                onValueChange={setQuery}
+                placeholder={t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
+                className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
+              />
+              <CompletionGhost query={query} completion={completed} className="text-lg" />
+            </div>
+            {completed && <TabKey className="text-xs" />}
             {loading && <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />}
           </div>
           <ReadingBar reading={reading} names={names} courses={courses} onQuery={setQuery} className="-mt-1 px-4 pb-2.5 pl-12" />

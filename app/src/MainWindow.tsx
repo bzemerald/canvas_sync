@@ -7,7 +7,9 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import { type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog } from "./components/Found";
+import {
+  CompletionGhost, type Finder, FinderContext, FoundHere, type How, TabKey, actionsFor, canvasUrl, rememberCourse, useCatalog,
+} from "./components/Found";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
 } from "./components/CourseView";
@@ -149,6 +151,7 @@ export function MainWindow() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
   const [showingKeys, setShowingKeys] = useState(false); // the keyboard shortcuts
+  const [completing, setCompleting] = useState<string | null>(null); // what ⇥ would make of the search box's query
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null; preset?: Partial<SmartFolder> } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
@@ -1144,7 +1147,7 @@ export function MainWindow() {
           {view.kind !== "settings" && (
             <>
               {filesView && (
-                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} compact />
+                <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} completion={query ? completing : null} compact />
               )}
               {((filesTab && !searching) || !!smart) && (
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
@@ -1206,7 +1209,7 @@ export function MainWindow() {
             onRenameCancel={() => setRenaming(null)}
           />
         ) : searching ? (
-          <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu}
+          <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu} onCompletion={setCompleting}
             note={scopeNote && (
               <span className="flex items-center gap-2">
                 {scopeNote.text}
@@ -1506,9 +1509,10 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
   return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} />;
 }
 
-function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus }: {
+function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus, completion }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   value: string;
+  completion?: string | null; // what ⇥ would make of it: shown faint, with the key
   onChange: (v: string) => void;
   placeholder: string;
   compact?: boolean;
@@ -1517,25 +1521,29 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
   return (
     <div className={`flex items-center gap-2 rounded-lg border border-line bg-panel px-2.5 focus-within:border-accent ${compact ? "w-56 shrink-0" : ""}`}>
       <Search className="size-4 shrink-0 text-muted" aria-hidden />
-      <input
-        ref={inputRef}
-        value={value}
-        autoFocus={autoFocus}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
-          // Cleared and left: the keys go to the page (its list), as before searching.
-          onChange("");
-          e.currentTarget.blur();
-          requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-keys]")?.focus());
-        }}
-        // A query ("mt", "hw3 sol"), not prose: no autocorrect or capitals.
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        placeholder={placeholder}
-        className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-10"}`}
-      />
+      <div className="relative min-w-0 flex-1">
+        <input
+          ref={inputRef}
+          value={value}
+          autoFocus={autoFocus}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+            // Cleared and left: the keys go to the page (its list), as before searching.
+            onChange("");
+            e.currentTarget.blur();
+            requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-keys]")?.focus());
+          }}
+          // A query ("mt", "hw3 sol"), not prose: no autocorrect or capitals.
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder={placeholder}
+          className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-10"}`}
+        />
+        <CompletionGhost query={value} completion={completion ?? null} className={compact ? "text-sm" : ""} />
+      </div>
+      {completion && <TabKey />}
     </div>
   );
 }

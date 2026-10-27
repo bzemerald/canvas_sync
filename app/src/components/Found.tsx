@@ -225,9 +225,33 @@ export function completion(reading: Reading, f: Found | undefined): string | nul
   return `${reading.query.slice(0, start)}${word} ${reading.query.slice(end)}`.replace(/\s+$/, " ");
 }
 
+/** What ⇥ would make of the query, faint in the box: the rest of the word after what's typed, or
+ * "→ neu100a" when it changes what's typed. Over the input (in a `relative` box), in its type. */
+export function CompletionGhost({ query, completion, className }: { query: string; completion: string | null; className: string }) {
+  if (!completion) return null;
+  const done = completion.trimEnd();
+  const rest = done.toLowerCase().startsWith(query.toLowerCase()) ? done.slice(query.length) : `  → ${done}`;
+  if (!rest) return null;
+  return (
+    <span aria-hidden className={`pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre ${className}`}>
+      <span className="invisible">{query}</span>
+      <span className="text-muted/70">{rest}</span>
+    </span>
+  );
+}
+
+/** The key that completes it, beside the box. */
+export function TabKey({ className = "" }: { className?: string }) {
+  return (
+    <kbd title={t("按 Tab 补全")} className={`shrink-0 rounded border border-line px-1 font-sans text-[10px] leading-4 text-muted ${className}`}>
+      {isMac ? "⇥ tab" : "Tab"}
+    </kbd>
+  );
+}
+
 /** What the search box finds where it is (a course, a folder: `scope`): as in the search window, under the box,
  * which stays in the header (`box`: its keys move through the list and open what's chosen). */
-export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note }: {
+export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note, onCompletion }: {
   box: React.RefObject<HTMLInputElement | null>;
   query: string;
   onQuery: (q: string) => void;
@@ -237,11 +261,15 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   onOpen: (f: Found | undefined, how: How) => void;
   props?: (f: Found) => object;
   note?: React.ReactNode; // where it searched, and the way to search more (or less) widely
+  onCompletion?: (completion: string | null) => void; // what ⇥ would make of the query (for the box to show)
 }) {
   const { catalog, vocab, usage, names, courses } = finder;
   const { reading, results, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions, scope);
   const { value, choose, list } = useChosen(query, listed, first);
   const root = useRef<HTMLDivElement>(null);
+  const done = completion(reading, listed.get(value));
+  useEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // In a course, its things needn't each say so.
   const others = useMemo(() => {
     const here = scope.courses?.length === 1 ? scope.courses[0] : null;
@@ -262,7 +290,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   }, [box]);
   return (
     <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
-      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => completion(reading, listed.get(value)), onQuery)}>
+      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => done, onQuery)}>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {(note || reading.parts.length > 0) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 pt-1 pb-1 text-xs text-muted">
