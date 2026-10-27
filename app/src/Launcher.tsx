@@ -40,7 +40,7 @@ export function Launcher() {
   }, [loading]);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
-  const completed = completion(reading, listed.get(value)); // what ⇥ would make of the query
+  const completed = completion(reading, listed.get(value), listed.values()); // what ⇥ would make of the query
 
   // The main window searching something here (its "search all courses").
   useEffect(() => {

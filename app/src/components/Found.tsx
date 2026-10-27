@@ -206,18 +206,25 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
   return true;
 }
 
-/** The query with its last word finished as the name of the course `f` is (if it's one, and the
- * word is on its way to it): "neur" ⇥ "neu100a ", which then narrows search to that course. */
-export function completion(reading: Reading, f: Found | undefined): string | null {
+/** The query with its last word finished as a course's name: the chosen result's, if it's a course
+ * (and the word is on its way to it), else the first course found whose name the word starts
+ * (a file named with the course's code may come first): "neur" ⇥ "neu100a ", which then narrows
+ * search to that course. */
+export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = []): string | null {
   const last = reading.parts.at(-1);
-  if (!f || f.type !== "thing" || f.entry.type !== "course" || !last || /\s$/.test(reading.query)) return null;
-  if (last.role !== "word" && last.role !== "series") return null;
-  const course = f.entry.course;
-  if (reading.parts.some((p) => p.role === "course" && p.courses.includes(course))) return null; // (it says so already)
-  // What's typed finished, else what the app calls the course ("neu100a"), else its shortest code.
-  const keys = f.entry.keys ?? [];
+  if (!last || /\s$/.test(reading.query) || (last.role !== "word" && last.role !== "series")) return null;
   const typed = key(last.text);
-  const own = key(f.entry.name ?? "");
+  const courseOf = (x: Found | undefined) => {
+    if (!x || x.type !== "thing" || x.entry.type !== "course") return null;
+    const id = x.entry.course;
+    return reading.parts.some((p) => p.role === "course" && p.courses.includes(id)) ? null : x.entry; // (it says so already)
+  };
+  const starts = (keys: string[] = []) => keys.some((k) => k.startsWith(typed) && k !== typed);
+  const c = courseOf(f) ?? [...found].map(courseOf).find((e) => e && starts(e.keys));
+  if (!c) return null;
+  // What's typed finished, else what the app calls the course ("neu100a"), else its shortest code.
+  const keys = c.keys ?? [];
+  const own = key(c.name ?? "");
   const word = keys.find((k) => k.startsWith(typed) && k !== typed)
     ?? (keys.includes(own) && own.length <= 10 ? own : undefined)
     ?? keys.filter((k) => /^\p{L}/u.test(k) && /\d/.test(k)).sort((a, b) => a.length - b.length)[0]
@@ -269,7 +276,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   const { reading, results, listed, first, nothing, error, loading } = useFinding(query, catalog, vocab, usage, actions, scope);
   const { value, choose, list } = useChosen(query, listed, first);
   const root = useRef<HTMLDivElement>(null);
-  const done = completion(reading, listed.get(value));
+  const done = completion(reading, listed.get(value), listed.values());
   useEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // In a course, its things needn't each say so.
