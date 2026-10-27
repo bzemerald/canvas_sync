@@ -233,4 +233,10 @@ describe("what's done with a reading", () => {
     expect(asText(r.query, r.parts[0])).toBe('"cs70" 本周截止的作业'); // i18n-ignore
     expect(said(asText(r.query, r.parts[0]))).toEqual(['"cs70"', days(10, 12, 10, 19, true), "kind:assignment"]);
   });
+  it("takes a filter said twice as one, typed in both places", () => {
+    expect(said("this week cs70 this week compsci70 hw3")).toEqual([days(10, 12, 10, 19), "course:70", "series:hw 3"]);
+    const r = read("this week cs70 this week", vocab, NOW);
+    expect(without(r.query, r.parts[0])).toBe("cs70");
+    expect(said("this week today")).toEqual([days(10, 12, 10, 19), days(10, 16, 10, 17)]); // (different: both)
+  });
 });

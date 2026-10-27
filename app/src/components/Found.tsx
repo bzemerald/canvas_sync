@@ -212,6 +212,8 @@ export function completion(reading: Reading, f: Found | undefined): string | nul
   const last = reading.parts.at(-1);
   if (!f || f.type !== "thing" || f.entry.type !== "course" || !last || /\s$/.test(reading.query)) return null;
   if (last.role !== "word" && last.role !== "series") return null;
+  const course = f.entry.course;
+  if (reading.parts.some((p) => p.role === "course" && p.courses.includes(course))) return null; // (it says so already)
   // What's typed finished, else what the app calls the course ("neu100a"), else its shortest code.
   const keys = f.entry.keys ?? [];
   const typed = key(last.text);

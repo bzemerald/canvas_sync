@@ -617,7 +617,29 @@ export function read(query: string, v: Vocabulary = NO_VOCABULARY, now = Date.no
     }
   }
   parts.sort((a, b) => a.spans[0][0] - b.spans[0][0]);
-  return { query, parts };
+  return { query, parts: once(parts) };
+}
+
+/** The same course, kind, time, status or source said twice ("this week … this week") is one
+ * part, typed in each place (so taking it away takes every one). */
+function once(parts: Part[]): Part[] {
+  const out: Part[] = [];
+  const seen = new Map<string, Part>();
+  for (const p of parts) {
+    const k = p.role === "course" ? [...p.courses].sort().join(",")
+      : p.role === "kind" ? p.kind
+      : p.role === "when" ? `${p.when.from}-${p.when.to}-${p.when.due}`
+      : p.role === "status" ? p.status
+      : p.role === "source" ? p.source
+      : null;
+    const first = k === null ? undefined : seen.get(`${p.role}:${k}`);
+    if (first) first.spans = [...first.spans, ...p.spans];
+    else {
+      if (k !== null) seen.set(`${p.role}:${k}`, p);
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 /** Words that say little by themselves ("can I get an extension": extension), left out of what
