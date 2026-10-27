@@ -16,6 +16,7 @@ import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
 import { HitBrowser } from "./components/HitBrowser";
+import { KeysDialog } from "./components/KeysDialog";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { KIND } from "./components/Result";
 import { RenameDialog } from "./components/RenameDialog";
@@ -147,6 +148,7 @@ export function MainWindow() {
   const [seenTick, setSeenTick] = useState(0); // you opened something: what's new changed
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
+  const [showingKeys, setShowingKeys] = useState(false); // the keyboard shortcuts
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null; preset?: Partial<SmartFolder> } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
@@ -219,32 +221,23 @@ export function MainWindow() {
     return () => clearInterval(timer);
   }, [sync?.running]);
 
-  // Window-wide keys (back, forward, search, show changes), per platform; and the mouse's
-  // back / forward buttons.
+  // Window-wide keys (back, forward, search, show changes, sync, the next course...), per
+  // platform; and the mouse's back / forward buttons. (What they do: `onKey`, below, as of now.)
+  const onKey = useRef((_: KeyboardEvent) => {});
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const command = appCommand(e, typingIn(e.target));
-      if (command === "back") step(-1);
-      else if (command === "forward") step(1);
-      else if (command === "search" && searchBox.current) searchBox.current.focus();
-      else if (command === "search") void showLauncher(); // a page without a box: the search window
-      else if (command === "toggleChanges") setShowChanges(!showChanges);
-      else if (command === "settings") go({ kind: "settings" });
-      else return;
-      e.preventDefault();
-    };
+    const key = (e: KeyboardEvent) => onKey.current(e);
     const onMouse = (e: MouseEvent) => {
       if (e.button === 3) step(-1);
       else if (e.button === 4) step(1);
     };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", key);
     window.addEventListener("mouseup", onMouse);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", key);
       window.removeEventListener("mouseup", onMouse);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showChanges]);
+  }, []);
 
   // -- the open course's page: its tabs, overview and 工具与链接, arranged for it or as every course's --
   const courseById = (id: number) => courseList.find((c) => c.id === id) ?? null;
@@ -858,6 +851,25 @@ export function MainWindow() {
   // -- arranging the sidebar: drag pinned items, courses within a term, terms; fold sections -----
   const groups = useMemo(() => arrange(courseList.filter((c) => !c.hidden), order), [courseList, order]);
   const hiddenCourses = courseList.filter((c) => c.hidden);
+  onKey.current = (e: KeyboardEvent) => {
+    const command = appCommand(e, typingIn(e.target));
+    if (command === "back") step(-1);
+    else if (command === "forward") step(1);
+    else if (command === "search" && searchBox.current) searchBox.current.focus();
+    else if (command === "search") void showLauncher(); // a page without a box: the search window
+    else if (command === "toggleChanges") setShowChanges(!showChanges);
+    else if (command === "settings") go({ kind: "settings" });
+    else if (command === "sync") void (syncBusy || startSync({}, t("全部课程")));
+    else if (command === "prevCourse" || command === "nextCourse") {
+      // The sidebar's courses, in its order; from elsewhere, the first or the last.
+      const list = groups.flatMap((g) => g.courses);
+      const i = list.findIndex((c) => c.id === cv?.id);
+      const next = command === "nextCourse" ? (i < 0 ? list[0] : list[i + 1]) : (i < 0 ? list.at(-1) : list[i - 1]);
+      if (next) openCourse(next);
+    } else if (command === "shortcuts") setShowingKeys(true);
+    else return;
+    e.preventDefault();
+  };
   const saveOrder = (next: Partial<SidebarOrder>) => {
     setOrder((o) => ({ ...o, ...next }));
     api.arrangeSidebar(next).then(setOrder, fail(t("移动失败")));
@@ -1004,7 +1016,7 @@ export function MainWindow() {
             onClick={() => startSync({}, t("全部课程"))}
             disabled={syncBusy}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-fg-soft hover:bg-chip disabled:opacity-60"
-            title={t("从 Canvas 拉取所有课程的新文件")}
+            title={`${t("从 Canvas 拉取所有课程的新文件")} (${shortcut.sync})`}
           >
             <RefreshCw className={`size-3.5 ${syncBusy ? "animate-spin" : ""}`} aria-hidden />
             {t("同步")}
@@ -1276,6 +1288,7 @@ export function MainWindow() {
           }}
         />
       )}
+      {showingKeys && <KeysDialog onClose={() => setShowingKeys(false)} />}
       {restoring && (
         <RestoreDialog
           scope={restoring.scope}
