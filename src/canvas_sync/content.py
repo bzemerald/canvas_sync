@@ -188,8 +188,8 @@ def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]
     for (_, kind, i), updated in unseen.items():
         if kind == "file":
             rec = state.get(int(i))
-            if rec and rec.path and not rec.ignored and (root / rec.path).exists():
-                out["file"][i] = updated
+            if rec and rec.path and not rec.ignored and not rec.remote_deleted and (root / rec.path).exists():
+                out["file"][i] = updated  # (not one taken off Canvas since)
         elif (kind, i) in docs and _still_new(kind, docs[(kind, i)]):
             out[kind][i] = False
     return out
