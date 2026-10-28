@@ -520,6 +520,11 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         open_path(target)
         return {"opened": str(target)}
 
+    @api.get("/mcp")
+    def mcp_command() -> dict[str, Any]:
+        """How an AI assistant starts `canvas mcp` (agent.py): this program, packed in the app or not."""
+        return {"command": canvas_command(), "args": ["mcp"]}
+
     @api.get("/courses")
     def courses() -> list[dict[str, Any]]:
         with engine() as e:
@@ -1140,6 +1145,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     app.mount("/api", api)
     return app
+
+
+def canvas_command() -> str:
+    """The `canvas` program this is: the app's packed backend, or the one beside this Python (.venv)."""
+    if getattr(sys, "frozen", False):  # (PyInstaller)
+        return sys.executable
+    here = Path(sys.executable).parent
+    return str(next((p for p in (here / "canvas", here / "canvas.exe") if p.exists()), here / "canvas"))
 
 
 def _due(last: datetime | None, every: timedelta, now: datetime) -> bool:

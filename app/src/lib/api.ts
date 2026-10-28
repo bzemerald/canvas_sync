@@ -524,6 +524,8 @@ export interface MeaningState {
   items?: number;
   covered?: number;
 }
+/** How an AI assistant starts `canvas mcp` (src/canvas_sync/agent.py): this app's backend. */
+export const mcpCommand = () => api<{ command: string; args: string[] }>("/mcp");
 export const meaning = () => api<MeaningState>("/meaning");
 export const setMeaning = (on: boolean) => post<MeaningState>("/meaning", { on });
 export const prefs = () => api<Prefs>("/prefs");

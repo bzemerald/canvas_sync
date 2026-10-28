@@ -325,6 +325,22 @@ export const en: Record<string, string | [string, string]> = {
   "按文字搜索“{text}”": "Search for “{text}” as text",
   "意思相近": "Similar in meaning",
   "按意思搜索": "Search text by meaning",
+  "AI 助手": "AI assistants",
+  "让 AI 助手读你的课程": "Let an AI assistant read your courses",
+  "Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。":
+    "Claude and other assistants that support MCP can search and read your courses: files, announcements, assignments, deadlines, what's new. Read-only, from what's synced to this computer.",
+  "接入方法…": "Set Up…",
+  "接入 AI 助手": "Connect an AI Assistant",
+  "把下面的设置加进你的 AI 助手。它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。":
+    "Add this to your AI assistant. It only reads what's synced to this computer: it doesn't reach Canvas or Ed, can't hand anything in or mark anything read, and never sees your tokens.",
+  "在终端里运行：": "Run this in a terminal:",
+  "加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：":
+    "Add this to claude_desktop_config.json (in Claude: Settings → Developer → Edit Config), then restart Claude:",
+  "别的应用（如 Cursor）用同一个命令。移动或重装 Canvas Sync 之后，要重新设置一次。":
+    "Other apps (Cursor, say) use the same command. After moving or reinstalling Canvas Sync, set it up again.",
+  "复制": "Copy",
+  "已复制": "Copied",
+  "完成": "Done",
   "用一个英文小模型（约 125 MB，打开时下载）改善搜索，允许按意思找正文。":
     "Makes searching smarter by using a small language model (125 MB, downloaded when you turn this on).",
   "正在下载模型… {pct}%": "Downloading the model… {pct}%",

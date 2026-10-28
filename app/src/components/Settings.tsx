@@ -1,6 +1,6 @@
 // 设置: the account, syncing, language. Preferences are this computer's (app.toml, via the
 // backend); which courses sync is the sync folder's (its config.toml), shared with the CLI.
-import { CheckCircle2, CircleAlert, FolderOpen, RefreshCw } from "lucide-react";
+import { Check, CheckCircle2, CircleAlert, Copy, FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo, Prefs, SyncState } from "../lib/api";
@@ -171,6 +171,8 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
           <LauncherKeysRow />
           <MeaningRow />
         </Section>
+
+        {account?.set_up && <AssistantSection />}
 
         <Section title={t("高级")}>
           <Row label={t("编辑高级同步规则")}>
@@ -404,6 +406,61 @@ function MeaningRow() {
     >
       <Toggle on={state.on} onChange={turn} />
     </Row>
+  );
+}
+
+/** AI assistants (MCP): how to add `canvas mcp` (agent.py) to one. It reads what's synced here, only. */
+function AssistantSection() {
+  const [how, setHow] = useState<{ command: string; args: string[] } | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => void api.mcpCommand().then(setHow, () => {}), []);
+  if (!how) return null;
+  const claudeCode = `claude mcp add canvas -- "${how.command}" ${how.args.join(" ")}`;
+  const desktop = JSON.stringify({ mcpServers: { canvas: { command: how.command, args: how.args } } }, null, 2);
+  return (
+    <Section title={t("AI 助手")}>
+      <Row label={t("让 AI 助手读你的课程")}
+        hint={t("Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。")}>
+        <Button onClick={() => setOpen(true)}>{t("接入方法…")}</Button>
+      </Row>
+      {open && (
+        <Dialog title={t("接入 AI 助手")} onClose={() => setOpen(false)}
+          footer={<Button primary onClick={() => setOpen(false)}>{t("完成")}</Button>}>
+          <p className="mb-4 text-fg-soft">
+            {t("把下面的设置加进你的 AI 助手。它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
+          </p>
+          <p className="mb-1.5 text-xs font-medium">Claude Code</p>
+          <p className="mb-1.5 text-xs text-muted">{t("在终端里运行：")}</p>
+          <Copyable text={claudeCode} />
+          <p className="mt-4 mb-1.5 text-xs font-medium">Claude Desktop</p>
+          <p className="mb-1.5 text-xs text-muted">{t("加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：")}</p>
+          <Copyable text={desktop} />
+          <p className="mt-4 mb-2 text-xs text-muted">
+            {t("别的应用（如 Cursor）用同一个命令。移动或重装 Canvas Sync 之后，要重新设置一次。")}
+          </p>
+        </Dialog>
+      )}
+    </Section>
+  );
+}
+
+function Copyable({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => void navigator.clipboard.writeText(text).then(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, () => {});
+  return (
+    <div className="relative">
+      <pre className="overflow-x-auto rounded-md border border-line bg-chip py-2 pr-20 pl-3 font-mono text-xs leading-relaxed whitespace-pre select-text">
+        {text}
+      </pre>
+      <button onClick={copy}
+        className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-panel hover:text-fg">
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        {copied ? t("已复制") : t("复制")}
+      </button>
+    </div>
   );
 }
 

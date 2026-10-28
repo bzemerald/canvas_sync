@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from mcp import Client
 
 from canvas_sync import Engine
 from canvas_sync.agent import create_server
 from canvas_sync.config import Account
+from canvas_sync.server import create_app
 from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull
 
 NOW = datetime.now(timezone.utc)
@@ -134,3 +136,9 @@ def test_what_it_wont_do(root, course, tmp_path):
     assert failed and "isn't set up" in said
     failed, said = call(tmp_path / "nowhere", "list_courses")
     assert failed and "sync" in said
+
+
+def test_the_app_says_how_to_start_it(root):
+    with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:
+        got = api.get("/api/mcp").json()
+    assert got["args"] == ["mcp"] and Path(got["command"]).name in ("canvas", "canvas.exe")
