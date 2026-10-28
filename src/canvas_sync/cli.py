@@ -273,10 +273,15 @@ def index_() -> None:
 KIND_LABEL = {"file": "file", "page": "page", "assignment": "hw", "announcement": "news", "syllabus": "syll"}
 
 
+def web_link(h: Hit, base_url: str) -> str:
+    """Where a hit is on the web: Canvas's are relative to it, Ed's whole."""
+    return "" if not h.url else h.url if h.url.startswith(("http://", "https://")) else base_url + h.url
+
+
 def render_hit(n: int, h: Hit, base_url: str) -> None:
     date = f"  [dim]{h.date[:10]}[/]" if h.date else ""
     console.print(f"[dim]{n:>2}[/] [cyan]{KIND_LABEL.get(h.kind, h.kind):<4}[/] [bold]{escape(h.course)}[/]  {escape(h.title)}{date}")
-    where = h.path or (base_url + h.url if h.url else "")
+    where = h.path or web_link(h, base_url)
     if where:
         console.print(f"        [dim]{escape(where)}[/]")
     if h.snippet:
@@ -293,7 +298,8 @@ def search(
 ) -> None:
     """Search files, pages, assignments and announcements (offline)."""
     acc = account()
-    hits = with_engine(False, lambda engine: _value(engine.search(" ".join(query), limit)))
+    hits, corrected = with_engine(False, lambda engine: _value(engine.find(" ".join(query), limit, literal=False,
+                                                                           prefs_path=PREFS_FILE)))
     if as_json:
         print(json.dumps([h.to_dict() for h in hits], indent=2, ensure_ascii=False))
         return
@@ -301,13 +307,15 @@ def search(
         if not 1 <= open_ <= len(hits):
             raise fail(f"no result {open_}")
         h = hits[open_ - 1]
-        target = str(acc.root / h.path) if h.path else acc.base_url + (h.url or "")
+        target = str(acc.root / h.path) if h.path else web_link(h, acc.base_url)
         if h.path:
             open_path(acc.root / h.path)
         else:
             typer.launch(target)
         console.print(f"opened {target}")
         return
+    if corrected:
+        console.print("[dim]Searched for " + ", ".join(f"{escape(v)} (not {escape(k)})" for k, v in corrected.items()) + "[/]")
     if not hits:
         console.print("No results. [dim](`canvas index` if you haven't pulled since installing search)[/]")
         return

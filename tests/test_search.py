@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from typer.testing import CliRunner
 
-from canvas_sync import Engine
-from canvas_sync.config import Account
+from canvas_sync import Engine, cli
+from canvas_sync.config import Account, set_course_hidden
 from canvas_sync.server import create_app
 from canvas_sync.search import code_keys
 from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull, set_config
@@ -145,6 +147,24 @@ def test_misspelled_words_are_taken_for_the_nearest_there_are(client):
     assert client.get("/api/find", params={"q": '"decompositon"'}).json() == {"hits": [], "corrected": {}}  # (as it is)
     got = client.get("/api/find", params={"q": "lectrue3"}).json()  # (one of a series: its name)
     assert got["corrected"] == {"lectrue": "lecture"} and [h["title"] for h in got["hits"]][:1] == ["Lecture 3.pdf"]
+
+
+
+def test_search_on_the_command_line_is_the_apps(root, course, monkeypatch):
+    pull(root, course)
+    reindex(root)
+    monkeypatch.setattr(Account, "load", classmethod(lambda cls: Account(BASE, root)))
+
+    def titles(*query: str) -> list[str]:
+        result = CliRunner().invoke(cli.app, ["search", "--json", *query])
+        assert result.exit_code == 0, result.output
+        return [h["title"] for h in json.loads(result.output)]
+
+    assert titles("decompositon") == ["Lecture 3.pdf"]  # misspelled
+    assert titles("math", "eigen") == ["Lecture 3.pdf"]  # a course in the query
+    set_course_hidden(root / ".canvas" / "config.toml", 1, True)
+    assert titles("eigen") == []                          # hidden: only when asked for by name
+    assert titles("221", "eigen") == ["Lecture 3.pdf"]
 
 
 def test_a_word_new_in_a_changed_file_isnt_taken_for_a_misspelling(root, course):

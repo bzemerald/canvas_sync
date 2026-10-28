@@ -167,6 +167,47 @@ class Engine:
         return self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds, names_only,
                                  under, also)
 
+    def visible(self, course_ids: list[int] | None) -> list[int] | None:
+        """The courses to search: those asked for, or else all but hidden ones (they only turn up
+        when asked for by name). None: all; []: none."""
+        if course_ids or not self.settings.hidden:
+            return course_ids or None
+        return [c.id for c in self.state.courses() if c.id not in self.settings.hidden]
+
+    def find(self, query: str, limit: int = 40, course_ids: list[int] | None = None, kinds: list[str] | None = None,
+             since: str | None = None, until: str | None = None, source: str | None = None, under: str | None = None,
+             literal: bool = True, prefs_path: Path | None = None) -> tuple[list[Hit], dict[str, str]]:
+        """Search as the app does: words nothing has taken for the nearest that are ("midtrem":
+        midterm; returned too), and by meaning as well when it's on (`prefs_path`: app.toml,
+        whose folder has the model), for what's said in a few words. `literal`: the query is only
+        words; otherwise courses in it count too ("221 mt")."""
+        from . import meaning
+        from .catalog import abbreviations
+        from .config import AppPrefs
+        from .meaning import Meaning
+        from .search import CourseMatcher, course_label, parse
+
+        named = not literal and not course_ids and parse(query, CourseMatcher(self.state.courses(), self.settings),
+                                                         abbreviations(self)).course_ids
+        if not named:
+            course_ids = self.visible(course_ids)
+        if course_ids == []:
+            return [], {}
+        folder, also = self.folder_scope(under)
+        corrected = self.index.corrections(query, abbreviations(self))
+        query = self.index.corrected(query, corrected)
+        hits = self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds,
+                                 under=folder, also=also, literal=literal, since=since, until=until, source=source)
+        home = prefs_path.parent if prefs_path else None
+        if (len(query.split()) >= 2 and not under and home and AppPrefs.load(prefs_path).meaning
+                and meaning.downloaded(home)):
+            codes = {c.id: course_label(c, self.settings) for c in self.state.courses()}
+            had = {(h.kind, h.course_id, h.path or h.url or h.title) for h in hits}
+            hits += [h for h in Meaning(self.index).search(query, meaning.embedder(home), codes, course_ids, kinds,
+                                                           since, until, source=source)
+                     if (h.kind, h.course_id, h.path or h.url or h.title) not in had]
+        return hits, corrected
+
     def folder_scope(self, under: str | None) -> tuple[str | None, list[str]]:
         """A folder searched in, and the files its view links point to (elsewhere)."""
         if under is None:
