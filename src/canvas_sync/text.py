@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import html
 import json
+import posixpath
 import re
+import xml.etree.ElementTree as ET
 import threading
 import zipfile
 from html.parser import HTMLParser
@@ -33,6 +35,8 @@ OFFICE = {
 }
 _XML_BREAK = re.compile(r"</(?:w:p|a:p|si)>")
 _XML_TAG = re.compile(r"<[^>]+>")
+# Not text: a slide's animations ("style.visibility", "ppt_x"), and slide-number fields.
+_XML_NOT_TEXT = re.compile(r"<p:timing\b.*?</p:timing>|<a:fld\b[^>]*type=\"slidenum\".*?</a:fld>", re.S)
 _SPACE = re.compile(r"[ \t\r\f\v]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
@@ -114,9 +118,76 @@ def _office(path: Path, members: re.Pattern[str]) -> str:
         )
         parts = []
         for n in names:
-            xml = z.read(n).decode("utf-8", "ignore")
+            xml = _XML_NOT_TEXT.sub("", z.read(n).decode("utf-8", "ignore"))
             parts.append(html.unescape(_XML_TAG.sub(" ", _XML_BREAK.sub("\n", xml))))
     return "\n".join(parts)
+
+
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def slides(path: Path) -> str:
+    """A deck to read: each slide in the deck's order, its title, its text, what its pictures
+    say they are (alt text), and its speaker notes apart. "" if it can't be read."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            def xml(name: str) -> ET.Element | None:
+                try:
+                    return ET.fromstring(z.read(name))
+                except (KeyError, ET.ParseError):
+                    return None
+
+            def rels(name: str) -> dict[str, str]:
+                folder, file = name.rsplit("/", 1)
+                root = xml(f"{folder}/_rels/{file}.rels")
+                return {} if root is None else {
+                    r.get("Id", ""): posixpath.normpath(posixpath.join(folder, r.get("Target", "")))
+                    for r in root.iter(f"{_REL}Relationship")}
+
+            def text(shape: ET.Element) -> str:
+                return "\n".join(t for p in shape.iter(f"{_A}p")
+                                 if (t := "".join(x.text or "" for x in p.iter(f"{_A}t")).strip()))
+
+            def placeholder(shape: ET.Element) -> str | None:
+                ph = shape.find(f".//{_P}nvPr/{_P}ph")
+                return None if ph is None else ph.get("type", "body")
+
+            pres, order = xml("ppt/presentation.xml"), rels("ppt/presentation.xml")
+            if pres is None:
+                return ""
+            out = []
+            for n, sld in enumerate(pres.iter(f"{_P}sldId"), 1):
+                name = order.get(sld.get(f"{_R}id", ""), "")
+                slide = xml(name) if name else None
+                if slide is None:
+                    continue
+                title, body = "", []
+                for shape in slide.iter():
+                    if shape.tag == f"{_P}sp":
+                        kind, words = placeholder(shape), text(shape)
+                        if kind in ("title", "ctrTitle") and not title:
+                            title = " ".join(words.split())
+                        elif words and kind not in ("sldNum", "dt", "ftr"):
+                            body.append(words)
+                    elif shape.tag == f"{_P}pic":
+                        alt = shape.find(f"{_P}nvPicPr/{_P}cNvPr")
+                        if alt is not None and (said := (alt.get("descr") or "").strip()):
+                            body.append(f"[Picture: {said}]")
+                notes = ""
+                for target in rels(name).values():
+                    if "/notesSlides/" in target and (ns := xml(target)) is not None:
+                        notes = "\n".join(w for sp in ns.iter(f"{_P}sp")
+                                          if placeholder(sp) == "body" and (w := text(sp)))
+                parts = [f"--- Slide {n}{': ' + title if title else ''} ---", *body]
+                if notes:
+                    parts.append("[Notes] " + notes)
+                out.append("\n".join(parts))
+            return html.unescape("\n\n".join(out))
+    except (zipfile.BadZipFile, OSError):
+        return ""
 
 
 def _notebook(path: Path) -> str:

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import time
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -100,9 +103,91 @@ def test_whats_new(root, course):
     pull(root, course)
     new = ok(root, "whats_new")
     assert {x["title"] for x in new["new"]} == {"Exam moved", "lec2.pdf"} and new["sync"]["last_synced"]
+    assert all(x["arrived_at"] and x["opened"] is False for x in new["new"])  # (as with since)
+    assert next(x for x in new["new"] if x["kind"] == "file")["date"]  # (when Canvas has it from)
     since = ok(root, "whats_new", since=before)["new"]
     assert {x["title"] for x in since} == {"Exam moved", "lec2.pdf"} and not any(x["opened"] for x in since)
     assert ok(root, "whats_new", since=iso(NOW + timedelta(days=1)))["new"] == []
+
+    del course.files[102]  # taken off Canvas: kept here, but not news
+    pull(root, course)
+    assert {x["title"] for x in ok(root, "whats_new")["new"]} == {"Exam moved"}
+    assert ok(root, "list_courses")["courses"][0]["new"] == 1
+
+
+def test_times_also_in_the_students_zone(root, course, monkeypatch):
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        # A deadline after the clocks go back: 7pm PST, not 8pm (PDT).
+        course.assignments.append({"id": 30, "name": "HW 7", "due_at": "2026-11-03T03:00:00Z",
+                                   "submission_types": ["online_upload"]})
+        pull(root, course)
+        hw7 = next(a for a in ok(root, "list_items", course="221", kind="assignment")["items"] if a["title"] == "HW 7")
+        assert hw7["due_at"] == "2026-11-03T03:00:00Z" and hw7["due_at_local"] == "Mon 2026-11-02 19:00 PST"
+        assert ok(root, "upcoming")["now_local"].endswith(("PST", "PDT"))
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+
+
+def test_slides_ed_and_paths_as_other_clients_give_them(root, course):
+    course.folders.append({"id": 12, "full_name": "course files/Week 8 & 9"})
+    course.put(300, "deck.pptx", deck(), folder=12)
+    pull(root, course)
+    sync_root = ok(root, "list_courses")["sync_root"]
+    for path in [f"{COURSE}/Files/Week%208%20%26%209/deck.pptx", f"{sync_root}/{COURSE}/Files/Week 8 & 9/deck.pptx"]:
+        assert ok(root, "read", path=path)["content"] == (
+            "--- Slide 1: Two types of bipolar cells ---\nON and OFF\n[Picture: retina diagram]\n"
+            "[Notes] Start with the rod pathway\n\n--- Slide 2 ---\nNo title here")
+    assert [e["name"] for e in ok(root, "list_files", folder=f"{COURSE}/Files/Week%208%20%26%209")["entries"]] == ["deck.pptx"]
+    with Engine(root) as e:
+        e.reindex()
+        body = e.index.db.execute("SELECT body FROM fts WHERE title LIKE '%deck%'").fetchone()[0]
+    assert "visibility" not in body and "bipolar" in body  # (the index: no animation names)
+
+    with Engine(root) as e:
+        e.state.db.execute("""INSERT INTO documents VALUES (1, 'post', 'ed-5', 'Is lecture recorded?', '', ?, 'ed')""", (
+            '{"title": "Is lecture recorded?", "message": "<p>Asking for a friend</p>", "posted_at": "2026-10-20T00:00:00Z",'
+            ' "source": "ed", "ed": {"replies": 0, "answered": false, "staff_answered": false, "pinned": false, "staff": false}}',))
+        e.state.commit()
+        e.reindex()
+    post = ok(root, "read", course="221", kind="post", id="ed-5")
+    assert post["reply_count"] == 0 and post["answered"] is False and "replies_note" not in post  # (none: not unfetched)
+    hit = ok(root, "search", query="recorded", kinds=["post"])["results"][0]
+    assert hit["matched"] == "name" and hit["preview"] == "Asking for a friend"  # (only the title matched)
+
+
+def deck() -> bytes:
+    """A small .pptx: a titled slide with animations, a picture and notes; one without a title."""
+    p = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' \
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' \
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    rels = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"'
+
+    def shape(text: str, ph: str = "") -> str:
+        return (f'<p:sp><p:nvSpPr><p:cNvPr id="1" name="s"/><p:cNvSpPr/><p:nvPr>{ph}</p:nvPr></p:nvSpPr>'
+                f'<p:txBody><a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:txBody></p:sp>')
+    files = {
+        "ppt/presentation.xml": f'<p:presentation {p}><p:sldIdLst><p:sldId id="257" r:id="rId9"/>'
+                                f'<p:sldId id="256" r:id="rId8"/></p:sldIdLst></p:presentation>',
+        "ppt/_rels/presentation.xml.rels": f'<Relationships {rels}><Relationship Id="rId8" Target="slides/slide1.xml"/>'
+                                           f'<Relationship Id="rId9" Target="slides/slide2.xml"/></Relationships>',
+        "ppt/slides/slide2.xml": f'<p:sld {p}><p:cSld><p:spTree>{shape("Two types of bipolar cells", "<p:ph type=\"title\"/>")}'
+                                 f'{shape("ON and OFF")}{shape("6", "<p:ph type=\"sldNum\"/>")}'
+                                 f'<p:pic><p:nvPicPr><p:cNvPr id="2" name="p" descr="retina diagram"/></p:nvPicPr></p:pic>'
+                                 f'</p:spTree></p:cSld><p:timing><p:attrName>style.visibility</p:attrName></p:timing></p:sld>',
+        "ppt/slides/_rels/slide2.xml.rels": f'<Relationships {rels}><Relationship Id="rId2" '
+                                            f'Target="../notesSlides/notesSlide1.xml"/></Relationships>',
+        "ppt/notesSlides/notesSlide1.xml": f'<p:notes {p}><p:cSld><p:spTree>{shape("Start with the rod pathway", "<p:ph type=\"body\"/>")}'
+                                           f'{shape("6", "<p:ph type=\"sldNum\"/>")}</p:spTree></p:cSld></p:notes>',
+        "ppt/slides/slide1.xml": f'<p:sld {p}><p:cSld><p:spTree>{shape("No title here")}</p:spTree></p:cSld></p:sld>',
+    }
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, xml in files.items():
+            z.writestr(name, xml)
+    return out.getvalue()
 
 
 def test_nothing_changes(root, course):

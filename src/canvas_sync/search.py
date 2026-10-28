@@ -102,6 +102,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_words USING fts5vocab(fts, 'row');  -- every word, and in how many items
 """
 
+# Files whose text is read better than it was: read again once (decks: no more animation names
+# and slide numbers in them).
+READ_AGAIN = {".pptx": ":2"}
+
 # Index-time and query-time splitting the default tokenizer doesn't do. U+200B is a
 # separator to FTS5 but invisible in snippets.
 _ZW = "​"
@@ -481,7 +485,7 @@ class Index:
                 path=r.path if st else None, url=f"/courses/{r.course_id}/files/{r.id}",
                 date=raw.get("modified_at") or raw.get("updated_at"),
                 folder=f"file {folder}",
-                content_stamp=f"{st.st_size}:{st.st_mtime_ns}" if st else "",
+                content_stamp=f"{st.st_size}:{st.st_mtime_ns}{READ_AGAIN.get(local.suffix.lower(), '')}" if st else "",
                 body=(lambda p=local: extract(p)) if st else (lambda: ""),
             )
         for row in state.db.execute("SELECT course_id, kind, id, title, updated_at, raw, source FROM documents"):
