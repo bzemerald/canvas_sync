@@ -35,7 +35,8 @@ without the Canvas website or Finder.
   - `things.py`: what can be put somewhere (a thing), and how it's written down; the old formats.
   - `places.py`: the places (置顶; a course's tabs, overview, 工具与链接), their rules.
   - `cli.py`: the `canvas` command.
-  - `engine.py`, `plan.py`, `execute.py`: sync.
+  - `engine.py`, `plan.py`, `execute.py`: sync. `sync.py`: what a sync does after Canvas (Ed,
+    the index, meaning), for the app and `canvas pull` alike. `Engine.find`: the app's search.
   - `discover.py`: finding files through modules and pages.
   - `ed.py`: Ed (edstem.org): its unofficial API (read-only, a token from Ed's settings), which
     Canvas course each Ed course is.
@@ -46,7 +47,10 @@ without the Canvas website or Finder.
   - `meaning.py`: search by meaning (English; off unless turned on in 设置: a small model is
     downloaded to the app's folder, `models/`; passages and their vectors go in index.db).
   - `content.py`: what the app shows (overview, items, modules, tools).
-  - `server.py`: the app's HTTP API (`canvas serve`).
+  - `server.py`: the app's HTTP API (`canvas serve`). Its routes stay thin: what they do is in
+    the modules, so the command line and `agent.py` get the same answers.
+  - `agent.py`: `canvas mcp`, the courses for an AI assistant over MCP (the `mcp` SDK, 2.x:
+    `MCPServer`). Read-only: nothing marked seen or recorded, no Canvas or Ed calls.
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.
 - `app/`: Tauri v2, React 19, TypeScript, Vite, Tailwind v4.
   - `src/MainWindow.tsx`: sidebar, navigation (`View`), menus, pinning.

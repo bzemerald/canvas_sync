@@ -20,6 +20,17 @@ if sys.platform == "darwin":
     _clonefile = getattr(_libc, "clonefile", None)
 
 
+def inside(root: Path, rel: str) -> Path:
+    """root/rel, refusing (ValueError) anything that resolves outside the sync folder or into .canvas."""
+    top = root.resolve()
+    target = (root / rel).resolve()
+    if target != top and top not in target.parents:
+        raise ValueError("path is outside the sync folder")
+    if (top / META_DIR) in [target, *target.parents]:
+        raise ValueError("that's canvas-sync's own folder")
+    return root / rel
+
+
 def clone_file(src: Path, dst: Path) -> None:
     """Copy src to dst. On APFS this is a copy-on-write clone: no extra disk space
     is used until one of the two copies is modified."""

@@ -73,7 +73,8 @@ term, and you can change the match in Settings. On each sync:
 
 It's read-only: nothing is posted, and nothing is marked read on Ed. Ed has no documented
 API; this uses the one its website uses, so a change on Ed's side can break it (the app then
-says "Ed changed"). Ed is fetched by the app's syncs, not by `canvas pull`.
+says "Ed changed"). Ed is fetched by every sync, the app's and `canvas pull`'s (not when only
+some folders are pulled).
 
 ## The command line
 
@@ -94,6 +95,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 | `index` | update the search index (runs after every `pull`) |
 | `open [COURSE]` | open in Finder |
 | `serve [--port N]` | the local API the desktop app uses |
+| `mcp` | your courses for an AI assistant, over MCP (see below) |
 
 ## Search
 
@@ -108,11 +110,42 @@ and notebooks, and every page, assignment, announcement and syllabus (and Ed pos
 - Results whose name or folder matches come first; files that only mention it inside follow.
 - `--open N` opens result N (the file, or the Canvas page).
 
-**By meaning** (in the app, off unless turned on in Settings): "can I get an extension" finds
+**By meaning** (off unless turned on in the app's Settings; then `canvas search` uses it too): "can I get an extension" finds
 the announcement about Flextensions. A small English model (~125 MB) is downloaded to the app's
 folder; English only, and Chinese queries are matched by their words.
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
+
+## AI assistants (MCP)
+
+`canvas mcp` serves what's synced to an AI assistant (Claude Desktop, Claude Code, Cursor...)
+over the Model Context Protocol, on stdin and stdout. The assistant can search everything,
+read documents and files (PDFs, slides... as text), see what's due, what's new, grades, modules,
+folders, and what you changed locally.
+
+It's read-only and offline: nothing is fetched from Canvas or Ed, nothing is marked read, no
+setting changes; what's newer than the last sync isn't there (`whats_new` says when that was).
+Paths stay inside the sync folder, and `.canvas/` and the tokens are never handed over.
+
+```sh
+claude mcp add canvas -- /path/to/canvas-sync/.venv/bin/canvas mcp   # Claude Code
+```
+
+For Claude Desktop, in `claude_desktop_config.json`:
+
+```json
+{"mcpServers": {"canvas": {"command": "/path/to/canvas-sync/.venv/bin/canvas", "args": ["mcp"]}}}
+```
+
+| tool | |
+|---|---|
+| `list_courses` | your courses: code, name, term, what's new, last synced |
+| `search` | everything, as the app's search finds it; by course, kind, dates, source (Ed) |
+| `read` | one document's whole text (with Ed replies), or a file's, in parts |
+| `list_items`, `course_overview`, `modules`, `grades` | a course, as its tabs show it |
+| `upcoming` | what's due in the next days, with Canvas's status |
+| `whats_new` | what you haven't opened, or everything since a time; and how the last sync went |
+| `list_files`, `local_changes` | folders, and what you changed on this computer |
 
 ## What ends up on disk
 
@@ -172,7 +205,8 @@ discover.py  course → every file + where it appears (CourseSnapshot)
 layout.py    file → local path(s). Pure: pins > rules > views
 plan.py      remote vs. original vs. disk → list of Actions (nothing is changed)
 execute.py   carries out a Plan
-engine.py    the public API: courses(), plan(scope), apply(), status(), restore(), list_dir(), search()
+engine.py    the public API: courses(), plan(scope), apply(), status(), restore(), list_dir(), search(), find()
+sync.py      what a sync does after Canvas: Ed, the index, passages for searching by meaning
 state.py     .canvas/state.db: schema and access
 config.py    config.toml and app.toml (written with tomlkit, so comments survive)
 text.py      text out of PDFs, Office files, notebooks, HTML
@@ -186,6 +220,7 @@ content.py   what the app shows: overview, items, modules, tools
 browse.py    a folder as the app shows it: disk + Canvas status, links, deleted files
 thumbs.py    preview images for the app's icon view
 server.py    local HTTP API for the desktop app (`canvas serve`)
+agent.py     your courses for an AI assistant, over MCP (`canvas mcp`): read-only
 cli.py       `canvas` command
 ```
 

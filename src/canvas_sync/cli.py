@@ -22,6 +22,7 @@ from .local import open_path
 from .models import Course
 from .plan import Kind, Plan, Scope
 from .search import Hit
+from .search import pick_courses as matching
 from .state import META_DIR
 from .sync import other_sources
 from .sync import reindex as sync_reindex
@@ -144,7 +145,7 @@ def pick_courses(all_courses: list[Course], wanted: list[str]) -> list[Course]:
     """Match each -c value against course id, code or name (case-insensitive substring)."""
     picked: dict[int, Course] = {}
     for w in wanted:
-        hits = [c for c in all_courses if w == str(c.id) or w.lower() in f"{c.code} {c.name}".lower()]
+        hits = matching(all_courses, w)
         if not hits:
             raise fail(f"no course matches {w!r}; see `canvas courses`")
         picked.update((c.id, c) for c in hits)
@@ -373,6 +374,14 @@ def serve(
     from .server import serve as run
 
     run(Account.load(), port, exit_with_stdin=exit_with_stdin)  # not set up yet: the app signs you in
+
+
+@app.command()
+def mcp() -> None:
+    """Serve your synced courses to an AI assistant over MCP (stdin and stdout). Read-only."""
+    from .agent import serve as run
+
+    run()
 
 
 @app.command("open")

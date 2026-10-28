@@ -47,6 +47,7 @@ from .config import (
     save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
 )
 from .engine import Engine
+from .local import inside as in_folder
 from .local import open_path
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
@@ -290,14 +291,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     api = FastAPI(dependencies=[Depends(authorized), Depends(ready)])
 
     def inside(rel: str) -> Path:
-        """root/rel, refusing anything that resolves outside the sync folder or into .canvas."""
-        root = account.root.resolve()
-        target = (account.root / rel).resolve()
-        if target != root and root not in target.parents:
-            raise HTTPException(400, "path is outside the sync folder")
-        if (root / META_DIR) in [target, *target.parents]:
-            raise HTTPException(400, "that's canvas-sync's own folder")
-        return account.root / rel
+        try:
+            return in_folder(account.root, rel)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
 
     def scope_paths(req: ScopeRequest) -> None:
         for p in req.paths:

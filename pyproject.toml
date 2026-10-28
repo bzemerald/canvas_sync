@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn>=0.30",
     "rapidfuzz>=3.14",
     "model2vec>=0.9",
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]

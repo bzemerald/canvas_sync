@@ -188,6 +188,14 @@ def course_label(c: Course, settings: Settings) -> str:
 _TERM = re.compile(r"(spring|summer|fall|autumn|winter|sp|su|sm|fa|fl|wi)\d{0,4}|(19|20)\d\d")
 
 
+def pick_courses(courses: list[Course], wanted: str, settings: Settings | None = None) -> list[Course]:
+    """The courses `wanted` says: an id, or part of a code, name or what the app calls it
+    (case-insensitive)."""
+    w = wanted.strip().lower()
+    return [c for c in courses if w == str(c.id) or w in f"{c.code} {c.name}".lower()
+            or (settings is not None and w in course_label(c, settings).lower())]
+
+
 def code_keys(code: str) -> set[str]:
     """The parts of a course code people type: "COMPSCI 70-LEC-001" -> compsci, 70;
     "CS61B SP26" -> cs, 61b, cs61b; "DATA C8" -> data, c8, 8. Only up to the course

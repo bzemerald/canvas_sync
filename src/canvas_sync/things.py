@@ -88,6 +88,15 @@ def view(course: int | None, name: str) -> Thing:
     return Thing("view", course=course, view=name)
 
 
+def of_item(kind: str, course: int, doc_id: str | None = None, path: str | None = None) -> Thing:
+    """What a search hit or one of a course's items is: a file, a document, or the syllabus (a view)."""
+    if kind == "file":
+        return Thing("file", path=path)
+    if kind == "syllabus":
+        return view(course, "syllabus")
+    return Thing("doc", course=course, kind=kind, id=doc_id)
+
+
 def at_home(thing: Thing, home: int) -> Thing:
     """A thing of no course yet (a view in the default arrangement) as `home`'s."""
     if thing.type in IN_A_COURSE and thing.course is None:
