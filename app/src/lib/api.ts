@@ -526,6 +526,19 @@ export interface MeaningState {
 }
 /** How an AI assistant starts `canvas mcp` (src/canvas_sync/agent.py): this app's backend. */
 export const mcpCommand = () => api<{ command: string; args: string[] }>("/mcp");
+/** An AI app `canvas mcp` can be added to (src/canvas_sync/assistants.py). `current`: added, and
+ * it starts this app's backend (not another copy's); `restart`: it sees it once reopened. */
+export interface Assistant {
+  id: string;
+  name: string;
+  installed: boolean;
+  added: boolean;
+  current: boolean;
+  restart: boolean;
+}
+export const assistants = () => api<Assistant[]>("/assistants");
+export const addAssistant = (id: string) => api<Assistant[]>(`/assistants/${id}`, { method: "POST" });
+export const removeAssistant = (id: string) => api<Assistant[]>(`/assistants/${id}`, { method: "DELETE" });
 export const meaning = () => api<MeaningState>("/meaning");
 export const setMeaning = (on: boolean) => post<MeaningState>("/meaning", { on });
 export const prefs = () => api<Prefs>("/prefs");

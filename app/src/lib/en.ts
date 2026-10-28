@@ -329,15 +329,25 @@ export const en: Record<string, string | [string, string]> = {
   "让 AI 助手读你的课程": "Let an AI assistant read your courses",
   "Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。":
     "Claude and other assistants that support MCP can search and read your courses: files, announcements, assignments, deadlines, what's new. Read-only, from what's synced to this computer.",
-  "接入方法…": "Set Up…",
-  "接入 AI 助手": "Connect an AI Assistant",
-  "把下面的设置加进你的 AI 助手。它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。":
-    "Add this to your AI assistant. It only reads what's synced to this computer: it doesn't reach Canvas or Ed, can't hand anything in or mark anything read, and never sees your tokens.",
-  "在终端里运行：": "Run this in a terminal:",
-  "加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：":
-    "Add this to claude_desktop_config.json (in Claude: Settings → Developer → Edit Config), then restart Claude:",
-  "别的应用（如 Cursor）用同一个命令。移动或重装 Canvas Sync 之后，要重新设置一次。":
-    "Other apps (Cursor, say) use the same command. After moving or reinstalling Canvas Sync, set it up again.",
+  "添加到…": "Add To…",
+  "添加到 AI 助手": "Add to an AI Assistant",
+  "它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。":
+    "It only reads what's synced to this computer: it doesn't reach Canvas or Ed, can't hand anything in or mark anything read, and never sees your tokens.",
+  "这台电脑上没找到支持的 AI 应用。": "No supported AI app found on this computer.",
+  "重新打开 {app} 后就能用。": "Ready once you reopen {app}.",
+  "在 {app} 新开的对话里就能用。": "Ready in new conversations in {app}.",
+  "用的是另一份 Canvas Sync。": "Set up with another copy of Canvas Sync.",
+  "已添加": "Added",
+  "移除": "Remove",
+  "正在添加…": "Adding…",
+  "改用这一份": "Use This One",
+  "ChatGPT 暂时用不了：它只能连网上的服务器，连不了这台电脑上的程序。":
+    "ChatGPT can't use it yet: it only connects to servers on the web, not to programs on this computer.",
+  "手动添加到其他应用": "Add to another app by hand",
+  "配置": "Config",
+  "大多数应用的 MCP 设置用这个格式：": "Most apps' MCP settings take this:",
+  "命令": "Command",
+  "只要填命令的应用用这个：": "For apps that ask only for a command:",
   "复制": "Copy",
   "已复制": "Copied",
   "完成": "Done",

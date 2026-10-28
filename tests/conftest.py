@@ -39,6 +39,16 @@ def fake() -> FakeCanvas:
 
 
 @pytest.fixture(autouse=True)
+def no_real_ai_apps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Whose AI apps (assistants.py) tests add to: a home of their own, never yours."""
+    home = tmp_path / "ai-home"
+    monkeypatch.setattr("canvas_sync.assistants.HOME", home)
+    monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    return home
+
+
+@pytest.fixture(autouse=True)
 def no_real_trash(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     """What would have gone to the Trash; it's deleted instead."""
     trashed: list[Path] = []

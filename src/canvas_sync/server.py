@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 import socket
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -34,7 +35,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from . import ed, meaning
+from . import assistants, ed, meaning
 from .sync import other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
@@ -238,6 +239,11 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         timer = asyncio.create_task(scheduler()) if background else None
+        if background:  # AI apps still pointing at where this app was (moved, reinstalled)
+            fix = asyncio.create_task(asyncio.to_thread(
+                assistants.repair, canvas_command(), ["mcp"], prefs_path.parent / "backups"))
+            tasks.add(fix)
+            fix.add_done_callback(tasks.discard)
         yield
         if timer:
             timer.cancel()
@@ -524,6 +530,32 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def mcp_command() -> dict[str, Any]:
         """How an AI assistant starts `canvas mcp` (agent.py): this program, packed in the app or not."""
         return {"command": canvas_command(), "args": ["mcp"]}
+
+    @api.get("/assistants")
+    def assistants_state() -> list[dict[str, Any]]:
+        """The AI apps `canvas mcp` can be added to: installed or not, added or not."""
+        return assistants.state(canvas_command())
+
+    def assistant(app_id: str) -> assistants.App:
+        if (app := next((a for a in assistants.apps() if a.id == app_id), None)) is None:
+            raise HTTPException(404, "no such app")
+        return app
+
+    @api.post("/assistants/{app_id}")
+    def add_assistant(app_id: str) -> list[dict[str, Any]]:
+        try:
+            assistants.add(assistant(app_id), canvas_command(), ["mcp"], prefs_path.parent / "backups")
+        except (assistants.AssistantError, OSError, subprocess.SubprocessError) as err:
+            raise HTTPException(400, str(err))
+        return assistants.state(canvas_command())
+
+    @api.delete("/assistants/{app_id}")
+    def remove_assistant(app_id: str) -> list[dict[str, Any]]:
+        try:
+            assistants.remove(assistant(app_id), prefs_path.parent / "backups")
+        except (assistants.AssistantError, OSError, subprocess.SubprocessError) as err:
+            raise HTTPException(400, str(err))
+        return assistants.state(canvas_command())
 
     @api.get("/courses")
     def courses() -> list[dict[str, Any]]:

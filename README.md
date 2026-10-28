@@ -127,14 +127,21 @@ It's read-only and offline: nothing is fetched from Canvas or Ed, nothing is mar
 setting changes; what's newer than the last sync isn't there (`whats_new` says when that was).
 Paths stay inside the sync folder, and `.canvas/` and the tokens are never handed over.
 
+In the app, Settings → AI assistants → Add To… adds it to the AI apps found on this computer
+(Claude, Claude Code, Codex, Cursor, VS Code), and takes it away again. Their config files keep
+everything else in them (the old one is kept in `~/.config/canvas-sync/backups/`); Claude Code's
+is changed by its own `claude mcp`. When Canvas Sync moves or is reinstalled, entries pointing at
+the old place are pointed at the new one when it starts. ChatGPT only connects to servers on the
+web, so it can't use this yet.
+
+By hand, `canvas-sync` being the server's name:
+
 ```sh
-claude mcp add canvas -- /path/to/canvas-sync/.venv/bin/canvas mcp   # Claude Code
+claude mcp add --scope user canvas-sync -- /path/to/canvas-sync/.venv/bin/canvas mcp   # Claude Code
 ```
 
-For Claude Desktop, in `claude_desktop_config.json`:
-
 ```json
-{"mcpServers": {"canvas": {"command": "/path/to/canvas-sync/.venv/bin/canvas", "args": ["mcp"]}}}
+{"mcpServers": {"canvas-sync": {"command": "/path/to/canvas-sync/.venv/bin/canvas", "args": ["mcp"]}}}
 ```
 
 | tool | |
@@ -221,6 +228,7 @@ browse.py    a folder as the app shows it: disk + Canvas status, links, deleted 
 thumbs.py    preview images for the app's icon view
 server.py    local HTTP API for the desktop app (`canvas serve`)
 agent.py     your courses for an AI assistant, over MCP (`canvas mcp`): read-only
+assistants.py  AI apps it's added to (their config files), and keeping them pointed at it
 cli.py       `canvas` command
 ```
 

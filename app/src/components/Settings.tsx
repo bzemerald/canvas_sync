@@ -409,35 +409,90 @@ function MeaningRow() {
   );
 }
 
-/** AI assistants (MCP): how to add `canvas mcp` (agent.py) to one. It reads what's synced here, only. */
+/** AI assistants (MCP): adding `canvas mcp` (agent.py) to the AI apps on this computer, or by hand
+ * to others. It reads what's synced here, only. */
 function AssistantSection() {
-  const [how, setHow] = useState<{ command: string; args: string[] } | null>(null);
   const [open, setOpen] = useState(false);
-  useEffect(() => void api.mcpCommand().then(setHow, () => {}), []);
-  if (!how) return null;
-  const claudeCode = `claude mcp add canvas -- "${how.command}" ${how.args.join(" ")}`;
-  const desktop = JSON.stringify({ mcpServers: { canvas: { command: how.command, args: how.args } } }, null, 2);
   return (
     <Section title={t("AI 助手")}>
       <Row label={t("让 AI 助手读你的课程")}
         hint={t("Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。")}>
-        <Button onClick={() => setOpen(true)}>{t("接入方法…")}</Button>
+        <Button onClick={() => setOpen(true)}>{t("添加到…")}</Button>
       </Row>
-      {open && (
-        <Dialog title={t("接入 AI 助手")} onClose={() => setOpen(false)} width="max-w-xl"
-          footer={<Button primary onClick={() => setOpen(false)}>{t("完成")}</Button>}>
-          <p className="mb-4 text-fg-soft">
-            {t("把下面的设置加进你的 AI 助手。它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
-          </p>
-          <Copyable label="Claude Code" hint={t("在终端里运行：")} text={claudeCode} />
-          <Copyable label="Claude Desktop" text={desktop}
-            hint={t("加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：")} />
-          <p className="mb-2 text-xs text-muted">
-            {t("别的应用（如 Cursor）用同一个命令。移动或重装 Canvas Sync 之后，要重新设置一次。")}
-          </p>
-        </Dialog>
-      )}
+      {open && <AssistantsDialog onClose={() => setOpen(false)} />}
     </Section>
+  );
+}
+
+function AssistantsDialog({ onClose }: { onClose: () => void }) {
+  const [apps, setApps] = useState<api.Assistant[] | null>(null);
+  const [how, setHow] = useState<{ command: string; args: string[] } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [added, setAdded] = useState<Set<string>>(new Set()); // just now: say when it's seen
+  useEffect(() => {
+    void api.assistants().then(setApps, () => setApps([]));
+    void api.mcpCommand().then(setHow, () => {});
+  }, []);
+  const change = async (a: api.Assistant, add: boolean) => {
+    setBusy(a.id);
+    setErrors(({ [a.id]: _, ...rest }) => rest);
+    try {
+      setApps(await (add ? api.addAssistant(a.id) : api.removeAssistant(a.id)));
+      setAdded((s) => (add ? new Set(s).add(a.id) : new Set([...s].filter((x) => x !== a.id))));
+    } catch (e) {
+      setErrors((x) => ({ ...x, [a.id]: friendly((e as Error).message) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const installed = (apps ?? []).filter((a) => a.installed || a.added);
+  const servers = how && { "canvas-sync": { command: how.command, args: how.args } };
+  return (
+    <Dialog title={t("添加到 AI 助手")} onClose={onClose} width="max-w-xl"
+      footer={<Button primary onClick={onClose}>{t("完成")}</Button>}>
+      <p className="mb-4 text-fg-soft">
+        {t("它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
+      </p>
+      {apps && (
+        <div className="mb-3 divide-y divide-line rounded-lg border border-line">
+          {installed.length === 0 && <p className="px-3 py-2.5 text-muted">{t("这台电脑上没找到支持的 AI 应用。")}</p>}
+          {installed.map((a) => {
+            const note = errors[a.id]
+              ?? (added.has(a.id) && a.added
+                ? (a.restart ? t("重新打开 {app} 后就能用。", { app: a.name }) : t("在 {app} 新开的对话里就能用。", { app: a.name }))
+                : a.added && !a.current ? t("用的是另一份 Canvas Sync。") : null);
+            return (
+              <div key={a.id} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5">
+                    {a.name}
+                    {a.added && <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已添加")} />}
+                  </p>
+                  {note && <p className={`mt-0.5 text-xs ${errors[a.id] ? "text-danger" : "text-muted"}`}>{note}</p>}
+                </div>
+                {a.added && a.current
+                  ? <Button disabled={busy !== null} onClick={() => void change(a, false)}>{t("移除")}</Button>
+                  : <Button disabled={busy !== null} onClick={() => void change(a, true)}>
+                      {busy === a.id ? t("正在添加…") : a.added ? t("改用这一份") : t("添加")}
+                    </Button>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mb-4 text-xs text-muted">{t("ChatGPT 暂时用不了：它只能连网上的服务器，连不了这台电脑上的程序。")}</p>
+      {how && servers && (
+        <details className="mb-3">
+          <summary className="cursor-default text-xs text-muted select-none hover:text-fg">{t("手动添加到其他应用")}</summary>
+          <div className="mt-3">
+            <Copyable label={t("配置")} hint={t("大多数应用的 MCP 设置用这个格式：")}
+              text={JSON.stringify({ mcpServers: servers }, null, 2)} />
+            <Copyable label={t("命令")} hint={t("只要填命令的应用用这个：")} text={`"${how.command}" ${how.args.join(" ")}`} />
+          </div>
+        </details>
+      )}
+    </Dialog>
   );
 }
 
