@@ -18,7 +18,7 @@ import socket
 import sys
 import threading
 import webbrowser
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -35,6 +35,7 @@ from pydantic import BaseModel
 
 from . import __version__, content
 from . import ed, meaning
+from .sync import other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
 from .models import Course
@@ -1089,14 +1090,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "not signed in to Canvas")
         scope_paths(req)
         job = SyncJob(phase="checking", started_at=_now(), scope=req.paths)
-        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job, after_index))
+        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job, prefs_path))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
-
-    def after_index(e: Engine, progress: meaning.ProgressHandler) -> None:
-        """After a sync's indexing: passages for what changed, when searching by meaning is on."""
-        if prefs().meaning and meaning.downloaded(home):
-            Meaning(e.index).sync(meaning.embedder(home), progress)
 
     # -- searching by meaning (meaning.py) --------------------------------------------------------
 
@@ -1227,7 +1223,7 @@ async def _who(url: str, token: str) -> dict[str, Any]:
 
 
 async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, scope: Scope | None,
-                    job: SyncJob, after_index: Callable[[Engine, meaning.ProgressHandler], None] | None = None) -> None:
+                    job: SyncJob, prefs_path: Path = PREFS_FILE) -> None:
     try:
         async with CanvasClient(account.base_url, canvas_token) as client:
             with Engine(account.root, client) as e:
@@ -1253,9 +1249,9 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
                 # Even with nothing to download: this is what stores new announcements,
                 # assignments, pages and modules.
                 await e.apply(plan, on_event)
-                if scope is None and account.ed_region and (ed_token := account.ed_token()):
+                if scope is None:
                     job.current = "Ed"
-                    job.ed_error = await ed.sync(e, ed_token, account.ed_region, [x.course.id for x in plan.snapshots])
+                    job.ed_error = await other_sources(e, account, [x.course.id for x in plan.snapshots])
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 
@@ -1264,9 +1260,7 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
                 job.done, job.total, job.current = done, total, title
 
             with Engine(account.root) as e:
-                e.reindex(progress)
-                if after_index:
-                    after_index(e, lambda done, total: progress(done, total, ""))
+                reindex(e, prefs_path, progress, lambda done, total: progress(done, total, ""))
 
         await asyncio.to_thread(index)
         job.phase = "done"

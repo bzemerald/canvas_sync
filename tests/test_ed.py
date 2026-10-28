@@ -10,7 +10,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from canvas_sync import Engine, content, ed, server
+from typer.testing import CliRunner
+
+from canvas_sync import Engine, cli, content, ed, server
 from canvas_sync.catalog import catalog
 from canvas_sync.places import Place
 from canvas_sync.things import Thing
@@ -151,6 +153,18 @@ def linked(root, fake, fake_ed, web) -> FakeEd:
     pull(root, fake)
     set_ed_courses(root / ".canvas" / "config.toml", {1: 501})
     return fake_ed
+
+
+
+def test_pull_on_the_command_line_syncs_ed_too(root, linked, web, monkeypatch):
+    web["edstem:au"] = TOKEN
+    monkeypatch.setattr(Account, "load", classmethod(lambda cls: Account(BASE, root, "Test", ed_region="au")))
+    linked.thread(501, 9001, "HW 3 megathread", user=1)
+    result = CliRunner().invoke(cli.app, ["pull"])
+    assert result.exit_code == 0, result.output
+    with Engine(root) as e:
+        assert [x["title"] for x in content.items(e.state, e.root, 1, "post")] == ["HW 3 megathread"]
+        assert [h.title for h in e.search("megathread")] == ["HW 3 megathread"]  # (and indexed)
 
 
 def test_ed_announcements_are_the_courses(root, fake, linked):

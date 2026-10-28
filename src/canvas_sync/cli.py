@@ -16,13 +16,15 @@ from rich.progress import Progress
 from rich.table import Table
 
 from .api import CanvasClient, CanvasError
-from .config import Account, ConfigError, set_course_listed
+from .config import PREFS_FILE, Account, ConfigError, set_course_listed
 from .engine import Engine, NotInitialized
 from .local import open_path
 from .models import Course
 from .plan import Kind, Plan, Scope
 from .search import Hit
 from .state import META_DIR
+from .sync import other_sources
+from .sync import reindex as sync_reindex
 
 app = typer.Typer(help="Sync Canvas course files into a local folder.", no_args_is_help=True)
 console = Console()
@@ -210,7 +212,7 @@ def pull(
             if not dry_run:
                 # No files to fetch, but announcements, assignments, pages and modules may be new.
                 await engine.apply(plan)
-                reindex(engine)
+                await after_canvas(engine, plan, scope)
             if not as_json:
                 console.print("Already up to date.")
             return
@@ -227,12 +229,22 @@ def pull(
                     progress.console.print(f"[red]failed:[/] {a.path or a.name}: {error}")
 
             errors = await engine.apply(plan, on_event)
-        reindex(engine)
+        await after_canvas(engine, plan, scope)
         counts = Counter(a.kind for a in work)
         summary = ", ".join(f"{n} {k.value.replace('_', ' ')}" for k, n in counts.items() if k not in (Kind.LINK, Kind.UNLINK))
         console.print(f"Done{': ' + summary if summary else ''}." + (f" [red]{len(errors)} failed.[/]" if errors else ""))
 
     with_engine(True, body)
+
+
+async def after_canvas(engine: Engine, plan: Plan, scope: Scope | None) -> None:
+    """The rest of a sync, as the app does it: Ed (unless only some folders were pulled), the index."""
+    if scope is None and (acc := account()).ed_region:
+        with console.status("Checking Ed…"):
+            error = await other_sources(engine, acc, [s.course.id for s in plan.snapshots])
+        if error:
+            console.print(f"[yellow]Ed:[/] {escape(error)}")
+    reindex(engine)
 
 
 def reindex(engine: Engine) -> None:
@@ -241,7 +253,10 @@ def reindex(engine: Engine) -> None:
             if title:
                 spinner.update(f"Indexing for search… {done}/{total} [dim]{title}[/]")
 
-        engine.reindex(on_progress)
+        def on_meaning(done: int, total: int) -> None:
+            spinner.update(f"Preparing search by meaning… {done}/{total}")
+
+        sync_reindex(engine, PREFS_FILE, on_progress, on_meaning)
 
 
 @app.command("index")
