@@ -424,18 +424,15 @@ function AssistantSection() {
         <Button onClick={() => setOpen(true)}>{t("接入方法…")}</Button>
       </Row>
       {open && (
-        <Dialog title={t("接入 AI 助手")} onClose={() => setOpen(false)}
+        <Dialog title={t("接入 AI 助手")} onClose={() => setOpen(false)} width="max-w-xl"
           footer={<Button primary onClick={() => setOpen(false)}>{t("完成")}</Button>}>
           <p className="mb-4 text-fg-soft">
             {t("把下面的设置加进你的 AI 助手。它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
           </p>
-          <p className="mb-1.5 text-xs font-medium">Claude Code</p>
-          <p className="mb-1.5 text-xs text-muted">{t("在终端里运行：")}</p>
-          <Copyable text={claudeCode} />
-          <p className="mt-4 mb-1.5 text-xs font-medium">Claude Desktop</p>
-          <p className="mb-1.5 text-xs text-muted">{t("加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：")}</p>
-          <Copyable text={desktop} />
-          <p className="mt-4 mb-2 text-xs text-muted">
+          <Copyable label="Claude Code" hint={t("在终端里运行：")} text={claudeCode} />
+          <Copyable label="Claude Desktop" text={desktop}
+            hint={t("加进 claude_desktop_config.json（Claude 的“设置 → 开发者 → 编辑配置”），然后重启 Claude：")} />
+          <p className="mb-2 text-xs text-muted">
             {t("别的应用（如 Cursor）用同一个命令。移动或重装 Canvas Sync 之后，要重新设置一次。")}
           </p>
         </Dialog>
@@ -444,22 +441,29 @@ function AssistantSection() {
   );
 }
 
-function Copyable({ text }: { text: string }) {
+/** Text to paste somewhere else, under what it's for, with a button that copies it. */
+function Copyable({ label, hint, text }: { label: string; hint: string; text: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => void navigator.clipboard.writeText(text).then(() => {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }, () => {});
   return (
-    <div className="relative">
-      <pre className="overflow-x-auto rounded-md border border-line bg-chip py-2 pr-20 pl-3 font-mono text-xs leading-relaxed whitespace-pre select-text">
+    <div className="mb-4">
+      <div className="mb-1.5 flex items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium">{label}</p>
+          <p className="mt-0.5 text-xs text-muted">{hint}</p>
+        </div>
+        <Button onClick={copy} className="flex shrink-0 items-center gap-1.5 px-2.5! py-1! text-xs!">
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? t("已复制") : t("复制")}
+        </Button>
+      </div>
+      {/* (Long lines wrap: copying gives the text as it is.) */}
+      <pre className="rounded-md border border-line bg-chip px-3 py-2 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap select-text">
         {text}
       </pre>
-      <button onClick={copy}
-        className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded px-2 py-1 text-xs text-muted hover:bg-panel hover:text-fg">
-        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        {copied ? t("已复制") : t("复制")}
-      </button>
     </div>
   );
 }
