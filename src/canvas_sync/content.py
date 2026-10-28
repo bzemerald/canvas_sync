@@ -14,14 +14,18 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
-from .search import DOC_BODY, doc_url, relative_url
+from .search import DOC_BODY, course_label, doc_url, relative_url
 from .state import NEWS_KINDS, State
 from .text import html_to_text
+
+if TYPE_CHECKING:
+    from .engine import Engine
 
 KINDS = ("announcement", "assignment", "page", "syllabus", "post")
 
@@ -39,6 +43,30 @@ TOOL_NAMES = {"gradescope": "Gradescope", "edstem": "Ed", "quiz-lti": "New Quizz
               "theexpertta": "Expert TA", "rollcall": "Roll Call", "iclicker": "iClicker", "mcgraw": "McGraw Hill",
               "pearson": "Pearson", "macmillan": "Macmillan", "wiley": "Wiley", "hypothes": "Hypothesis"}
 HOSTING = {"instructure", "amazonaws", "herokuapp", "azurewebsites", "cloudfront", "edu"}
+
+
+def courses(e: Engine) -> list[dict[str, Any]]:
+    """Your courses, as the app lists them: each with what you call it, where its folder is,
+    and how much is new in it."""
+    out = []
+    for c in e.state.courses():
+        d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
+        term_renamed = len(d.parts) > 1 and d.parent.name != canonical.parent.name
+        out.append({
+            **asdict(c), "dir": d.as_posix(),
+            "display_code": e.settings.course_names.get(c.id) or c.code,
+            "label": course_label(c, e.settings),       # what the app calls it
+            "renamed": d.name != canonical.name,         # you gave it a name
+            "default_name": canonical.name,              # renaming to this undoes that
+            "term_label": d.parent.name if term_renamed else c.term,
+            # Where what's from each part of Canvas goes (files, modules, attachments).
+            "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
+            "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
+            "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
+            "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
+            "excluded": c.id in e.settings.exclude,   # not synced
+        })
+    return out
 
 
 def tool_name(url: str | None) -> str | None:
@@ -226,8 +254,10 @@ def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> di
     return None
 
 
-def overview(state: State, root: Path, course_id: int, now: datetime | None = None) -> dict[str, Any]:
-    """What a course page opens with: what's due, what was said, what's new, how you're doing."""
+def overview(state: State, root: Path, course_id: int, now: datetime | None = None,
+             layout: Layout | None = None) -> dict[str, Any]:
+    """What a course page opens with: what's due, what was said, what's new, how you're doing;
+    with `layout`, this week's modules too (the 当前模块 card)."""
     now = now or datetime.now(timezone.utc)
     docs = _docs(state, course_id)
     count = {k: sum(d[0] == k for d in docs) for k in KINDS}
@@ -264,7 +294,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
     shown = files[:8]
     shown += [f for f in files[8:] if f["new"]][:8]
 
-    return {
+    out = {
         "upcoming": upcoming[:8],
         "announcements": announcements[:5],
         "posts": staff_posts[:5],
@@ -283,6 +313,9 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "grades": total is not None or bool(graded),
         },
     }
+    if layout is not None:
+        out["current_modules"] = [m for m in modules(state, root, layout, course_id, now) if m["current"]][:2]
+    return out
 
 
 def _desc(iso: str | None) -> float:

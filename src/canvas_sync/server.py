@@ -526,25 +526,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/courses")
     def courses() -> list[dict[str, Any]]:
         with engine() as e:
-            out = []
-            for c in e.state.courses():
-                d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
-                term_renamed = len(d.parts) > 1 and d.parent.name != canonical.parent.name
-                out.append({
-                    **asdict(c), "dir": d.as_posix(),
-                    "display_code": e.settings.course_names.get(c.id) or c.code,
-                    "label": course_label(c, e.settings),       # what the app calls it
-                    "renamed": d.name != canonical.name,         # you gave it a name
-                    "default_name": canonical.name,              # renaming to this undoes that
-                    "term_label": d.parent.name if term_renamed else c.term,
-                    # Where what's from each part of Canvas goes (files, modules, attachments).
-                    "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
-                    "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
-                    "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
-                    "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
-                    "excluded": c.id in e.settings.exclude,   # not synced
-                })
-            return out
+            return content.courses(e)
 
     @api.get("/courses/choice")
     async def course_choice() -> dict[str, Any]:
@@ -626,10 +608,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/courses/{course_id}/overview")
     def course_overview(course_id: int) -> dict[str, Any]:
         with engine() as e:
-            out = content.overview(e.state, e.root, course_id)
-            # This week's modules, for the overview's 当前模块 card.
-            out["current_modules"] = [m for m in content.modules(e.state, e.root, e.layout, course_id) if m["current"]][:2]
-            return out
+            return content.overview(e.state, e.root, course_id, layout=e.layout)
 
     @api.get("/courses/{course_id}/modules")
     def course_modules(course_id: int) -> list[dict[str, Any]]:
