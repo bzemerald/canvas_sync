@@ -128,9 +128,9 @@ setting changes; what's newer than the last sync isn't there (`whats_new` says w
 Paths stay inside the sync folder, and `.canvas/` and the tokens are never handed over.
 
 In the app, Settings → AI assistants → Add To… adds it to the AI apps found on this computer
-(Claude, Claude Code, Codex, Cursor, VS Code), and takes it away again. Their config files keep
-everything else in them (the old one is kept in `~/.config/canvas-sync/backups/`); Claude Code's
-is changed by its own `claude mcp`. When Canvas Sync moves or is reinstalled, entries pointing at
+(Claude, Codex), and takes it away again. Their config files keep everything else in them (the
+old one is kept in `~/.config/canvas-sync/backups/`). Other apps are added by hand, as below.
+When Canvas Sync moves or is reinstalled, entries pointing at
 the old place are pointed at the new one when it starts. ChatGPT only connects to servers on the
 web, so it can't use this yet.
 

@@ -545,7 +545,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def add_assistant(app_id: str) -> list[dict[str, Any]]:
         try:
             assistants.add(assistant(app_id), canvas_command(), ["mcp"], prefs_path.parent / "backups")
-        except (assistants.AssistantError, OSError, subprocess.SubprocessError) as err:
+        except (assistants.AssistantError, OSError) as err:
             raise HTTPException(400, str(err))
         return assistants.state(canvas_command())
 
@@ -553,7 +553,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def remove_assistant(app_id: str) -> list[dict[str, Any]]:
         try:
             assistants.remove(assistant(app_id), prefs_path.parent / "backups")
-        except (assistants.AssistantError, OSError, subprocess.SubprocessError) as err:
+        except (assistants.AssistantError, OSError) as err:
             raise HTTPException(400, str(err))
         return assistants.state(canvas_command())
 
