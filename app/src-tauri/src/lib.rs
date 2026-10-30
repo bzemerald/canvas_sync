@@ -10,7 +10,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod dragout;
@@ -259,15 +260,53 @@ fn set_launcher_keys(app: AppHandle, keys: Option<String>) -> Result<(), String>
     Ok(())
 }
 
+/// canvas-sync:// links (an AI assistant's, handed over by opener.py) that came before the main window was
+/// listening: it takes them when it starts (`take_links`), and is sent the rest ("open-link").
+#[derive(Default)]
+struct Links {
+    waiting: Mutex<Vec<String>>,
+    listening: AtomicBool,
+}
+
+fn open_links(app: &AppHandle, urls: Vec<String>) {
+    if urls.is_empty() {
+        return;
+    }
+    show_main(app.clone());
+    let links = app.state::<Links>();
+    if links.listening.load(Ordering::Relaxed) {
+        for url in urls {
+            let _ = app.emit_to("main", "open-link", url);
+        }
+    } else {
+        links.waiting.lock().unwrap().extend(urls);
+    }
+}
+
+#[tauri::command]
+fn take_links(app: AppHandle) -> Vec<String> {
+    let links = app.state::<Links>();
+    let mut waiting = links.waiting.lock().unwrap();
+    links.listening.store(true, Ordering::Relaxed);
+    std::mem::take(&mut *waiting)
+}
+
 /// What opens the search window now (None while 设置 is listening for new keys).
 #[derive(Default)]
 struct LauncherKeys(Mutex<Option<Shortcut>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Elsewhere a link starts the app again: the copy already running is handed it instead
+    // (and passes it to the deep-link plugin). macOS sends it to the running app itself.
+    #[cfg(any(windows, target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app.clone())));
+    builder
         .manage(BackendState::default())
         .manage(LauncherKeys::default())
+        .manage(Links::default())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -281,6 +320,17 @@ pub fn run() {
         )
         .setup(|app| {
             start_backend(app.handle());
+            // canvas-sync:// opens things here (the app's own scheme, in tauri.conf.json). The
+            // installer registers it; a dev build registers itself (macOS: only once bundled).
+            #[cfg(any(windows, target_os = "linux"))]
+            let _ = app.deep_link().register_all();
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                open_links(&handle, event.urls().iter().map(|u| u.to_string()).collect());
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                open_links(app.handle(), urls.iter().map(|u| u.to_string()).collect());
+            }
             #[cfg(target_os = "macos")]
             hide_after_full_screen(app.handle());
             if let Some(w) = app.get_webview_window(GHOST) {
@@ -333,6 +383,7 @@ pub fn run() {
             hide_launcher,
             show_main,
             show_launcher,
+            take_links,
             set_launcher_keys,
             dragout::drag_out,
             #[cfg(target_os = "macos")]

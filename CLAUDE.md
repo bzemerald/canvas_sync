@@ -51,7 +51,9 @@ without the Canvas website or Finder.
     the modules, so the command line and `agent.py` get the same answers.
   - `agent.py`: `canvas mcp`, the courses for an AI assistant over MCP (the `mcp` SDK, 2.x:
     `MCPServer`). Read-only: nothing marked seen or recorded, no Canvas or Ed calls.
-    `assistants.py`: adding it to AI apps (their config files; Claude Code by `claude mcp`).
+    `opener.py`: the links it gives (`app_link`), http://127.0.0.1:47630/open?<a thing>, served
+    by `canvas mcp` and handed to the app as canvas-sync://open?<the same> (AI apps don't let
+    you click their own scheme). `assistants.py`: adding it to AI apps (their config files).
     Tests point `assistants.HOME` at a temporary home (conftest.py): never the real apps.
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.
 - `app/`: Tauri v2, React 19, TypeScript, Vite, Tailwind v4.
@@ -74,6 +76,8 @@ without the Canvas website or Finder.
     `src-tauri/src/quicklook.rs`: Quick Look (macOS), the system's panel, zooming out of the icon
     that has the file's `data-ql` (`src/lib/quicklook.ts`).
     `src-tauri/src/dragout.rs`: dragging files out to other apps, the system's drag (a copy).
+    canvas-sync:// (the deep-link plugin; macOS registers it only in a bundled app) brings the
+    main window forward and opens the thing (`thingOfLink`, things.ts).
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
 
 ## Commands

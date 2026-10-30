@@ -21,14 +21,14 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from . import __version__, content
+from . import __version__, content, opener
 from .config import PREFS_FILE, Account
 from .engine import Engine, NotInitialized
 from .local import inside
 from .models import Course
 from .search import Hit, course_label, pick_courses
 from .text import extract, html_to_text, slides
-from .things import Thing, of_item
+from .things import Thing, of_item, parse
 
 INSTRUCTIONS = """\
 The student's Canvas courses (and their courses' Ed discussions), as Canvas Sync last synced them
@@ -38,6 +38,11 @@ isn't seen yet: whats_new says when that was, and whether Ed failed.
 
 Start with list_courses or search. Everything comes with a `thing` that says which one it is; read
 takes a result's course, kind and id (or a file's path) for the whole text.
+
+To point the student to something, give its `app_link` as a Markdown link: it opens it in the
+Canvas Sync app (a file is shown in its folder there; a browser tab may open first, saying so).
+`link` is the page on Canvas (or Ed) in the browser: give that when they ask for the web page, or
+when there's no `app_link`.
 
 Times are ISO, in UTC; each comes with a `_local` twin in the student's time zone (this
 computer's), e.g. "Mon 2026-11-02 19:00 PST": say that one to the student.
@@ -71,17 +76,19 @@ def _local(iso: str) -> str | None:
     return t.astimezone().strftime("%a %Y-%m-%d %H:%M %Z") if t else None
 
 
-def _localized(x: Any) -> Any:
-    """`x` with a `<time>_local` beside each time in it."""
+def _annotated(x: Any) -> Any:
+    """`x` with a `<time>_local` beside each time in it, and an `app_link` beside each thing."""
     if isinstance(x, list):
-        return [_localized(v) for v in x]
+        return [_annotated(v) for v in x]
     if not isinstance(x, dict):
         return x
     out = {}
     for k, v in x.items():
-        out[k] = _localized(v)
+        out[k] = _annotated(v)
         if k in TIMES and isinstance(v, str) and (local := _local(v)):
             out[f"{k}_local"] = local
+        if k == "thing" and (t := parse(v)) and (link := opener.link(t)):
+            out["app_link"] = link
     return out
 
 
@@ -112,10 +119,10 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
                     log_level="WARNING")
 
     def tool(f: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
-        """A read-only tool, its times also in the student's zone."""
+        """A read-only tool, its times also in the student's zone, its things linked to the app."""
         @functools.wraps(f)
         def run(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return _localized(f(*args, **kwargs))
+            return _annotated(f(*args, **kwargs))
         return mcp.tool(annotations=READ)(run)
 
     @contextmanager
@@ -510,4 +517,5 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
 
 
 def serve() -> None:
+    opener.serve_in_background()
     create_server(Account.load()).run()
