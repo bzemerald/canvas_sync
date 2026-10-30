@@ -1,6 +1,8 @@
 """AI apps that can use `canvas mcp` (agent.py), and adding it to them: their own config files
 (only our entry changed; the old file kept in the app's folder first), or, for Claude Code, its
-own command (its ~/.claude.json is rewritten by every running session).
+own command (its ~/.claude.json is rewritten by every running session). VS Code's file may have
+comments, which we can't keep: then its own `code --add-mcp` adds it. (Codex's and VS Code's
+commands rewrite the other servers in the file too, so they aren't the first choice.)
 
 When the app moves or is reinstalled, an entry whose program is gone is pointed at this one
 (`repair`). One whose program is still there is left alone: the dev app and the packed one
@@ -82,11 +84,15 @@ def entry(app: App) -> dict[str, Any] | None:
     return dict(found) if isinstance(found, dict) else None
 
 
-def _write(app: App, data: dict[str, Any], backups: Path) -> None:
-    """The file as `data`, whole or not at all; what it was, kept in `backups` first."""
+def _backup(app: App, backups: Path) -> None:
     if app.path.exists():
         backups.mkdir(parents=True, exist_ok=True)
         shutil.copy2(app.path, backups / f"{app.id}{app.path.suffix}")
+
+
+def _write(app: App, data: dict[str, Any], backups: Path) -> None:
+    """The file as `data`, whole or not at all; what it was, kept in `backups` first."""
+    _backup(app, backups)
     app.path.parent.mkdir(parents=True, exist_ok=True)
     text = tomlkit.dumps(data) if app.path.suffix == ".toml" else json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     tmp = app.path.with_name(app.path.name + ".canvas-sync.tmp")
@@ -94,33 +100,56 @@ def _write(app: App, data: dict[str, Any], backups: Path) -> None:
     os.replace(tmp, app.path)
 
 
-def claude_command(home: Path | None = None) -> str | None:
-    """Claude Code's `claude`: the app started from Finder doesn't have the shell's PATH."""
+def program(app_id: str, home: Path | None = None) -> str | None:
+    """An app's command (claude, code), if it has one we use: the app started from Finder
+    doesn't have the shell's PATH. With HOME set elsewhere (tests), only programs in that home."""
+    mine = HOME is None and home is None
     home = home or HOME or Path.home()
-    exe = "claude.exe" if sys.platform == "win32" else "claude"
-    for p in (home / ".local" / "bin" / exe, home / ".claude" / "local" / exe,
-              Path("/opt/homebrew/bin/claude"), Path("/usr/local/bin/claude")):
+    exe = ".exe" if sys.platform == "win32" else ""
+    places: list[Path] = []
+    name = ""
+    if app_id == "claude-code":
+        name = "claude"
+        places = [home / ".local" / "bin" / f"claude{exe}", home / ".claude" / "local" / f"claude{exe}"]
+        if mine:
+            places += [Path("/opt/homebrew/bin/claude"), Path("/usr/local/bin/claude")]
+    elif app_id == "vscode" and sys.platform != "win32":  # (code.cmd: cmd.exe would mangle the JSON's quotes)
+        name = "code"
+        apps_dirs = [home / "Applications"] + ([Path("/Applications")] if mine else [])
+        places = [d / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code"
+                  for d in apps_dirs]
+    for p in places:
         if p.is_file():
             return str(p)
-    return shutil.which("claude")
+    return shutil.which(name) if name and mine else None
 
 
-def _claude(home: Path, *args: str) -> None:
-    claude = claude_command(home)
-    if claude is None:
+def _run(app: App, home: Path | None, *args: str) -> None:
+    """The app's own command, told to use the config `apps()` reads."""
+    exe = program(app.id, home)
+    if exe is None:
         raise AssistantError("can't find the claude command: run the command below in a terminal instead")
-    done = subprocess.run([claude, "mcp", *args], capture_output=True, text=True, timeout=60)
+    if app.id == "vscode":
+        args = ("--user-data-dir", str(app.path.parent.parent), *args)
+    done = subprocess.run([exe, *args], capture_output=True, text=True, timeout=60)
     if done.returncode != 0:
-        raise AssistantError((done.stderr or done.stdout).strip() or "claude mcp failed")
+        raise AssistantError((done.stderr or done.stdout).strip() or f"{Path(exe).name} failed")
 
 
 def add(app: App, command: str, args: list[str], backups: Path, home: Path | None = None) -> None:
     if app.id == "claude-code":
         if entry(app) is not None:
-            _claude(home or HOME or Path.home(), "remove", "--scope", "user", NAME)
-        _claude(home or HOME or Path.home(), "add", "--scope", "user", NAME, "--", command, *args)
+            _run(app, home, "mcp", "remove", "--scope", "user", NAME)
+        _run(app, home, "mcp", "add", "--scope", "user", NAME, "--", command, *args)
         return
-    data = _read(app)
+    try:
+        data = _read(app)
+    except AssistantError:
+        if app.id != "vscode" or program(app.id, home) is None:
+            raise
+        _backup(app, backups)
+        _run(app, home, "--add-mcp", json.dumps({"name": NAME, "command": command, "args": args}))
+        return
     servers = data.get(app.key)
     if not isinstance(servers, dict):
         servers = data[app.key] = tomlkit.table() if app.path.suffix == ".toml" else {}
@@ -132,9 +161,9 @@ def remove(app: App, backups: Path, home: Path | None = None) -> None:
     if entry(app) is None:
         return
     if app.id == "claude-code":
-        _claude(home or HOME or Path.home(), "remove", "--scope", "user", NAME)
+        _run(app, home, "mcp", "remove", "--scope", "user", NAME)
         return
-    data = _read(app)
+    data = _read(app)  # (VS Code has no command to take one away)
     del data[app.key][NAME]
     if not data[app.key]:  # (nothing else there: as before it was added)
         del data[app.key]

@@ -1,5 +1,6 @@
 """Adding `canvas mcp` to AI apps (assistants.py): their config files, kept as they were apart
-from our entry; Claude Code through its own command; entries left behind by a moved app."""
+from our entry; Claude Code through its own command, and VS Code when its file has comments;
+entries left behind by a moved app."""
 
 from __future__ import annotations
 
@@ -87,6 +88,34 @@ p.write_text(json.dumps(d))
     assert log.read_text().splitlines() == [
         f"mcp add --scope user canvas-sync -- {CMD} mcp", "mcp remove --scope user canvas-sync",
         "mcp add --scope user canvas-sync -- /elsewhere/canvas mcp", "mcp remove --scope user canvas-sync"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a shell script stands in for code")
+def test_vscode_with_comments_through_its_command(no_real_ai_apps: Path, tmp_path: Path):
+    log, backups = tmp_path / "code.log", tmp_path / "backups"
+    code = (no_real_ai_apps / "Applications" / "Visual Studio Code.app" / "Contents" / "Resources" / "app"
+            / "bin" / "code")
+    code.parent.mkdir(parents=True)
+    code.write_text(f"""#!{sys.executable}
+import sys
+open({str(log)!r}, "a").write(" ".join(sys.argv[1:]) + "\\n")
+""")
+    code.chmod(code.stat().st_mode | stat.S_IEXEC)
+    vscode, cursor = app("vscode"), app("cursor")
+    vscode.path.parent.mkdir(parents=True)
+    vscode.path.write_text('{\n  // my servers\n  "servers": {}\n}\n')
+
+    assistants.add(vscode, CMD, ARGS, backups)
+    assistants.add(cursor, CMD, ARGS, backups)  # (Cursor's file: no command needed)
+    assert log.read_text().splitlines() == [
+        f"--user-data-dir {vscode.path.parent.parent} --add-mcp "
+        + json.dumps({"name": "canvas-sync", "command": CMD, "args": ARGS})]
+    assert (backups / "vscode.json").read_text().startswith("{\n  // my servers")
+
+    vscode.path.write_text('{"servers": {}}')  # (no comments: its file, as for the others)
+    assistants.add(vscode, CMD, ARGS, backups)
+    assert len(log.read_text().splitlines()) == 1
+    assert assistants.entry(vscode) == {"command": CMD, "args": ARGS}
 
 
 def test_a_moved_app_is_found_again(tmp_path: Path):
