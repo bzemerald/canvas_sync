@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import io
-import threading
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
-from urllib.parse import quote_plus
-from urllib.request import urlopen
 
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 
-from canvas_sync import Engine, opener
+from canvas_sync import Engine
 from canvas_sync.agent import create_server
 from canvas_sync.config import Account
 from canvas_sync.server import create_app
-from canvas_sync.things import Thing
 from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull
 
 NOW = datetime.now(timezone.utc)
@@ -135,38 +129,6 @@ def test_times_also_in_the_students_zone(root, course, monkeypatch):
     finally:
         monkeypatch.delenv("TZ")
         time.tzset()
-
-
-def test_things_link_to_the_app(root, course):
-    pull(root, course)
-    with Engine(root) as e:
-        e.reindex()
-    found = ok(root, "search", query="midterm room")["results"][0]
-    assert found["app_link"] == f"http://127.0.0.1:{opener.PORT}/open?type=doc&course=1&kind=announcement&id=7"
-    lec = ok(root, "modules", course="221")["modules"][0]["items"][0]
-    assert lec["app_link"].endswith("/open?type=file&path=" + quote_plus(f"{COURSE}/Modules/01 Week 1/lec1.pdf"))
-
-
-def test_a_link_clicked_opens_the_app(monkeypatch):
-    """The link's page hands it to the system as canvas-sync:// (the app's scheme: things.test.ts)."""
-    opened: list[str] = []
-    handed = threading.Event()
-    monkeypatch.setattr(opener, "HANDOFF", 0)
-    monkeypatch.setattr(opener, "open_url", lambda url: (opened.append(url), handed.set()))
-    server = ThreadingHTTPServer(("127.0.0.1", 0), opener._Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        link = opener.link(Thing("file", path="MATH 221/Files/hw 6.pdf"))
-        here = f"http://127.0.0.1:{server.server_port}"
-        assert urlopen(here + link.split(str(opener.PORT), 1)[1]).status == 200
-        assert handed.wait(5)  # (after the page)
-        assert opened == ["canvas-sync://open?type=file&path=MATH+221%2FFiles%2Fhw+6.pdf"]
-        for bad in ("/open?type=doc&course=1", "/open?type=link&url=https%3A%2F%2Fx.com", "/elsewhere"):
-            with pytest.raises(HTTPError):
-                urlopen(here + bad)
-        assert len(opened) == 1
-    finally:
-        server.shutdown()
 
 
 def test_slides_ed_and_paths_as_other_clients_give_them(root, course):

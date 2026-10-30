@@ -127,11 +127,6 @@ It's read-only and offline: nothing is fetched from Canvas or Ed, nothing is mar
 setting changes; what's newer than the last sync isn't there (`whats_new` says when that was).
 Paths stay inside the sync folder, and `.canvas/` and the tokens are never handed over.
 
-Everything it hands over comes with an `app_link`, which opens it in the app (a file: shown in its
-folder there). It's `http://127.0.0.1:47630/open?...`, served by `canvas mcp` while the assistant
-runs, because AI apps don't let you click the app's own `canvas-sync://` links; it passes the
-link on as `canvas-sync://`, which brings the app forward, or starts it.
-
 In the app, Settings → AI assistants → Add To… adds it to the AI apps found on this computer
 (Claude, Codex), and takes it away again. Their config files keep everything else in them (the
 old one is kept in `~/.config/canvas-sync/backups/`). Other apps are added by hand, as below.

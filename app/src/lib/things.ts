@@ -59,30 +59,6 @@ export function thingKey(t: Thing): string {
 }
 export const same = (a: Thing | null | undefined, b: Thing | null | undefined) => !!a && !!b && thingKey(a) === thingKey(b);
 
-/** A canvas-sync:// link (what an AI assistant's link hands over: opener.py): a thing's fields
- * as the query, "canvas-sync://open?type=doc&course=1&kind=assignment&id=2". Not links or searches:
- * nothing makes those. Null if it isn't one. */
-export function thingOfLink(link: string): Thing | null {
-  let url: URL;
-  try {
-    url = new URL(link);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "canvas-sync:" || url.hostname !== "open") return null;
-  const q = url.searchParams;
-  const type = q.get("type") as Thing["type"] | null;
-  if (!type || !(type in FIELDS) || type === "link" || type === "search") return null;
-  const out: Record<string, unknown> = { type };
-  for (const k of FIELDS[type] as string[]) {
-    const v = q.get(k);
-    if (!v) return null;
-    out[k] = ["course", "module", "tool"].includes(k) ? Number(v) : v;
-    if (typeof out[k] === "number" && !Number.isInteger(out[k])) return null;
-  }
-  return out as Thing;
-}
-
 /** A document from Ed (an announcement or post there): its id is "ed-" and Ed's (see ed.py). */
 export const fromEd = (x: ThingOf<"doc">) => x.id.startsWith("ed-");
 

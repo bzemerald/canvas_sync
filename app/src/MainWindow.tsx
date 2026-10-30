@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -45,7 +44,7 @@ import { moved, useReorder } from "./lib/reorder";
 import { termRank } from "./lib/terms";
 import {
   type Shown, type Thing, type ThingOf, type ViewName, changed, fromEd, isView, opensElsewhere, putAt, same, thingKey, thingOf, thingOfHit,
-  thingOfLink, view as viewOf, without,
+  view as viewOf, without,
 } from "./lib/things";
 import { useTrafficLights } from "./lib/window";
 import { shortDate } from "./lib/dates";
@@ -370,22 +369,6 @@ export function MainWindow() {
     ];
     return () => offs.forEach((off) => void off.then((f) => f()));
   }, []);
-  // canvas-sync:// links (an AI assistant's), opened as if clicked here once the courses are
-  // known; the ones that started the app are waiting. A file is shown in its folder, not opened
-  // in its app: a link can come from anywhere.
-  const openLink = useRef<(link: string) => void>(() => {});
-  openLink.current = (link) => {
-    const x = thingOfLink(link);
-    if (x?.type === "file") goPath(parentOf(x.path), x.path);
-    else if (x) open(x);
-  };
-  const coursesKnown = courseList.length > 0;
-  useEffect(() => {
-    if (!coursesKnown) return;
-    const off = listen<string>("open-link", ({ payload }) => openLink.current(payload));
-    void off.then(() => invoke<string[]>("take_links")).then((links) => links.forEach((l) => openLink.current(l)), () => {});
-    return () => void off.then((f) => f());
-  }, [coursesKnown]);
   // A saved search: shown as a smart folder, or as a course's tab.
   const searched = view.kind === "search" ? view.search : tab?.type === "search" ? tab : null;
   const folderEntry = view.kind === "search" ? pinned.find((p) => same(p, view.search)) : undefined; // (its name, if pinned)
