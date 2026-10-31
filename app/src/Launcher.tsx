@@ -147,7 +147,8 @@ export function Launcher() {
   };
 
   return (
-    <div className="h-screen p-3">
+    // Anything that isn't a control drags the window (Tauri leaves buttons, inputs, options alone).
+    <div className="h-screen p-3" data-tauri-drag-region="deep">
       <Command
         shouldFilter={false}
         loop
@@ -156,8 +157,8 @@ export function Launcher() {
         onKeyDown={onKeyDown}
         className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl"
       >
-        <div className="border-b border-line" data-tauri-drag-region>
-          <div className="flex items-center gap-3 px-4" data-tauri-drag-region>
+        <div className="border-b border-line">
+          <div className="flex items-center gap-3 px-4">
             <Search className="size-5 shrink-0 text-muted" aria-hidden />
             <div className="relative min-w-0 flex-1">
               <Command.Input
@@ -168,6 +169,7 @@ export function Launcher() {
                 spellCheck={false}
                 value={query}
                 onValueChange={setQuery}
+                onMouseDown={dragPastText}
                 placeholder={tips.length
                   ? t("搜索课程内容… 例如 {example}", { example: tips[ahead!.pick].query })
                   : t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
@@ -180,7 +182,7 @@ export function Launcher() {
           <ReadingBar reading={reading} names={names} courses={courses} onQuery={setQuery} className="-mt-1 px-4 pb-2.5 pl-12" />
         </div>
 
-        <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto p-2">
+        <Command.List ref={list} onMouseDown={onScrollbar} className="min-h-0 flex-1 overflow-y-auto p-2">
           {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{friendly(error)}</p>}
           {!error && query.trim() && !loading && nothing && (
             <Command.Empty className="px-3 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>
@@ -199,6 +201,28 @@ export function Launcher() {
       </Command>
     </div>
   );
+}
+
+/** A press in the search box well past what's typed (about three characters on) drags the window, as the
+ * rest of it does; nearer, it's the box's own (the caret, selecting). */
+function dragPastText(e: React.MouseEvent<HTMLInputElement>) {
+  const box = e.currentTarget;
+  if (e.button !== 0 || e.detail > 1) return;
+  const style = getComputedStyle(box);
+  const ctx = (measure ??= document.createElement("canvas").getContext("2d")!);
+  ctx.font = style.font;
+  const end = box.getBoundingClientRect().left + parseFloat(style.paddingLeft) + ctx.measureText(box.value).width - box.scrollLeft;
+  if (e.clientX < end + 3 * ctx.measureText("0").width) return;
+  e.preventDefault(); // keep the caret where it is
+  box.focus();
+  void getCurrentWindow().startDragging();
+}
+let measure: CanvasRenderingContext2D | undefined;
+
+/** A press on the list's scrollbar scrolls it, rather than dragging the window. */
+function onScrollbar(e: React.MouseEvent<HTMLElement>) {
+  const el = e.currentTarget;
+  if (e.clientX >= el.getBoundingClientRect().left + el.clientLeft + el.clientWidth) e.stopPropagation();
 }
 
 function Key({ children }: { children: React.ReactNode }) {

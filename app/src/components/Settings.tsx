@@ -415,9 +415,9 @@ function AssistantSection() {
   const [open, setOpen] = useState(false);
   return (
     <Section title={t("AI 助手")}>
-      <Row label={t("让 AI 助手读你的课程")}
-        hint={t("Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。")}>
-        <Button onClick={() => setOpen(true)}>{t("添加到…")}</Button>
+      <Row label={t("连接到 AI 桌面软件")}
+        hint={t("允许外部 AI 软件（如 ChatGPT 和 Claude）搜索和阅读你已同步的课程。")}>
+        <Button onClick={() => setOpen(true)}>{t("连接到…")}</Button>
       </Row>
       {open && <AssistantsDialog onClose={() => setOpen(false)} />}
     </Section>
@@ -449,7 +449,7 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
   const installed = (apps ?? []).filter((a) => a.installed || a.added);
   const servers = how && { "canvas-sync": { command: how.command, args: how.args } };
   return (
-    <Dialog title={t("添加到 AI 助手")} onClose={onClose} width="max-w-xl"
+    <Dialog title={t("连接到 AI 桌面软件")} onClose={onClose} width="max-w-xl"
       footer={<Button primary onClick={onClose}>{t("完成")}</Button>}>
       <p className="mb-4 text-fg-soft">
         {t("它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
@@ -481,7 +481,7 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
           })}
         </div>
       )}
-      <p className="mb-4 text-xs text-muted">{t("ChatGPT 暂时用不了：它只能连网上的服务器，连不了这台电脑上的程序。")}</p>
+      <p className="mb-4 text-xs text-muted">{t("ChatGPT 只能在开启了 Work / Codex 模式的对话里连接，普通对话用不了。")}</p>
       {how && servers && (
         <details className="mb-3">
           <summary className="cursor-default text-xs text-muted select-none hover:text-fg">{t("手动添加到其他应用")}</summary>
@@ -558,7 +558,7 @@ function LauncherKeysRow() {
   }, [listening, keys]);
   return (
     <Row
-      label={t("快捷搜索")}
+      label={t("快捷搜索的快捷键")}
       hint={
         <>
           {t("在任何应用里按这个组合键，打开搜索窗口。点它，再按新的组合键来更换。")}

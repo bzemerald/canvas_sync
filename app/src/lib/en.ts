@@ -326,13 +326,12 @@ export const en: Record<string, string | [string, string]> = {
   "意思相近": "Similar in meaning",
   "按意思搜索": "Search text by meaning",
   "AI 助手": "AI assistants",
-  "让 AI 助手读你的课程": "Let an AI assistant read your courses",
-  "Claude 等支持 MCP 的助手可以搜索和阅读你的课程：文件、公告、作业、截止日期、新内容。只读，只用这台电脑上已同步的内容。":
-    "Claude and other assistants that support MCP can search and read your courses: files, announcements, assignments, deadlines, what's new. Read-only, from what's synced to this computer.",
-  "添加到…": "Add To…",
-  "添加到 AI 助手": "Add to an AI Assistant",
+  "允许外部 AI 软件（如 ChatGPT 和 Claude）搜索和阅读你已同步的课程。":
+    "Allow external AI apps (such as ChatGPT or Claude) to search and read your synced course content.",
+  "连接到…": "Link To…",
+  "连接到 AI 桌面软件": "Link an external AI app",
   "它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。":
-    "It only reads what's synced to this computer: it doesn't reach Canvas or Ed, can't hand anything in or mark anything read, and never sees your tokens.",
+    "This gives them read-only access to the course content synced to this computer, so they can search your courses and find information for you. They can't change anything or see your Canvas and Ed tokens.",
   "这台电脑上没找到支持的 AI 应用。": "No supported AI app found on this computer.",
   "重新打开 {app} 后就能用。": "Ready once you reopen {app}.",
   "在 {app} 新开的对话里就能用。": "Ready in new conversations in {app}.",
@@ -341,8 +340,8 @@ export const en: Record<string, string | [string, string]> = {
   "移除": "Remove",
   "正在添加…": "Adding…",
   "改用这一份": "Use This One",
-  "ChatGPT 暂时用不了：它只能连网上的服务器，连不了这台电脑上的程序。":
-    "ChatGPT can't use it yet: it only connects to servers on the web, not to programs on this computer.",
+  "ChatGPT 只能在开启了 Work / Codex 模式的对话里连接，普通对话用不了。":
+    "In ChatGPT, it only works in chats with Work / Codex mode on, not in regular chats.",
   "手动添加到其他应用": "Add to another app by hand",
   "配置": "Config",
   "大多数应用的 MCP 设置用这个格式：": "Most apps' MCP settings take this:",
@@ -434,7 +433,7 @@ export const en: Record<string, string | [string, string]> = {
   "立即同步": "Sync now",
   "通用": "General",
   "语言": "Language",
-  "快捷搜索": "Quick search",
+  "快捷搜索的快捷键": "Quick search shortcut",
   "在任何应用里按这个组合键，打开搜索窗口。点它，再按新的组合键来更换。": "Press this in any app to open the search window. Click it, then press new keys to change it.",
   "按下组合键…": "Press keys…",
   "恢复默认": "Reset",
