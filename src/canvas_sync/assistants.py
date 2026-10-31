@@ -48,7 +48,7 @@ def apps(home: Path | None = None) -> list[App]:
     return [
         App("claude-desktop", "Claude", roaming / "Claude" / "claude_desktop_config.json", "mcpServers",
             roaming / "Claude", True),
-        App("codex", "Codex", home / ".codex" / "config.toml", "mcp_servers", home / ".codex", False),
+        App("codex", "ChatGPT Work / Codex", home / ".codex" / "config.toml", "mcp_servers", home / ".codex", False),
     ]
 
 
