@@ -331,6 +331,15 @@ class State:
             f"UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND seen_at IS NULL{only}", (now, course_id, *kinds)
         )
 
+    def mark_seen_under(self, rel: str) -> None:
+        """Mark the new files in a folder of the sync folder ("": all of it) opened, and their links."""
+        unseen = {int(i): course for (course, _, i) in self.unseen(kind="file")}
+        prefix = rel.strip("/") + "/" if rel.strip("/") else ""
+        paths = [(r.path, r.id) for r in self.all_files() if r.path and r.id in unseen and not r.ignored]
+        paths += [(p, fid) for p, fid in self.db.execute("SELECT path, file_id FROM links") if fid in unseen]
+        for fid in {fid for p, fid in paths if p.startswith(prefix)}:
+            self.mark_seen(unseen[fid], [("file", str(fid))])
+
     # -- what you open ------------------------------------------------------------------
 
     def record_opened(self, key: str, query: str = "") -> None:

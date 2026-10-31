@@ -31,7 +31,7 @@ import {
 } from "./components/Things";
 import * as api from "./lib/api";
 import { quickLook } from "./lib/quicklook";
-import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewCounts, NewsKind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
 import type { KindId } from "./lib/query";
@@ -102,6 +102,11 @@ const RESTORABLE = new Set(["modified", "missing", "ignored"]);
 const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 const countLabel = (names: string[]) => (names.length === 1 ? names[0] : t("{n} 项", { n: names.length }));
 const listed = (list: Shown[], x: Thing) => list.some((e) => same(e, x) && !e.hidden);
+/** The views that count what's new in them: the kind to mark seen, and its count in `NewCounts`. */
+const VIEW_NEWS: Partial<Record<ViewName, [NewsKind, keyof NewCounts]>> = {
+  announcements: ["announcement", "announcements"], assignments: ["assignment", "assignments"], pages: ["page", "pages"],
+  files: ["file", "files"], discussion: ["post", "posts"],
+};
 // Views that narrow their own lists as you type in the search box.
 const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "discussion", "modules", "grades"];
 // What a tab shows, searched from it: that kind comes a little first.
@@ -539,8 +544,24 @@ export function MainWindow() {
   const makeDefaultLayout = (place: Place) =>
     layoutId !== null && api.makeDefaultLayout(layoutId, place).then(layoutDone(layoutId, t("其他没单独排过的课程现在也这样排")), fail(t("操作失败")));
 
+  /** 全部标为已读: for a course, one of its views with a count, a folder (see Things.markRead). */
+  const markRead = (x: Thing, count?: number): MenuItem[] => {
+    const item = (n: number | undefined, run: () => Promise<unknown>): MenuItem[] =>
+      n === 0 ? [] : [{ label: t("全部标为已读"), onSelect: () => void run().then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
+    if (x.type === "course") return item(count ?? courseById(x.course)?.new, () => api.markSeen(x.course));
+    if (x.type === "view" && VIEW_NEWS[x.view]) {
+      const [kind, key] = VIEW_NEWS[x.view]!;
+      return item(count ?? (cv?.id === x.course && overview ? overview.new[key] : courseById(x.course)?.new), () => api.markSeen(x.course, [kind]));
+    }
+    if (x.type === "folder") {
+      const some = courseList.some((c) => c.new > 0 && (under(c.dir, x.path) || under(x.path, c.dir)));
+      return item(count ?? (some ? undefined : 0), () => api.markFolderSeen(x.path));
+    }
+    return [];
+  };
   /** What can be done with a thing, besides putting it places (they add that). */
-  const ways = (x: Thing): MenuItem[] => {
+  const ways = (x: Thing): MenuItem[] => [...waysOf(x), ...markRead(x)];
+  const waysOf = (x: Thing): MenuItem[] => {
     const openIt: MenuItem = { label: t("打开"), onSelect: () => open(x) };
     switch (x.type) {
       case "course":
@@ -568,7 +589,7 @@ export function MainWindow() {
     }
   };
   const things: Things = {
-    courses: courseList, open, opening, ways, isPinned,
+    courses: courseList, open, opening, ways, markRead, isPinned,
     showInFolder: (path) => goPath(parentOf(path), path),
     pin: (x) => pinThing(x),
     unpin: unpinThing,
@@ -648,6 +669,7 @@ export function MainWindow() {
       return [
         { label: t("打开"), hint: shortcut.open, onSelect: () => goFolder(e.path) },
         { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
+        ...markRead({ type: "folder", path: e.path }, e.new_inside),
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
         { label: t("重命名…"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
@@ -776,6 +798,7 @@ export function MainWindow() {
   ];
   const courseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
+    ...markRead({ type: "course", course: c.id }),
     { label: t("查看文件"), onSelect: () => go({ kind: "course", id: c.id, tab: viewOf(c.id, "files"), path: c.dir }) },
     { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
     { label: t("在 {app} 中显示课程文件", { app: fileManager }), onSelect: () => reveal(c.dir) },

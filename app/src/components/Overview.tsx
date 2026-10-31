@@ -266,7 +266,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   const linkShown = links.filter((e) => !e.hidden && (!isView(e, "syllabus") || counts.syllabus));
   /** A card, right-clicked: what's to do with it, and with it as a card. */
   const cardMenu = (e: Shown): MenuItem[] => sections(
-    isOwn(e) ? [] : things.ways(e),
+    isOwn(e) ? things.markRead(e) : things.ways(e),
     placing("overview", e, titleOf(e)),
     [pinItem(things, e)],
     isView(e, "tools") ? [{ label: t("添加链接…"), onSelect: () => setAddingLink(true) }] : [],

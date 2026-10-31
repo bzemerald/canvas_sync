@@ -215,6 +215,10 @@ def test_whats_new(api, course, root, monkeypatch):
     api.post("/api/open", json={"path": f"{COURSE}/Modules/01 Week 1/lec1.pdf", "reveal": True})  # only showing it
     o = api.get("/api/courses/1/overview").json()
     assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "posts": 0}
+    # A folder marked read: the new files in it (lec1.pdf is in Modules as a link).
+    assert api.post("/api/seen/folder", json={"path": f"{COURSE}/Nowhere"}).status_code == 404
+    api.post("/api/seen/folder", json={"path": f"{COURSE}/Modules"})
+    assert api.get("/api/courses/1/overview").json()["new"]["files"] == 0
     assert api.post("/api/courses/1/seen", json={"kinds": ["page"]}).json()["pages"] == 0
     assert api.post("/api/courses/1/seen", json={"kinds": ["movie"]}).status_code == 400
     assert api.post("/api/courses/1/seen").json() == {"announcements": 0, "assignments": 0, "pages": 0, "files": 0, "posts": 0}

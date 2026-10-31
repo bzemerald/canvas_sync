@@ -379,8 +379,12 @@ export const items = (course: number, kind: DocKind) => api<ItemSummary[]>(`/cou
 export const item = (course: number, kind: DocKind, id: string) =>
   api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);
 export const grades = (course: number) => api<Grades>(`/courses/${course}/grades`);
+/** Mark the new files in a folder seen ("": all of them). */
+export const markFolderSeen = (path: string) => post("/seen/folder", { path });
 /** Mark everything new in a course as seen (or only some kinds of things). */
-export const markSeen = (course: number, kinds?: ("announcement" | "assignment" | "page" | "file" | "post")[]) =>
+/** What's counted as new in a course, by kind. */
+export type NewsKind = "announcement" | "assignment" | "page" | "file" | "post";
+export const markSeen = (course: number, kinds?: NewsKind[]) =>
   api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ kinds: kinds ?? null }) });
 
 /** An image in a page (needs the Canvas login, or is on another site), as an object URL. */

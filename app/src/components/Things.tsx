@@ -22,6 +22,9 @@ export interface Things {
   opening: string | null; // what's on its way (a tool: Canvas is making a link), by thingKey
   /** What can be done with it, besides placing it: 打开, 在文件夹中显示, 在 Canvas 中打开... */
   ways: (thing: Thing) => MenuItem[];
+  /** 全部标为已读, for what shows how many new things are in it (a course, a view, a folder) and has
+   * some; `count`: how many, if known. (`ways` has it too.) */
+  markRead: (thing: Thing, count?: number) => MenuItem[];
   isPinned: (thing: Thing) => boolean;
   pin: (entry: Shown) => void;
   unpin: (thing: Thing) => void;

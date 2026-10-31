@@ -116,6 +116,10 @@ class SeenRequest(BaseModel):
     kinds: list[str] | None = None  # announcement / assignment / page / file; None: all
 
 
+class FolderSeenRequest(BaseModel):
+    path: str  # a folder in the sync folder ("": all of it)
+
+
 class ScopeRequest(BaseModel):
     """A term, course, folder or file: paths relative to the sync folder, and/or file ids."""
 
@@ -684,6 +688,15 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         with engine() as e:
             e.state.mark_seen(course_id, kinds=kinds)
             return news_counts(news(e.state, e.root, course_id))
+
+    @api.post("/seen/folder")
+    def folder_seen(req: FolderSeenRequest) -> dict[str, str]:
+        """Mark the new files in a folder seen."""
+        if req.path.strip("/") and not inside(req.path).is_dir():
+            raise HTTPException(404, f"{req.path} is not a folder")
+        with engine() as e:
+            e.state.mark_seen_under(req.path)
+        return {"seen": req.path}
 
     @api.get("/media")
     async def media(url: str) -> Response:

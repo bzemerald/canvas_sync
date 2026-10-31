@@ -168,7 +168,7 @@ export function CourseTabs({
 
   /** A tab, right-clicked: what's to do with it, and with it as a tab. */
   const menu = (e: Shown): MenuItem[] => sections(
-    isOwn(e) ? [] : things.ways(e),
+    isOwn(e) ? things.markRead(e, fresh[e.view]) : things.ways(e),
     e === extra
       ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
       : [
