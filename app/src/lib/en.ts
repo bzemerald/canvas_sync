@@ -569,7 +569,7 @@ export const en: Record<string, string | [string, string]> = {
   "隐藏“{name}”": "Hide “{name}”",
   "标为已读": "Mark read",
   "还有 {n} 项 ›": ["1 more ›", "{n} more ›"],
-  "所有卡片都隐藏了。点右上角的“添加卡片”加几张。": "Every card is hidden. Add some with “Add a card” at the top right.",
+  "所有卡片都隐藏了。点下面的“添加卡片”加几张。": "Every card is hidden. Add some with “Add a card” below.",
   "拖动标题可以移动卡片，右键可以重命名或隐藏": "Drag the title to move this card; right-click to rename or hide it",
 
   // -- searching where you are

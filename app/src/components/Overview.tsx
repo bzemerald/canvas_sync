@@ -413,14 +413,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
 
   return (
     <div ref={zone.ref} className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
-      <div className="mx-auto max-w-5xl px-6 pt-3 pb-6">
-        <div className="mb-2 flex items-center justify-end gap-2">
-          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg">
-            <Plus className="size-3.5" />
-            {t("添加卡片")}
-          </button>
-        </div>
-        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点右上角的“添加卡片”加几张。")}</p>}
+      <div className="mx-auto max-w-5xl px-6 pt-4 pb-6">
+        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点下面的“添加卡片”加几张。")}</p>}
         <div
           ref={setGrid}
           className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
@@ -447,6 +441,12 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
               </Card>
             );
           })}
+        </div>
+        <div className="mt-4 flex justify-center">
+          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg">
+            <Plus className="size-3.5" />
+            {t("添加卡片")}
+          </button>
         </div>
       </div>
 
