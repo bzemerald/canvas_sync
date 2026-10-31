@@ -1,6 +1,6 @@
 """AI apps that can use `canvas mcp` (agent.py), and adding it to them: their own config files
 (only our entry changed; the old file kept in the app's folder first). Other apps are added by
-hand, from what 设置 shows.
+hand.
 
 When the app moves or is reinstalled, an entry whose program is gone is pointed at this one
 (`repair`). One whose program is still there is left alone: the dev app and the packed one
