@@ -191,14 +191,15 @@ export function useChosen(query: string, listed: Map<string, Found>, first: stri
   return { value, choose: (key: string) => setChosen({ query, key }), list };
 }
 
-/** ⌘↵ and ⌘⇧↵ on the chosen one; Tab finishes a course's name (`complete`). */
+/** ⌘↵ and ⌘⇧↵ on the chosen one; Tab finishes a course's name (`complete`), or, with nothing to
+ * complete, asks for the likeliest word (`ask`: the next Tab takes it). It stays in the box. */
 export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined, open: (f: Found | undefined, how: How) => void,
-  complete?: () => string | null, setQuery?: (q: string) => void): boolean {
+  complete?: () => string | null, setQuery?: (q: string) => void, ask?: () => void): boolean {
   if (e.key === "Tab" && !e.shiftKey && complete && setQuery) {
     const done = complete();
-    if (done === null) return false;
     e.preventDefault();
-    setQuery(done);
+    if (done === null) ask?.();
+    else setQuery(done);
     return true;
   }
   if (e.key !== "Enter" || !(isMac ? e.metaKey : e.ctrlKey)) return false;
@@ -213,8 +214,9 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
  * it's something else ("multivar"), its last word becomes the name ("m53 "). Either narrows search
  * to that course. Else, the word being typed finished as the word of names it most likely is
  * (`words`: "ann" ⇥ "announcements ", "cs70 dis" ⇥ "cs70 discussion ", "midterm r" ⇥ "midterm
- * review "), if that's clear. */
-export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = [], words?: Map<string, NameWord>): string | null {
+ * review "), if that's clear (`unsure`: or not). */
+export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = [], words?: Map<string, NameWord>,
+  unsure = false): string | null {
   const { query, parts } = reading;
   const last = parts.at(-1);
   if (!last || /\s$/.test(query) || (last.role !== "word" && last.role !== "series")) return null;
@@ -255,7 +257,7 @@ export function completion(reading: Reading, f: Found | undefined, found: Iterab
     const typed = query.slice(last.spans[0][0], end);
     const others = parts.slice(0, -1).flatMap((p) =>
       p.role === "word" && !p.quoted ? [p.text.toLowerCase()] : p.role === "series" ? p.name.split(" ") : []);
-    const w = likelyWord(typed, words, courses, kind, others);
+    const w = likelyWord(typed, words, courses, kind, others, unsure);
     return w ? tail(query.slice(0, end) + w.slice(typed.length)) : null;
   }
   const on = goingOn(c);
@@ -285,6 +287,12 @@ export function CompletionGhost({ query, completion, className }: { query: strin
   );
 }
 
+/** Whether ⇥ asked for the likeliest word (`completion`'s `unsure`), for the query as it is. */
+export function useAsked(query: string): [boolean, () => void] {
+  const [asked, setAsked] = useState<string | null>(null);
+  return [asked === query, () => setAsked(query)];
+}
+
 /** The key that completes it, after what it would add. */
 export function TabKey({ className = "" }: { className?: string }) {
   return (
@@ -312,7 +320,8 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   const { reading, results, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions, scope);
   const { value, choose, list } = useChosen(query, listed, first);
   const root = useRef<HTMLDivElement>(null);
-  const done = completion(reading, listed.get(value), listed.values(), words);
+  const [asked, ask] = useAsked(query);
+  const done = completion(reading, listed.get(value), listed.values(), words, asked);
   // Before the paint: else the box shows the last query's completion for a frame (after ⇥, "→ double").
   useLayoutEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -336,7 +345,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   }, [box]);
   return (
     <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
-      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => done, onQuery)}>
+      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => done, onQuery, ask)}>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {(note || reading.parts.length > 0) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 pt-1 pb-1 text-xs text-muted">

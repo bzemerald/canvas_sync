@@ -8,7 +8,7 @@ import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CompletionGhost, FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useCatalog, useChosen, useFinding,
+  CompletionGhost, FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useAsked, useCatalog, useChosen, useFinding,
 } from "./components/Found";
 import { isMac } from "./components/Result";
 import * as api from "./lib/api";
@@ -42,7 +42,8 @@ export function Launcher() {
   }, [loading]);
   // The first is chosen, whatever came in last (names as you type, the index a moment later).
   const { value, choose, list } = useChosen(query, listed, first);
-  const completed = completion(reading, listed.get(value), listed.values(), words); // what ⇥ would make of the query
+  const [asked, ask] = useAsked(query);
+  const completed = completion(reading, listed.get(value), listed.values(), words, asked); // what ⇥ would make of the query
   // Ways to search, from your current courses: new ones for each time the window comes up, made
   // as it goes away (and once, when what they're made from is first in), so nothing changes while
   // it's up, nor as it comes up and what it knows reloads.
@@ -135,7 +136,7 @@ export function Launcher() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const primary = isMac ? e.metaKey : e.ctrlKey;
-    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how), () => completed, setQuery)) return;
+    if (moreKeys(e, () => listed.get(value), (f, how) => void open(f, how), () => completed, setQuery, ask)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       if (query) setQuery("");

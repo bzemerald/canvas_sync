@@ -338,6 +338,13 @@ describe("going on from a word being typed", () => {
     expect(likelyWord("w", words)).toBeNull();
   });
 
+  it("asked (⇥ with nothing to complete): the likeliest, sure or not", () => {
+    const even = wordsOf([...base, ...files(61, "CS 61A", ["Workshop 1.pdf", "Workshop 2.pdf", "Workshop 3.pdf"])]);
+    expect(likelyWord("wor", even, [], null, [], true)).toBe("worksheet");
+    expect(likelyWord("w", words, [], null, [], true)).toBe("worksheet");
+    expect(likelyWord("worksheet", words, [], null, [], true)).toBeNull();
+  });
+
   it("by the names that have the query's other words too, when there are enough of them", () => {
     const more = wordsOf([...base, ...files(16, "EE 16A", ["Midterm Review 1.pdf", "Midterm Review 2.pdf", "Midterm Review 3.pdf",
       "Grades Released 1.pdf", "Grades Released 2.pdf", "Grades Released 3.pdf", "Homework Schedule.pdf"])]);

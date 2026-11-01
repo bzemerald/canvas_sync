@@ -186,9 +186,10 @@ export function nameWords(catalog: Catalog, usage: Usage, kinds: Record<string, 
  * the one more things have in their names, in the courses and of the kind the query says (if it
  * says any), and that you've used more; a word for a kind of thing there is there, more. Of the
  * things whose names have the query's other words too (`others`: "midterm r" ⇥ review), when
- * there are enough of them (then a letter is enough). null: not sure, or it's a word already. */
+ * there are enough of them (then a letter is enough). null: not sure, or it's a word already.
+ * `unsure` (⇥ pressed with nothing to complete): the likeliest word that goes on, sure or not. */
 export function likelyWord(typed: string, words: Map<string, NameWord>, courses: number[] = [], kind: KindId | null = null,
-  others: string[] = []): string | null {
+  others: string[] = [], unsure = false): string | null {
   typed = typed.toLowerCase();
   if (!/^\p{Script=Latin}+$/u.test(typed)) return null;
   const self = words.get(singular(typed));
@@ -201,7 +202,7 @@ export function likelyWord(typed: string, words: Map<string, NameWord>, courses:
     return n;
   };
   const together = along.length > 0 && candidates.reduce((n, nw) => n + count(nw.things, true), 0) >= W.togetherLeast;
-  if (typed.length < (together ? 1 : 2)) return null;
+  if (typed.length < (together || unsure ? 1 : 2)) return null;
   // (A word for a kind, more: it narrows search down; only if there's something of the kind here.
   // With the other words, they say enough.)
   const score = (nw: NameWord) => together ? count(nw.things, true)
@@ -209,6 +210,7 @@ export function likelyWord(typed: string, words: Map<string, NameWord>, courses:
   const scores: [string, number][] = self ? [["", score(self)]] : []; // (as it is: a word already)
   for (const nw of candidates) scores.push([nw.word, score(nw)]);
   const best = scores.filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
+  if (unsure) return best.find(([w]) => w)?.[0] ?? null;
   return best.length && best[0][0] && sure(best.map(([, s]) => s), typed) ? best[0][0] : null;
 }
 
