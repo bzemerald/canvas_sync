@@ -51,7 +51,7 @@ without the Canvas website or Finder.
     the modules, so the command line and `agent.py` get the same answers.
   - `agent.py`: `canvas mcp`, the courses for an AI assistant over MCP (the `mcp` SDK, 2.x:
     `MCPServer`). Read-only: nothing marked seen or recorded, no Canvas or Ed calls.
-    `assistants.py`: adding it to AI apps (their config files; Claude Code by `claude mcp`).
+    `assistants.py`: adding it to AI apps (Claude's and Codex's config files).
     Tests point `assistants.HOME` at a temporary home (conftest.py): never the real apps.
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.
 - `app/`: Tauri v2, React 19, TypeScript, Vite, Tailwind v4.
