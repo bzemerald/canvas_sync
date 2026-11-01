@@ -435,8 +435,8 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
                     arrived = {key: v for key, v in arrived.items() if key[1] in new.get(key[0], {})}
                 for kind in sorted({k for k, _ in arrived}):
                     if kind == "file":
-                        for (_, i), extra in arrived.items():
-                            if i.isdigit() and (rec := e.state.get(int(i))) and rec.path and (e.root / rec.path).exists():
+                        for (k, i), extra in arrived.items():
+                            if k == "file" and i.isdigit() and (rec := e.state.get(int(i))) and rec.path and (e.root / rec.path).exists():
                                 out.append(file(e, rec.path, kind="file", title=Path(rec.path).name,
                                                 date=uploaded(e, rec.id), **extra))
                         continue
