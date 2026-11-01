@@ -313,8 +313,9 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   const { value, choose, list } = useChosen(query, listed, first);
   const root = useRef<HTMLDivElement>(null);
   const done = completion(reading, listed.get(value), listed.values(), words);
-  useEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Before the paint: else the box shows the last query's completion for a frame (after ⇥, "→ double").
+  useLayoutEffect(() => onCompletion?.(done), [done]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => () => onCompletion?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // In a course, its things needn't each say so.
   const others = useMemo(() => {
     const here = scope.courses?.length === 1 ? scope.courses[0] : null;
