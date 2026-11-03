@@ -1,6 +1,86 @@
-# canvas-sync
+# Canvas Sync
 
-Everything a Canvas course has, on your own computer.
+**All your Canvas courses in one app on your Mac: files, announcements, assignments, grades
+and Ed posts, searchable in a second, without clicking through the Canvas website.**
+
+![Canvas Sync: a course's overview, with the latest announcements, new files and notes](images/app.png)
+
+## What it does for you
+
+- **Every course file, on your computer.** Lecture slides, problem sets, solutions and past
+  exams download into a normal folder, sorted by course, and stay up to date on their own.
+  Files buried in modules or linked from announcements are found too. They open offline, in
+  Finder, Spotlight or any app, and your own notes on them are never overwritten.
+- **One place per course.** Announcements, assignments and due dates, pages, modules, grades,
+  the syllabus and the course's tools (Gradescope, Ed...) each get a tab. Each course opens on
+  an overview: upcoming deadlines, the latest announcements, new files, your grades, and notes
+  you type yourself.
+- **Make every course look alike.** Every instructor organizes Canvas differently; you don't
+  have to follow them. Drag anything into a tab, a card on the overview or a link; rename or
+  hide what you don't need. Set up the layout once for all your courses, or per course.
+- **Find anything as you type.** Press ⌘⇧Space anywhere on your Mac and type what you'd say:
+  `ee64 hw 7 solutions`, `64 slides this week`, `cs70 due this week not submitted`. It searches
+  names and the text inside PDFs, slides, announcements and pages, knows that `hw3` means
+  "Homework 3" or "Problem Set 3", and forgives typos ("midtrem").
+- **See what's new.** New announcements, assignments, files and posts get a blue dot until you
+  open them, and the sidebar counts them per course.
+- **Pin what you use most.** Drag anything (a course, a folder, a file, an assignment, a
+  website) to *Pinned* at the top of the sidebar.
+- **Ed Discussion, too.** Connect Ed and each course gets a Discussion tab, with pinned and
+  staff posts saved for reading offline. Ed announcements show up with Canvas's.
+- **Ask an AI about your courses.** With one click in Settings, Claude or Codex can read your
+  synced courses: "is my midterm cumulative?", "what did I miss since the midterm?"
+
+Search, from anywhere:
+
+![Searching "ee64 hw 7 solutions"](images/search-hw.png)
+![Searching "64 slides this week"](images/search-this-week.png)
+
+Asking Claude, which looks it up in your courses:
+
+![Claude answering "is my upcoming physics 7b midterm cumulative"](images/ai-midterm.png)
+
+Canvas Sync only reads. It never submits, posts or changes anything on Canvas or Ed, and never
+marks anything as read there. Your login stays on your computer, in the Mac's keychain. The app
+is in English or Chinese.
+
+## Installing it (Mac)
+
+1. **Download** `Canvas Sync.dmg` from this project's
+   [Releases page](https://github.com/bzemerald/canvas_cli/releases), open it and drag
+   **Canvas Sync** into **Applications**. (No download there yet? It can be built from this
+   code: see [The desktop app](#the-desktop-app) below.)
+2. **Open it the first time with right-click → Open**, then **Open** again. The app isn't
+   signed by Apple, so a plain double-click the first time only says it can't be checked. After
+   that, it opens normally.
+3. **Sign in to Canvas.** The app asks for three things:
+   - **Your school's Canvas address**, the one in your browser when you use Canvas
+     (e.g. `bcourses.berkeley.edu`).
+   - **An access token**, which lets the app read Canvas as you. In Canvas, click **Account →
+     Settings**, scroll to *Approved Integrations*, click **+ New Access Token**, give it any
+     name, and copy the long code it shows (it's only shown once) into the app.
+   - **A folder** for your course files, e.g. a new folder called `Canvas` in your home folder.
+4. If your Mac asks whether Canvas Sync may use your keychain, click **Always Allow**. That's
+   where it keeps the token.
+
+The first sync downloads all your courses' files, which can take a few minutes. After that it
+syncs when the app opens and every hour (both can be changed in Settings).
+
+**Optional:**
+
+- **Ed:** in Settings, connect Ed with a token made on Ed's *Settings → API Tokens* page.
+- **Search by meaning** (finds "the announcement about extensions" from "can I get an
+  extension"): turn it on in Settings; it downloads a small model (~125 MB).
+- **AI assistants:** Settings → AI assistants → Add To… adds your courses to Claude or Codex.
+
+If Canvas ever says your token expired, make a new one the same way and paste it in Settings.
+
+---
+
+*The rest of this page is for developers: building the app, the `canvas` command line tool,
+and how it works.*
+
+## What's here
 
 - **`canvas`**, a command-line tool, mirrors Canvas course files into a normal folder that
   Finder, Spotlight and your own apps can use. `canvas pull` works like `git pull`: it fetches
