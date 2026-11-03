@@ -116,14 +116,18 @@ export function useMarquee(container: React.RefObject<HTMLElement | null>, sel: 
       const r = el.getBoundingClientRect();
       return { x: x - r.left + el.scrollLeft, y: y - r.top + el.scrollTop };
     };
-    const start = at(e.clientX, e.clientY);
+    // The box stays within what's in the list: it's drawn in it, so past its end it would make the
+    // list longer, and scrolling on would never end.
+    const [width, height] = [el.scrollWidth, el.scrollHeight];
+    const inside = (p: { x: number; y: number }) => ({ x: Math.max(0, Math.min(p.x, width)), y: Math.max(0, Math.min(p.y, height)) });
+    const start = inside(at(e.clientX, e.clientY));
     let moved = false;
 
     const onMove = (ev: MouseEvent) => {
       const r = el.getBoundingClientRect();
       if (ev.clientY > r.bottom - 24) el.scrollTop += 16; // keep going past the edge
       else if (ev.clientY < r.top + 24) el.scrollTop -= 16;
-      const now = at(ev.clientX, ev.clientY);
+      const now = inside(at(ev.clientX, ev.clientY));
       if (!moved && Math.hypot(now.x - start.x, now.y - start.y) < 4) return;
       moved = true;
       const b = {
