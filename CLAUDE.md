@@ -23,7 +23,7 @@ without the Canvas website or Finder.
 
 ## Git
 
-- Work on a feature branch, never on main. One commit per requested item, once it's checked.
+- Work on a feature branch, never on main.
 - Merge into main (fast-forward) only when asked; never push unless asked.
 - Commit messages: the subject says what changed for the user, as a plain sentence ("Pin almost
   anything, by dragging it to 置顶"); the body explains the behavior; end with the
