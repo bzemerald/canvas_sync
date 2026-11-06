@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Settling, slotInColumn } from "./slot";
+import { Settling, lineIn, slotInColumn } from "./slot";
 
 // Two columns: A (0-100) and B (116-216) in the first, C (0-100) in the second, in order A C B.
 const A = { col: 0, top: 0, height: 100 };
@@ -29,6 +29,22 @@ describe("where a dragged card goes", () => {
   it("is the end in an empty column", () => {
     expect(slotInColumn([A, B], 1, 10)).toBe(2);
     expect(slotInColumn([], 0, 10)).toBe(0);
+  });
+});
+
+describe("the line showing where it goes", () => {
+  it("is in the gap above the card it goes before", () => {
+    expect(lineIn(cards, 0, 0, 16)).toBe(-8);
+    expect(lineIn(cards, 0, 2, 16)).toBe(108);
+    expect(lineIn(cards, 0, 1, 16)).toBe(108); // (C, between in the order, is in the other column)
+  });
+  it("is below the column's last, past its end", () => {
+    expect(lineIn(cards, 0, 3, 16)).toBe(224);
+    expect(lineIn(cards, 1, 3, 16)).toBe(108);
+  });
+  it("is at the top of an empty column", () => {
+    expect(lineIn([A, B], 1, 2, 16)).toBe(0);
+    expect(lineIn([], 0, 0, 16)).toBe(0);
   });
 });
 

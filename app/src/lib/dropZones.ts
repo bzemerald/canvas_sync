@@ -14,7 +14,6 @@ export type ZoneState = "idle" | "ready" | "over"; // ready: something it takes 
 interface Zone {
   el: HTMLElement | null;
   accepts: (entry: Shown) => boolean;
-  makesRoom: boolean;
   set: (state: ZoneState, x: number, y: number, entry: Shown | null) => void;
   drop: (entry: Shown, x: number, y: number) => void;
 }
@@ -91,7 +90,7 @@ export const dropZones = {
     if (!boxes) measureAll();
     const over = entry ? under(x, y, entry, from, source) : null;
     zones.forEach((z) => z.set(!entry || !takes(z, entry, from) ? "idle" : z === over ? "over" : "ready", x, y, entry));
-    return over ? (over.makesRoom ? "place" : "zone") : undefined;
+    return over ? "zone" : undefined;
   },
   /** Dropped: taken if it was over a place that takes it. */
   drop(x: number, y: number, entry: Shown | null, from?: ZoneId, source?: HTMLElement): boolean {
@@ -109,28 +108,22 @@ export const dropZones = {
 
 /** Makes an element a place things can be dropped on. `slotAt` says where in its list a drop at
  * (x, y) would go; while something is over it, `slot` is that place and `entry` what it is. `id`:
- * for useReorder, so the list's own items moving in it aren't drops on it. `makesRoom`: what's over
- * it shows where it'd go as room among what's there, not a line it would cover: the copy that
- * follows the pointer needn't get out of the way. */
+ * for useReorder, so the list's own items moving in it aren't drops on it. */
 export function useDropZone(
   onDrop: (entry: Shown, slot: number) => void,
   slotAt: (x: number, y: number) => number = () => 0,
   accepts: (entry: Shown) => boolean = () => true,
-  makesRoom = false,
 ) {
   const [state, setState] = useState<ZoneState>("idle");
   const [slot, setSlot] = useState(0);
   const [over, setOver] = useState<Shown | null>(null);
   const slotRef = useRef(slotAt);
   slotRef.current = slotAt;
-  const last = useRef<[number, number] | null>(null); // where the pointer was, over it
-  const zone = useRef<Zone>({ el: null, accepts, makesRoom, set: () => {}, drop: () => {} });
+  const zone = useRef<Zone>({ el: null, accepts, set: () => {}, drop: () => {} });
   zone.current.accepts = accepts;
-  zone.current.makesRoom = makesRoom;
   zone.current.set = (s, x, y, entry) => {
     setState(s);
     setOver(s === "over" ? entry : null);
-    last.current = s === "over" ? [x, y] : null;
     if (s === "over") setSlot(slotRef.current(x, y)); // (a re-render only when it changes)
   };
   zone.current.drop = (entry, x, y) => onDrop(entry, slotRef.current(x, y));
@@ -139,11 +132,7 @@ export function useDropZone(
     zones.add(z);
     return () => void zones.delete(z);
   }, []);
-  return {
-    ref: (el: HTMLElement | null) => void (zone.current.el = el), state, slot, entry: over, id: zone.current as ZoneId,
-    /** Reads the slot again, the pointer where it is (`slotAt` may say something else by now). */
-    again: () => void (last.current && setSlot(slotRef.current(...last.current))),
-  };
+  return { ref: (el: HTMLElement | null) => void (zone.current.el = el), state, slot, entry: over, id: zone.current as ZoneId };
 }
 
 /** Drag something only to put it somewhere (a file, an announcement, a row in a card): press on

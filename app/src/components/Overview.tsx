@@ -13,7 +13,7 @@ import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { useFlip } from "../lib/flip";
-import { Settling, slotInColumn } from "../lib/slot";
+import { Settling, lineIn, slotInColumn } from "../lib/slot";
 import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
 import {
@@ -50,8 +50,7 @@ function saveColumns(course: number, columns: Record<string, number>) {
     /* not remembered */
   }
 }
-const DROP = "drop"; // the slot that opens for something dropped from elsewhere (as a card key)
-const DROP_HEIGHT = 96;
+const DROP = "drop"; // the slot that opens for something dropped from elsewhere (工具与链接's)
 const SETTLE = 120; // ms a new place to go holds before the cards move for it
 
 /** Cards in order, each down the column it's in (`was`: where you put it), so that a card put in
@@ -65,7 +64,7 @@ function stack(keys: string[], heights: Record<string, number>, columns: number,
     const want = put[k] ?? was[k];
     const col = want !== undefined && want < columns ? want : tops.indexOf(Math.min(...tops));
     spots[k] = { col, top: tops[col] };
-    tops[col] += (k === DROP ? DROP_HEIGHT : heights[k] ?? 0) + GAP;
+    tops[col] += (heights[k] ?? 0) + GAP;
   }
   return { spots, height: Math.max(0, Math.max(...tops) - GAP) };
 }
@@ -182,10 +181,10 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   if (was.current.course !== course.id) was.current = { course: course.id, cols: loadColumns(course.id) };
   const dropColumn = useRef(0); // the column what's dragged goes in: the pointer's
   const [, showColumn] = useState(0); // (another column can be the same slot: it's drawn there all the same)
-  // Where the pointer says goes on showing once it has held a moment: on the line between two
-  // columns, the cards don't jump back and forth. Let go, it lands where it shows.
+  // A card dragged here: where the pointer says goes on showing once it has held a moment: on the
+  // line between two columns, the cards don't jump back and forth. Let go, it lands where it shows.
   const settling = useRef<Settling<{ slot: number; col: number }> | null>(null);
-  const reread = useRef(() => {}); // (once it has: the drag and the zone, below, read the slot again)
+  const reread = useRef(() => {}); // (once it has: the drag, below, reads the slot again)
   settling.current ??= new Settling(SETTLE, ({ col }) => {
     dropColumn.current = col;
     showColumn(col);
@@ -197,15 +196,20 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
    * `rest` as it was, not from what's drawn (the cards making room would change it, and that the
    * cards, and so on). */
   const slotFor = (rest: string[], x: number, y: number) => {
-    if (!grid) return rest.length;
+    if (!grid) return { slot: rest.length, col: dropColumn.current };
     const r = grid.getBoundingClientRect();
     const col = columns === 1 || x < r.left + r.width / 2 ? 0 : 1;
     const { spots } = stack(rest, heights, columns, was.current.cols);
-    const slot = slotInColumn(rest.map((k) => ({ ...spots[k], height: heights[k] ?? 0 })), col, y - r.top);
-    return settling.current!.see(`${slot}:${col}`, { slot, col }).slot;
+    return { slot: slotInColumn(rest.map((k) => ({ ...spots[k], height: heights[k] ?? 0 })), col, y - r.top), col };
   };
-  // Dragged in from elsewhere: the cards make room where it'd go (a tool or a link: 工具与链接).
-  const slotAt = (x: number, y: number) => slotFor(keys, x, y);
+  // Dragged in from elsewhere: a line shows where it'd go (a tool or a link: 工具与链接). The cards
+  // stay where they are, so it can follow the pointer at once.
+  const slotAt = (x: number, y: number) => {
+    const { slot, col } = slotFor(keys, x, y);
+    dropColumn.current = col;
+    showColumn(col);
+    return slot;
+  };
   const zone = useDropZone(
     (entry, slot) => {
       if (!hasCard(entry)) return linkTo(entry);
@@ -214,19 +218,21 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     },
     slotAt,
     (e) => ofCourse(e, course) && !isView(e, "overview"),
-    true,
   );
-  const making = zone.state === "over" && !!zone.entry && hasCard(zone.entry); // room for what's dragged in
+  const inserting = zone.state === "over" && !!zone.entry && hasCard(zone.entry);
   const drag = useReorder(shown.length, (from, to) => {
     was.current.cols[keys[from]] = dropColumn.current; // (maybe just to the other column)
     if (from !== to) onArrange("overview", refill(all, shown, moved(shown, from, to)));
   }, "cards", {
     zone: zone.id,
     thing: (i) => shown[i],
-    slotAt: (x, y, from) => slotFor(keys.filter((_, i) => i !== from), x, y),
+    slotAt: (x, y, from) => {
+      const { slot, col } = slotFor(keys.filter((_, i) => i !== from), x, y);
+      return settling.current!.see(`${slot}:${col}`, { slot, col }).slot;
+    },
   });
-  reread.current = () => (drag.again(), zone.again());
-  const dragging = drag.dragging !== null || zone.state === "over";
+  reread.current = drag.again;
+  const dragging = drag.dragging !== null;
   useEffect(() => {
     if (!dragging) settling.current?.clear();
   }, [dragging]);
@@ -299,19 +305,18 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
 
   // Where each card goes, as it would be if what's dragged were let go now.
   const order = [...drag.preview(keys)]; // (a copy: `keys` is what each card is)
-  if (making) order.splice(Math.min(zone.slot, order.length), 0, DROP);
-  const dragged = making ? DROP : drag.dragging !== null ? keys[drag.dragging] : null;
+  const dragged = drag.dragging !== null ? keys[drag.dragging] : null;
   const { spots, height } = stack(order, heights, columns, was.current.cols, dragged ? { [dragged]: dropColumn.current } : {});
   if (!dragged && columns > 1) { // (held while dragging; one column, when narrow, isn't where you put them)
     const cols = Object.fromEntries(Object.entries(spots).map(([k, s]) => [k, s.col]));
     if (JSON.stringify(cols) !== JSON.stringify(was.current.cols)) saveColumns(course.id, (was.current.cols = cols));
   }
-  const spot = (key: string): React.CSSProperties => ({
+  const inColumn = (col: number): React.CSSProperties => ({
     position: "absolute",
-    top: spots[key].top,
-    left: columns === 1 ? 0 : `calc(${spots[key].col} * (50% + ${GAP / 2}px))`,
+    left: columns === 1 ? 0 : `calc(${col} * (50% + ${GAP / 2}px))`,
     width: columns === 1 ? "100%" : `calc(50% - ${GAP / 2}px)`,
   });
+  const spot = (key: string): React.CSSProperties => ({ ...inColumn(spots[key].col), top: spots[key].top });
 
   // Each card: its header links, and what's in it.
   const spec = (e: Shown): { more?: () => void; action?: { label: string; onClick: () => void }; body: React.ReactNode } => {
@@ -430,7 +435,10 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
           className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
           style={{ height: Math.max(48, height), transition: placed ? "height 220ms cubic-bezier(0.2, 0, 0, 1)" : undefined }}
         >
-          {making && <div aria-hidden data-placeholder data-flip={DROP} className="rounded-xl" style={{ ...spot(DROP), height: DROP_HEIGHT }} />}
+          {inserting && (
+            <div aria-hidden className="pointer-events-none z-10 h-0.5 rounded-full bg-accent"
+              style={{ ...inColumn(dropColumn.current), top: lineIn(keys.map((k) => ({ ...spots[k], height: heights[k] ?? 0 })), dropColumn.current, zone.slot, GAP) - 1 }} />
+          )}
           {shown.map((e, i) => {
             const s = spec(e);
             return (
@@ -562,7 +570,7 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
     return i === before.current.length - 1 && x > r.left + b.left + b.width / 2 ? shown.length : i;
   };
   const zone = useDropZone((entry, slot) => onArrange(putAt(links, { ...entry, hidden: false }, slotIndex(links, shown, slot))), slotAt,
-    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"), true);
+    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"));
   useEffect(() => {
     if (zone.state !== "over") before.current = null;
   }, [zone.state]);

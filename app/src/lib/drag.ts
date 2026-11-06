@@ -9,10 +9,10 @@ import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { Springs } from "./spring";
 
-/** Where a drag is, for how the copy looks: over a place that takes it and shows where with a line
- * (置顶, a course's tabs): it shrinks out of the way; over one that makes room for it (an overview):
- * as it is; dragged off its list to take it away: faded, with a minus. */
-export type DragOver = "zone" | "place" | "remove" | void;
+/** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs, its
+ * overview): it shrinks out of the way of what shows there; dragged off its list to take it away:
+ * faded, with a minus. */
+export type DragOver = "zone" | "remove" | void;
 
 /** Where the copy goes when it's let go: into this element (it lands there, then the element
  * shows instead), or nowhere (it fades out: put in another place, taken away). */

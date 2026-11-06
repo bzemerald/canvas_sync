@@ -18,6 +18,18 @@ export function slotInColumn(cards: Placed[], col: number, y: number): number {
   return last < 0 ? cards.length : last + 1;
 }
 
+/** Where the line showing `slot` goes down column `col`: in the gap above the first card there at
+ * or after the slot, else below the column's last; at the top of an empty column. */
+export function lineIn(cards: Placed[], col: number, slot: number, gap: number): number {
+  let end = 0;
+  for (let i = 0; i < cards.length; i++) {
+    if (cards[i].col !== col) continue;
+    if (i >= slot) return cards[i].top - gap / 2;
+    end = cards[i].top + cards[i].height + gap / 2;
+  }
+  return end;
+}
+
 /** What's shown follows what's seen only once that has held for `ms`: a value that comes and goes
  * (the pointer on the line between two columns, shaking) changes nothing. The first is at once. */
 export class Settling<T> {
