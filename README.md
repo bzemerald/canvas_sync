@@ -1,167 +1,68 @@
 # Canvas Sync
 
-**All your Canvas courses in one app on your Mac: files, announcements, assignments, grades
-and Ed posts, searchable in a second, without clicking through the Canvas website.**
+**All your Canvas courses in one Desktop app.**
 
 ![Canvas Sync: a course's overview, with the latest announcements, new files and notes](images/app.png)
 
 ## What it does for you
 
-- **Every course file, on your computer.** Lecture slides, problem sets, solutions and past
-  exams download into a normal folder, sorted by course, and stay up to date on their own.
-  Files buried in modules or linked from announcements are found too. They open offline, in
-  Finder, Spotlight or any app, and your own notes on them are never overwritten.
-- **One place per course.** Announcements, assignments and due dates, pages, modules, grades,
-  the syllabus and the course's tools (Gradescope, Ed...) each get a tab. Each course opens on
-  an overview: upcoming deadlines, the latest announcements, new files, your grades, and notes
-  you type yourself.
-- **Make every course look alike.** Every instructor organizes Canvas differently; you don't
-  have to follow them. Drag anything into a tab, a card on the overview or a link; rename or
-  hide what you don't need. Set up the layout once for all your courses, or per course.
-- **Find anything as you type.** Press ⌘⇧Space anywhere on your Mac and type what you'd say:
-  `ee64 hw 7 solutions`, `64 slides this week`, `cs70 due this week not submitted`. It searches
-  names and the text inside PDFs, slides, announcements and pages, knows that `hw3` means
-  "Homework 3" or "Problem Set 3", and forgives typos ("midtrem").
-- **See what's new.** New announcements, assignments, files and posts get a blue dot until you
-  open them, and the sidebar counts them per course.
-- **Pin what you use most.** Drag anything (a course, a folder, a file, an assignment, a
-  website) to *Pinned* at the top of the sidebar.
-- **Ed Discussion, too.** Connect Ed and each course gets a Discussion tab, with pinned and
-  staff posts saved for reading offline. Ed announcements show up with Canvas's.
-- **Ask an AI about your courses.** With one click in Settings, Claude or Codex can read your
-  synced courses: "is my midterm cumulative?", "what did I miss since the midterm?"
+### **Instant preview and local edits.**
+ ![Preview on Mac](images/preview.gif)
 
-Search, from anywhere:
+*(20x faster than Canvas on your school's crappy eduroam)*
 
-![Searching "ee64 hw 7 solutions"](images/search-hw.png)
-![Searching "64 slides this week"](images/search-this-week.png)
 
-Asking Claude, which looks it up in your courses:
+### **Powerful searching.** 
+![Searching "7b hw on circuit"](images/search-hw-text.png)
 
-![Claude answering "is my upcoming physics 7b midterm cumulative"](images/ai-midterm.png)
+*Who would've guessed that this week's homework is in the "01 Course Administration" module?*
 
-Canvas Sync only reads. It never submits, posts or changes anything on Canvas or Ed, and never
-marks anything as read there. Your login stays on your computer, in the Mac's keychain. The app
-is in English or Chinese.
 
-## Installing it (Mac)
+### **Pin what you use most.** 
+!["Dragging a hw file to pinned"](images/pin.gif)
 
-1. **Download** `Canvas Sync.dmg` from this project's
-   [Releases page](https://github.com/bzemerald/canvas_cli/releases), open it and drag
-   **Canvas Sync** into **Applications**. (No download there yet? It can be built from this
-   code: see [The desktop app](#the-desktop-app) below.)
-2. **Open it the first time with right-click → Open**, then **Open** again. The app isn't
-   signed by Apple, so a plain double-click the first time only says it can't be checked. After
-   that, it opens normally.
+*Drag anything (homework folder,  equation sheet, an assignment, an announcement) to *Pinned* at the top of the sidebar.*
+
+
+### **See what's new.** 
+![Canvas Sync: a course's overview, with the latest announcements, new files and notes](images/app.png)
+
+*Instead of the default canvas home page (which your instructor creates at the beginning of the semester and forgets to update ever since), you have a customizable course dashboard for all the new information that you care about.*
+
+
+### **Connect to a desktop LLM app.** 
+   ![Claude answering "is my upcoming physics 7b midterm cumulative"](images/ai-midterm.png)
+*With one click in Settings, Claude or ChatGPT can read your synced courses and answer your questions.*
+
+
+## Installation and set up
+
+1. **Download** from this project's
+   [Releases page](https://github.com/bzemerald/canvas_cli/releases).
+2. **On Macs**, because I can't afford Apple's $99/yr developer account, it will say that the app is damaged and you should move it to trash. Ignore it by clicking "cancel," and go to your Mac's System Setttings → Privacy & Security, scroll down to the security section at the bottom, where you will see a notice that the app was blocked, then click "Open Anyway."
 3. **Sign in to Canvas.** The app asks for three things:
    - **Your school's Canvas address**, the one in your browser when you use Canvas
      (e.g. `bcourses.berkeley.edu`).
    - **An access token**, which lets the app read Canvas as you. In Canvas, click **Account →
      Settings**, scroll to *Approved Integrations*, click **+ New Access Token**, give it any
-     name, and copy the long code it shows (it's only shown once) into the app.
+     name, set its expiration date to as long as possible, 
+and copy the long code it shows (it's only shown once) into the app.
    - **A folder** for your course files, e.g. a new folder called `Canvas` in your home folder.
 4. If your Mac asks whether Canvas Sync may use your keychain, click **Always Allow**. That's
    where it keeps the token.
+5. *(Optional)* EdStem: In Settings, connect to EdStem with a token made on Ed's *Settings → API Tokens* page.
+6. *(Optional)* AI assistants: Settings → AI assistants → Link To… Allows your courses to be seen by Claude Desktop or ChatGPT Desktop(Work/Codex).
 
-The first sync downloads all your courses' files, which can take a few minutes. After that it
-syncs when the app opens and every hour (both can be changed in Settings).
+The first sync downloads all your courses' files, which can take a few minutes. After that it syncs when the app opens and every hour (both can be changed in Settings).
 
-**Optional:**
-
-- **Ed:** in Settings, connect Ed with a token made on Ed's *Settings → API Tokens* page.
-- **Search by meaning** (finds "the announcement about extensions" from "can I get an
-  extension"): turn it on in Settings; it downloads a small model (~125 MB).
-- **AI assistants:** Settings → AI assistants → Add To… adds your courses to Claude or Codex.
-
-If Canvas ever says your token expired, make a new one the same way and paste it in Settings.
-
----
-
-*The rest of this page is for developers: building the app, the `canvas` command line tool,
-and how it works.*
-
-## What's here
-
-- **`canvas`**, a command-line tool, mirrors Canvas course files into a normal folder that
-  Finder, Spotlight and your own apps can use. `canvas pull` works like `git pull`: it fetches
-  what changed, never overwrites your edits, and keeps the original of every file so you can
-  restore it.
-- **Canvas Sync**, a desktop app built on it, is a hub for each course: files, announcements,
-  assignments, pages, modules, tools, grades and the course's posts on Ed, in one window, so
-  you rarely need the Canvas website or Finder. Every course can be arranged to look alike, however
-  its instructor organized it.
-
-
-## The desktop app
-
-```sh
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-cd app && npm install        # and Rust, from https://rustup.rs
-npm run tauri dev            # the app starts .venv/bin/canvas serve itself
-```
-
-The first launch asks for your Canvas address, an access token and the sync folder. The app
-then syncs on launch and every hour (you can change both in Settings). Its interface is in
-Chinese or English. See [app/README.md](app/README.md) for how the shell and backend fit together.
-
-To build the app as a standalone `Canvas Sync.app` (and a `.dmg`), in `app/`:
-
-```sh
-npm run bundle    # -> src-tauri/target/release/bundle/macos/, and dmg/
-```
-
-This packs the Python backend with PyInstaller into the app (`npm run build:backend` does that
-part alone), so the app doesn't need this repo or its `.venv`. `npm run tauri build` makes
-one without it, which starts the repo's `.venv/bin/canvas`. It isn't signed with a developer
-ID: on another Mac, open it the first time with right-click → Open. The packed backend is a new
-program to the Keychain, so macOS may ask before it reads the Canvas token (Always Allow), and
-again after a rebuild.
-
-- **A course's page** has tabs (overview, modules, announcements, discussion, assignments,
-  grades, files, syllabus, pages) and an overview of cards (upcoming deadlines, latest
-  announcements, current modules, new files, grades, tools and links, notes you type).
-  Anything of the course can be put anywhere on its page by dragging it, a page, a module, a
-  folder, a file, a search, as a tab, a card or a link. Most things can be renamed or hidden
-  there. Arrange the tabs and overview once as the default for every course, or per course.
-- **Pinned**, at the top of the sidebar, holds anything from any course: a course, a folder,
-  a file, a document, a tab, a tool, a web link, a smart folder (a search, pinned).
-- **Files** shows the course's folder with what's new to you, what you changed or deleted
-  (with *Show modifications*), and what isn't synced. You can restore originals, stop or resume
-  syncing, rename folders, and delete to the Trash, all from right-click menus.
-- **Search** (⌘⇧Space anywhere, or the search box) finds things by name as you type, and by
-  the text inside them. It reads what a query says: a course, a kind, a time, a status, numbered
-  things: `cs70 due this week not submitted` is CS 70's assignments due this week that aren't handed in; `hw3` also
-  finds "Homework 3" and "Problem Set 3"; a misspelled word ("midtrem") is taken for the one
-  meant.
-- **New** things (announcements, assignments, pages, files, Ed posts) get a blue dot until you
-  open them, and the sidebar counts them per course.
-
-## Ed
-
-Connect Ed (edstem.org) in Settings with a token made in Ed's own settings (API Tokens). The
-token is kept in the keychain. Each Ed course is matched to its Canvas course by course code and
-term, and you can change the match in Settings. On each sync:
-
-- Ed's announcements appear among the course's announcements, marked *Ed*. One posted on both
-  Canvas and Ed (same title, within two days) shows once.
-- The course gets a **Discussion** tab of its Ed posts (filter by pinned, staff, unread,
-  watched, category) and a card of what's pinned and what staff posted.
-- Replies to pinned, staff and megathread posts are downloaded for reading offline. Other posts'
-  replies are fetched when you open them.
-- Search finds pinned and staff posts by name, and every post by its text (staff answers
-  included). Students' questions come after other matches that fit as well.
-
-It's read-only: nothing is posted, and nothing is marked read on Ed. Ed has no documented
-API; this uses the one its website uses, so a change on Ed's side can break it (the app then
-says "Ed changed"). Ed is fetched by every sync, the app's and `canvas pull`'s (not when only
-some folders are pulled).
 
 ## The command line
+The project also includes `canvas`, a command line tool. 
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/canvas init        # Canvas URL, access token (stored in the keychain), sync folder
-.venv/bin/canvas courses     # which courses will sync; --sync ID / --skip ID to change
+.venv/bin/canvas init        
+.venv/bin/canvas courses     
 .venv/bin/canvas pull -n     # dry run
 .venv/bin/canvas pull
 ```
@@ -189,10 +90,6 @@ and notebooks, and every page, assignment, announcement and syllabus (and Ed pos
 - `mt1` finds "MT1.pdf", "Midterm 1 Solutions" and "midterm1.pdf" alike.
 - Results whose name or folder matches come first; files that only mention it inside follow.
 - `--open N` opens result N (the file, or the Canvas page).
-
-**By meaning** (off unless turned on in the app's Settings; then `canvas search` uses it too): "can I get an extension" finds
-the announcement about Flextensions. A small English model (~125 MB) is downloaded to the app's
-folder; English only, and Chinese queries are matched by their words.
 
 The index is `.canvas/index.db`, a cache: delete it and `canvas index` rebuilds it.
 
@@ -234,13 +131,34 @@ claude mcp add --scope user canvas-sync -- /path/to/canvas-sync/.venv/bin/canvas
 | `whats_new` | what you haven't opened, or everything since a time; and how the last sync went |
 | `list_files`, `local_changes` | folders, and what you changed on this computer |
 
+
+## Launching/building the desktop app from source
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+cd app && npm install        # and Rust, from https://rustup.rs
+npm run tauri dev            # the app starts .venv/bin/canvas serve itself
+```
+
+The first launch asks for your Canvas address, an access token and the sync folder. The app then syncs on launch and every hour (you can change both in Settings). See [app/README.md](app/README.md) for how the shell and backend fit together.
+
+To build the app as a standalone, in `app/`:
+
+```sh
+npm run bundle 
+```
+
+This packs the Python backend with PyInstaller into the app (`npm run build:backend` does that
+part alone), so the app doesn't need this repo or its `.venv`. `npm run tauri build` makes
+one without it, which starts the repo's `.venv/bin/canvas`. It isn't signed with a developer
+ID: on another Mac, open it the first time with right-click → Open. The packed backend is a new
+program to the Keychain, so macOS may ask before it reads the Canvas token (Always Allow), and
+again after a rebuild.
+
 ## What ends up on disk
 
 ```
 ~/Canvas/
-  Fall 2026/MATH 221/
-    Modules/01 Week 1/lec1.pdf      ← the real file
-    Files/Lectures/lec1.pdf         ← symlink to it (same file, other view)
   .canvas/
     config.toml                     ← layout, sync policies, the app's arrangement; edit freely
     notes/                          ← notes typed on a course's overview in the app
@@ -252,9 +170,7 @@ claude mcp add --scope user canvas-sync -- /path/to/canvas-sync/.venv/bin/canvas
   app.toml                          ← the app's preferences, the default tabs and overview
 ```
 
-Files are found through the Files tab, modules, and links inside pages, assignments,
-announcements and the syllabus, so a hidden Files tab doesn't hide anything. Canvas and Ed
-tokens are in the keychain.
+Canvas and Ed tokens are in the keychain.
 
 In `.canvas/config.toml`, besides the sync settings:
 
