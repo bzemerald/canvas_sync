@@ -1,6 +1,6 @@
 // How queries are read (query.ts). Times are local: now is Friday, October 16, 2026, 10 pm.
 import { describe, expect, it } from "vitest";
-import { type KindId, type Part, type Vocabulary, asText, corrected, indexQuery, read, sameSeries, seriesIn, singular, without } from "./query";
+import { type KindId, type Part, type Vocabulary, asText, corrected, indexQuery, read, sameSeries, seriesIn, singular } from "./query";
 
 const NOW = new Date(2026, 9, 16, 22, 0).getTime();
 const at = (m: number, d: number, y = 2026) => new Date(y, m - 1, d).getTime();
@@ -226,17 +226,15 @@ describe("what's done with a reading", () => {
     expect(s.role === "series" && [s.name, s.n, s.text, s.was]).toEqual(["lecture", 9, "lecture 9", "lectrue 9"]);
   });
 
-  it("takes a part back, or as text", () => {
+  it("takes a part as text", () => {
     const r = read("cs70 本周截止的作业", vocab, NOW); // i18n-ignore
-    const when = r.parts.find((p) => p.role === "when")!;
-    expect(without(r.query, when)).toBe("cs70 的作业"); // i18n-ignore
     expect(asText(r.query, r.parts[0])).toBe('"cs70" 本周截止的作业'); // i18n-ignore
     expect(said(asText(r.query, r.parts[0]))).toEqual(['"cs70"', days(10, 12, 10, 19, true), "kind:assignment"]);
   });
   it("takes a filter said twice as one, typed in both places", () => {
     expect(said("this week cs70 this week compsci70 hw3")).toEqual([days(10, 12, 10, 19), "course:70", "series:hw 3"]);
     const r = read("this week cs70 this week", vocab, NOW);
-    expect(without(r.query, r.parts[0])).toBe("cs70");
+    expect(asText(r.query, r.parts[0])).toBe('"this week" cs70 "this week"');
     expect(said("this week today")).toEqual([days(10, 12, 10, 19), days(10, 16, 10, 17)]); // (different: both)
   });
 });

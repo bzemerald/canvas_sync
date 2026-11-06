@@ -706,13 +706,6 @@ export function corrected(r: Reading, fixes: Record<string, string>): Reading {
   return { ...r, parts };
 }
 
-/** The query without what `part` says. */
-export function without(query: string, part: Part): string {
-  let out = query;
-  for (const [a, b] of [...part.spans].sort((x, y) => y[0] - x[0])) out = out.slice(0, a) + out.slice(b);
-  return out.replace(/\s{2,}/g, " ").trim();
-}
-
 /** The query with what `part` says taken only as text (in quotes). */
 export function asText(query: string, part: Part): string {
   let out = query;

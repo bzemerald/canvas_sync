@@ -15,7 +15,7 @@ import { en } from "../lib/en";
 import { type Action, type Catalog, type Describe, type Found, type GroupId, type NameWord, type Results, type Scope, dueSoon, find, likelyWord, nameWords, narrow, prepare, recent, vocabulary } from "../lib/find";
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
-import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular, without } from "../lib/query";
+import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular } from "../lib/query";
 import type { Thing, ViewName } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
@@ -447,7 +447,7 @@ function partLabel(p: Part, names: Map<number, string>): string {
 }
 
 /** How what's typed was read: a chip for each part that narrows it down (a course, a kind, a time,
- * where you are with it). Clicking one takes what was typed as text instead; × takes it back.
+ * where you are with it). Its × takes what was typed as text instead: the word stays, to match.
  * Then the words taken for others (misspelled), each with a way to search for it as typed. */
 export function ReadingBar({ reading, names, courses, onQuery, className = "" }: {
   reading: Reading;
@@ -463,20 +463,15 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
     <div className={`flex flex-wrap items-center gap-1.5 text-xs ${className}`} data-no-drag>
       {shown.map((p) => (
         <span key={`${p.role}:${p.spans[0][0]}`} className="inline-flex max-w-64 items-center rounded-md bg-chip text-fg-soft">
+          <span className="flex min-w-0 items-center gap-1 py-0.5 pr-1 pl-1.5">
+            <PartIcon part={p} courses={courses} />
+            <span className="truncate">{partLabel(p, names)}</span>
+          </span>
           <button
+            aria-label={t("按文字搜索“{text}”", { text: p.text })}
             title={t("按文字搜索“{text}”", { text: p.text })}
             onMouseDown={(e) => e.preventDefault()} // (the input keeps the focus)
             onClick={() => onQuery(asText(reading.query, p))}
-            className="flex min-w-0 items-center gap-1 rounded-l-md py-0.5 pr-1 pl-1.5 hover:bg-line"
-          >
-            <PartIcon part={p} courses={courses} />
-            <span className="truncate">{partLabel(p, names)}</span>
-          </button>
-          <button
-            aria-label={t("去掉")}
-            title={t("去掉")}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onQuery(without(reading.query, p))}
             className="rounded-r-md p-1 text-muted hover:bg-line hover:text-fg"
           >
             <X className="size-3" />
