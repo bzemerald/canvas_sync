@@ -418,7 +418,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
         <div
           ref={setGrid}
           className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
-          style={{ height: Math.max(48, height), transition: "height 220ms cubic-bezier(0.2, 0, 0, 1)" }}
+          style={{ height: Math.max(48, height), transition: placed ? "height 220ms cubic-bezier(0.2, 0, 0, 1)" : undefined }}
         >
           {making && <div aria-hidden data-placeholder data-flip={DROP} className="rounded-xl" style={{ ...spot(DROP), height: DROP_HEIGHT }} />}
           {shown.map((e, i) => {
