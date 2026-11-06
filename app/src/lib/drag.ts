@@ -7,11 +7,12 @@
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
+import { Springs } from "./spring";
 
-/** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs):
- * it shrinks out of the way of what shows there; dragged off its list to take it away: faded,
- * with a minus. */
-export type DragOver = "zone" | "remove" | void;
+/** Where a drag is, for how the copy looks: over a place that takes it and shows where with a line
+ * (置顶, a course's tabs): it shrinks out of the way; over one that makes room for it (an overview):
+ * as it is; dragged off its list to take it away: faded, with a minus. */
+export type DragOver = "zone" | "place" | "remove" | void;
 
 /** Where the copy goes when it's let go: into this element (it lands there, then the element
  * shows instead), or nowhere (it fades out: put in another place, taken away). */
@@ -79,8 +80,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
         h.onSettled?.();
       });
     }
-    if (origin) ghost.move(ev.clientX, ev.clientY, origin[0] + ev.clientX, origin[1] + ev.clientY);
-    else ghost.move(ev.clientX, ev.clientY);
+    ghost.move(ev.clientX, ev.clientY, origin ?? undefined);
   };
   const land = (to: Landing) => {
     const g = ghost!;
@@ -135,15 +135,65 @@ function swallowNextClick() {
   setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
 }
 
-/** A copy of what's dragged, under the pointer, held where it was grabbed. */
+/** A copy of `source`, laid out as a face of the copy that's dragged: as wide as it says, so it
+ * doesn't lay out again as the copy changes size. */
+function faceOf(source: HTMLElement, width: number): HTMLElement {
+  const el = source.cloneNode(true) as HTMLElement;
+  el.removeAttribute("id");
+  el.setAttribute("aria-hidden", "true");
+  el.dataset.face = "";
+  Object.assign(el.style, {
+    position: "absolute",
+    left: "0px",
+    top: "0px",
+    width: `${width}px`,
+    margin: "0",
+    transform: "none",
+    transition: "none",
+    background: "var(--panel)",
+    color: "var(--fg)",
+    borderRadius: "inherit",
+  });
+  return el;
+}
+
+/** Its height, kept to what follows the pointer: a tall one as its top part, fading out. */
+function fitted(face: HTMLElement, height: number): number {
+  face.style.height = `${height}px`;
+  if (height > GHOST_MAX) face.style.maskImage = `linear-gradient(to bottom, black ${GHOST_MAX * 0.7}px, transparent ${GHOST_MAX}px)`;
+  return Math.min(height, GHOST_MAX);
+}
+
+/** What's dragged, as it looks out of the way of what a place shows (see Ghost.compact). Any
+ * element will do: the copy changes to it, and back, whatever it looks like. */
+function compactFace(source: HTMLElement, width: number): HTMLElement {
+  return faceOf(source, Math.min(width, COMPACT_MAX));
+}
+
+const COMPACT_AFTER = 500; // ms over a place before it gets out of the way (leaving is at once)
+const COMPACT_MAX = 220; // px wide at most, out of the way
+const COMPACT_AT: [number, number] = [-12, -10]; // below and right of the pointer
+
+/** A copy of what's dragged, under the pointer, held where it was grabbed. It's a box with faces:
+ * how big the box is, where it's held and which face shows are numbers that glide (lib/spring.ts),
+ * and can change again on the way. The pointer's own moves aren't among them: it stays with it. */
 class Ghost {
   private el: HTMLElement;
+  private body: HTMLElement; // the faces (the minus, on top, doesn't fade with them)
+  private full: HTMLElement;
+  private small: { face: HTMLElement; width: number; height: number } | null = null; // (made when first needed)
   private source: HTMLElement;
-  private dx: number;
-  private dy: number;
+  private springs: Springs<"w" | "h" | "dx" | "dy" | "compact" | "scale" | "opacity">;
+  private size: { w: number; h: number };
   private grabbed: [number, number]; // dx, dy as grabbed
-  private width: number;
-  private small = false;
+  private pointer: { x: number; y: number };
+  private origin: [number, number] | null = null; // the page's top left on the screen
+  private isCompact = false;
+  private compactSoon = 0; // the wait before it is
+  private landing = false;
+  private frame = 0;
+  private lastFrame = 0;
+  private atRest: (() => void)[] = [];
   private badge: HTMLElement | null = null; // the minus: let go, and it's taken away
   private follower: Follower;
   private following = false; // cut off by the window's edge: the follower carries it
@@ -151,54 +201,53 @@ class Ghost {
   constructor(source: HTMLElement, x: number, y: number) {
     this.source = source;
     const r = source.getBoundingClientRect();
-    this.dx = x - r.left;
-    this.dy = Math.min(y - r.top, GHOST_MAX - 12);
-    this.grabbed = [this.dx, this.dy];
-    this.width = r.width;
-    const el = source.cloneNode(true) as HTMLElement;
-    el.removeAttribute("id");
+    this.pointer = { x, y };
+    this.grabbed = [x - r.left, Math.min(y - r.top, GHOST_MAX - 12)];
+    this.full = faceOf(source, r.width);
+    this.full.style.opacity = "calc(1 - var(--ghost-compact))";
+    this.size = { w: r.width, h: fitted(this.full, r.height) };
+    this.springs = new Springs(
+      { w: this.size.w, h: this.size.h, dx: this.grabbed[0], dy: this.grabbed[1], compact: 0, scale: LIFTED, opacity: 0.95 },
+      { w: 0.2, h: 0.2, dx: 0.2, dy: 0.2, compact: 0.003, scale: 0.001, opacity: 0.003 },
+    );
+    this.body = document.createElement("div");
+    this.body.style.cssText = "position: absolute; inset: 0; border-radius: inherit; overflow: hidden";
+    this.body.appendChild(this.full);
+    const el = document.createElement("div");
+    el.dataset.ghost = "";
     el.setAttribute("aria-hidden", "true");
-    const tall = r.height > GHOST_MAX;
-    Object.assign(el.style, {
-      position: "fixed",
-      left: "0px",
-      top: "0px",
-      width: `${r.width}px`,
-      height: `${Math.min(r.height, GHOST_MAX)}px`,
-      margin: "0",
-      overflow: "hidden",
-      pointerEvents: "none",
-      zIndex: "1000",
-      opacity: "0.95",
-      background: "var(--panel)",
-      color: "var(--fg)",
-      borderRadius: "10px",
-      boxShadow: "0 14px 36px rgba(0, 0, 0, 0.32), 0 0 0 1px var(--line)",
-      maskImage: tall ? "linear-gradient(to bottom, black 70%, transparent)" : "",
-      transition: "none",
-      willChange: "transform",
-    });
+    el.style.cssText = `position: fixed; left: 0; top: 0; width: var(--ghost-w); height: var(--ghost-h); opacity: var(--ghost-opacity);
+      pointer-events: none; z-index: 1000; border-radius: 10px; background: var(--panel); will-change: transform;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32), 0 0 0 1px var(--line)`;
+    el.appendChild(this.body);
     document.body.appendChild(el);
     this.el = el;
     this.follower = new Follower((shown) => void (this.el.style.visibility = shown && this.following ? "hidden" : ""));
-    this.move(x, y);
+    this.paint();
     this.sync();
   }
 
-  private at(x: number, y: number) {
-    return `translate(${x - this.dx}px, ${y - this.dy}px)`;
+  private get vars(): Record<string, string> {
+    const v = this.springs.values;
+    return { "--ghost-w": `${v.w}px`, "--ghost-h": `${v.h}px`, "--ghost-compact": String(v.compact), "--ghost-opacity": String(v.opacity) };
   }
 
-  /** At (x, y) in the window; (sx, sy) on the screen. Where the window's edge would cut the copy
-   * off (dragging a pin out of the sidebar, say), the follower carries it there. */
-  move(x: number, y: number, sx?: number, sy?: number) {
-    this.el.style.transform = `${this.at(x, y)} scale(1.02)`; // a little lifted
-    if (sx === undefined || sy === undefined) return;
-    const [left, top] = [x - this.dx, y - this.dy];
-    const [w, h] = [parseFloat(this.el.style.width), parseFloat(this.el.style.height)];
-    if (left < 0 || top < 0 || left + w > window.innerWidth || top + h > window.innerHeight) {
+  private paint() {
+    const v = this.springs.values;
+    for (const [k, value] of Object.entries(this.vars)) this.el.style.setProperty(k, value);
+    this.el.style.transform = `translate(${this.pointer.x - v.dx}px, ${this.pointer.y - v.dy}px) scale(${v.scale})`;
+  }
+
+  /** Where the window's edge would cut the copy off (dragging a pin out of the sidebar, say), the
+   * follower carries it there. */
+  private place() {
+    if (!this.origin || this.landing) return;
+    const v = this.springs.values;
+    const [left, top] = [this.pointer.x - v.dx, this.pointer.y - v.dy];
+    if (left < 0 || top < 0 || left + v.w > window.innerWidth || top + v.h > window.innerHeight) {
+      if (!this.following) this.follower.vars(this.vars);
       this.following = true;
-      this.follower.show(sx - this.dx, sy - this.dy);
+      this.follower.show(this.origin[0] + left, this.origin[1] + top);
     } else if (this.following) {
       this.following = false;
       this.el.style.visibility = "";
@@ -206,22 +255,82 @@ class Ghost {
     }
   }
 
-  /** The follower gets the copy as it looks now. */
+  /** Off to where the springs are told to go. */
+  private glide() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      this.springs.jump();
+      this.frameDone();
+    } else if (!this.frame && !this.springs.settled) {
+      this.lastFrame = performance.now();
+      this.frame = requestAnimationFrame(this.tick);
+    }
+  }
+
+  private tick = (now: number) => {
+    this.springs.tick((now - this.lastFrame) / 1000);
+    this.lastFrame = now;
+    this.frameDone();
+    this.frame = this.springs.settled ? 0 : requestAnimationFrame(this.tick);
+    if (!this.frame) for (const done of this.atRest.splice(0)) done();
+  };
+
+  private frameDone() {
+    this.paint();
+    this.place();
+    if (this.following) this.follower.vars(this.vars);
+  }
+
+  /** At (x, y) in the window; `origin`: the page's top left on the screen. */
+  move(x: number, y: number, origin?: [number, number]) {
+    this.pointer = { x, y };
+    if (origin) this.origin = origin;
+    this.paint();
+    this.place();
+  }
+
+  /** The follower gets the copy as it looks now, every face. */
   private sync() {
     const copy = this.el.cloneNode(true) as HTMLElement;
     Object.assign(copy.style, { position: "relative", left: "0px", top: "0px", transform: "none", visibility: "visible", zIndex: "auto" });
-    inlineImages(this.source, copy);
-    this.follower.content(copy.outerHTML, parseFloat(this.el.style.width), parseFloat(this.el.style.height));
+    copy.querySelectorAll<HTMLElement>("[data-face]").forEach((face) => inlineImages(this.source, face));
+    this.follower.content(copy.outerHTML, Math.max(this.size.w, this.small?.width ?? 0), Math.max(this.size.h, this.small?.height ?? 0));
   }
 
-  /** Over 置顶: narrower, and below and right of the pointer, so the line where it'll go shows. */
+  /** Its compact face, made and measured the first time it's asked for. */
+  private compactSize() {
+    if (!this.small) {
+      const face = compactFace(this.source, this.size.w);
+      const width = parseFloat(face.style.width);
+      face.style.opacity = "var(--ghost-compact)";
+      this.body.appendChild(face);
+      this.small = { face, width, height: fitted(face, face.offsetHeight) };
+      this.sync();
+    }
+    return this.small;
+  }
+
+  /** Over a place that shows where it'll go (置顶, a course's tabs): after a moment there, smaller,
+   * and below and right of the pointer, so that shows. Away from it: back at once. */
   compact(on: boolean) {
-    if (on === this.small) return;
-    this.small = on;
-    this.el.style.width = `${on ? Math.min(this.width, 220) : this.width}px`;
-    this.el.style.opacity = on ? "0.85" : "0.95";
-    [this.dx, this.dy] = on ? [-12, -10] : this.grabbed;
-    this.sync();
+    if (on) {
+      if (!this.isCompact && !this.compactSoon) this.compactSoon = window.setTimeout(() => this.setCompact(true), COMPACT_AFTER);
+    } else {
+      window.clearTimeout(this.compactSoon);
+      this.compactSoon = 0;
+      if (this.isCompact) this.setCompact(false);
+    }
+  }
+
+  private setCompact(on: boolean) {
+    this.compactSoon = 0;
+    this.isCompact = on;
+    if (on) {
+      const { width, height } = this.compactSize();
+      this.springs.set({ w: width, h: height, dx: COMPACT_AT[0], dy: COMPACT_AT[1], compact: 1, opacity: 0.85 });
+    } else {
+      this.springs.set({ w: this.size.w, h: this.size.h, dx: this.grabbed[0], dy: this.grabbed[1], compact: 0, opacity: 0.95 });
+    }
+    this.glide();
   }
 
   /** Off its list: let go and it's taken away (unpinned, removed). */
@@ -235,14 +344,13 @@ class Ghost {
         display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", lineHeight: "1",
         background: "#ff3b30", color: "#fff", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.3)", // (red, as macOS shows taking away)
       });
-      // What's in it fades; the minus doesn't (the copy's own opacity would take it along).
-      for (const c of Array.from(this.el.children) as HTMLElement[]) c.style.opacity = "0.45";
+      this.body.style.opacity = "0.45"; // (what's in it fades; the minus doesn't)
       this.el.appendChild(b);
       this.badge = b;
     } else {
       this.badge?.remove();
       this.badge = null;
-      for (const c of Array.from(this.el.children) as HTMLElement[]) c.style.opacity = "";
+      this.body.style.opacity = "";
     }
     this.sync();
   }
@@ -250,7 +358,9 @@ class Ghost {
   /** Let go: it glides into `to` and settles there (or fades out where it is); then it's gone.
    * (Carried by the follower, past the window's edge: back in the page for that, gliding in.) */
   async land(to: Landing) {
+    window.clearTimeout(this.compactSoon);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return this.remove();
+    this.landing = true;
     if (this.following) {
       if (!to?.isConnected) return this.remove(); // (let go outside the window: nothing to glide into)
       this.following = false;
@@ -259,23 +369,33 @@ class Ghost {
     }
     await new Promise(requestAnimationFrame); // (the page has its new order by now)
     const r = to?.isConnected ? settledRect(to) : null;
-    const s = this.el.style;
-    s.transition = `transform ${LAND}ms cubic-bezier(0.2, 0, 0, 1), width ${LAND}ms, height ${LAND}ms, box-shadow ${LAND}ms, opacity ${LAND}ms`;
+    this.el.style.transition = `box-shadow ${LAND}ms`;
     if (r) {
-      Object.assign(s, { transform: `translate(${r.left}px, ${r.top}px)`, width: `${r.width}px`, height: `${Math.min(r.height, GHOST_MAX)}px`, boxShadow: "0 0 0 1px var(--line)", opacity: "1" });
+      this.el.style.boxShadow = "0 0 0 1px var(--line)";
+      this.springs.set({ w: r.width, h: Math.min(r.height, GHOST_MAX), dx: this.pointer.x - r.left, dy: this.pointer.y - r.top, compact: 0, scale: 1, opacity: 1 });
     } else {
-      Object.assign(s, { transform: `${s.transform.replace(/ scale\([^)]*\)/, "")} scale(0.92)`, opacity: "0" });
+      this.springs.set({ scale: 0.92, opacity: 0 });
     }
-    await new Promise((done) => setTimeout(done, LAND));
+    // (Not forever: the window hidden, nothing draws, so nothing would get there.)
+    await new Promise<void>((done) => {
+      this.atRest.push(done);
+      setTimeout(done, LAND * 2);
+      this.glide();
+      if (this.springs.settled) done();
+    });
     this.remove();
   }
 
   remove() {
+    window.clearTimeout(this.compactSoon);
+    cancelAnimationFrame(this.frame);
+    this.frame = 0;
     this.follower.hide();
     this.el.remove();
   }
 }
 
+const LIFTED = 1.02; // a little bigger while it's carried
 const LAND = 200; // ms: the copy gliding into place when let go
 
 /** Where it ends up: its box without the glide it may be in the middle of (lib/flip.ts). */
@@ -326,6 +446,11 @@ class Follower {
   content(html: string, w: number, h: number) {
     void emitTo("ghost", "drag-ghost", { html: `<div style="padding: ${PAD}px">${html}</div>` }).catch(() => {});
     void followerWin().then((win) => win?.setSize(new LogicalSize(w + 2 * PAD, h + 2 * PAD))).catch(() => {});
+  }
+
+  /** How the copy is just now: its size and which face shows (see Ghost). */
+  vars(vars: Record<string, string>) {
+    void emitTo("ghost", "drag-ghost-vars", vars).catch(() => {});
   }
 
   /** The copy's top left at (x, y) on the screen. */

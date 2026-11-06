@@ -146,7 +146,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
             at = index;
             slide(off && axis !== "cards" ? count : index);
             setDrag({ from: index, target: index });
-            return elsewhere ? "zone" : "remove";
+            return elsewhere ?? "remove";
           }
           const next = landing(x, y);
           if (next === at && !removing) return;

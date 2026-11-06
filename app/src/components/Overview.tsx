@@ -213,6 +213,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     },
     slotAt,
     (e) => ofCourse(e, course) && !isView(e, "overview"),
+    true,
   );
   const making = zone.state === "over" && !!zone.entry && hasCard(zone.entry); // room for what's dragged in
   const drag = useReorder(shown.length, (from, to) => {
@@ -554,7 +555,7 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
     return i === before.current.length - 1 && x > r.left + b.left + b.width / 2 ? shown.length : i;
   };
   const zone = useDropZone((entry, slot) => onArrange(putAt(links, { ...entry, hidden: false }, slotIndex(links, shown, slot))), slotAt,
-    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"));
+    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"), true);
   useEffect(() => {
     if (zone.state !== "over") before.current = null;
   }, [zone.state]);

@@ -5,7 +5,7 @@
 // Let go back where it came from (a row, on its own card: an element marked `data-home`), it
 // isn't put anywhere.
 import { useEffect, useRef, useState } from "react";
-import { trackDrag } from "./drag";
+import { type DragOver, trackDrag } from "./drag";
 import { dragOut } from "./dragOut";
 import type { Shown } from "./things";
 
@@ -14,6 +14,7 @@ export type ZoneState = "idle" | "ready" | "over"; // ready: something it takes 
 interface Zone {
   el: HTMLElement | null;
   accepts: (entry: Shown) => boolean;
+  makesRoom: boolean;
   set: (state: ZoneState, x: number, y: number, entry: Shown | null) => void;
   drop: (entry: Shown, x: number, y: number) => void;
 }
@@ -85,12 +86,12 @@ function under(x: number, y: number, entry: Shown, from?: ZoneId, source?: HTMLE
 
 export const dropZones = {
   /** The pointer moved while dragging something (a thing or not): light up the places that take
-   * it. True when it's over one. */
-  update(x: number, y: number, entry: Shown | null, from?: ZoneId, source?: HTMLElement): boolean {
+   * it. What it's over, if it's a place. */
+  update(x: number, y: number, entry: Shown | null, from?: ZoneId, source?: HTMLElement): DragOver {
     if (!boxes) measureAll();
     const over = entry ? under(x, y, entry, from, source) : null;
     zones.forEach((z) => z.set(!entry || !takes(z, entry, from) ? "idle" : z === over ? "over" : "ready", x, y, entry));
-    return !!over;
+    return over ? (over.makesRoom ? "place" : "zone") : undefined;
   },
   /** Dropped: taken if it was over a place that takes it. */
   drop(x: number, y: number, entry: Shown | null, from?: ZoneId, source?: HTMLElement): boolean {
@@ -108,19 +109,23 @@ export const dropZones = {
 
 /** Makes an element a place things can be dropped on. `slotAt` says where in its list a drop at
  * (x, y) would go; while something is over it, `slot` is that place and `entry` what it is. `id`:
- * for useReorder, so the list's own items moving in it aren't drops on it. */
+ * for useReorder, so the list's own items moving in it aren't drops on it. `makesRoom`: what's over
+ * it shows where it'd go as room among what's there, not a line it would cover: the copy that
+ * follows the pointer needn't get out of the way. */
 export function useDropZone(
   onDrop: (entry: Shown, slot: number) => void,
   slotAt: (x: number, y: number) => number = () => 0,
   accepts: (entry: Shown) => boolean = () => true,
+  makesRoom = false,
 ) {
   const [state, setState] = useState<ZoneState>("idle");
   const [slot, setSlot] = useState(0);
   const [over, setOver] = useState<Shown | null>(null);
   const slotRef = useRef(slotAt);
   slotRef.current = slotAt;
-  const zone = useRef<Zone>({ el: null, accepts, set: () => {}, drop: () => {} });
+  const zone = useRef<Zone>({ el: null, accepts, makesRoom, set: () => {}, drop: () => {} });
   zone.current.accepts = accepts;
+  zone.current.makesRoom = makesRoom;
   zone.current.set = (s, x, y, entry) => {
     setState(s);
     setOver(s === "over" ? entry : null);
@@ -141,7 +146,7 @@ export function useDropZone(
 export function dragToPlace(e: React.PointerEvent, el: HTMLElement, entry: Shown, files?: string[]) {
   if (e.button !== 0) return;
   trackDrag(e, el, {
-    onMove: (x, y) => (dropZones.update(x, y, entry, undefined, el) ? "zone" : undefined),
+    onMove: (x, y) => dropZones.update(x, y, entry, undefined, el),
     onDrop: (x, y) => void dropZones.drop(x, y, entry, undefined, el),
     onCancel: () => dropZones.end(),
     out: dragOut(entry, undefined, files),
