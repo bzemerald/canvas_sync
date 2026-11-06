@@ -106,11 +106,19 @@
   100% { opacity: 0; }
 }
 
-/* While something is dragged, the text it passes over isn't selected (lib/drag.ts). */
+/* While something is dragged, the text it passes over isn't selected, and what it passes over
+   doesn't take it for the pointer (no hover, no text cursor). Places go by where things are, not
+   what's pointed at (lib/dropZones.ts); events reach the window by way of the page itself. */
 html.dragging,
 html.dragging * {
   -webkit-user-select: none !important;
   user-select: none !important;
+}
+html.dragging {
+  cursor: grabbing;
+}
+html.dragging * {
+  pointer-events: none !important;
 }
 
 /* Where a dragged card or link will land (lib/reorder.tsx), or something dropped from elsewhere:

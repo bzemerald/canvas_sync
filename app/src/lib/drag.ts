@@ -49,8 +49,8 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     window.removeEventListener("pointercancel", cancel);
     window.removeEventListener("keydown", key);
     window.removeEventListener("blur", cancel);
+    window.removeEventListener("wheel", wheel);
     scroller?.stop();
-    document.body.style.cursor = "";
     document.documentElement.classList.remove("dragging");
   };
   const move = (ev: PointerEvent) => {
@@ -59,9 +59,10 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < THRESHOLD) return;
       ghost = new Ghost(source, startX, startY);
       scroller = new AutoScroll(source, () => h.onMove?.(last.x, last.y));
-      document.body.style.cursor = "grabbing";
-      // Not selecting text on the way (the press was the start of a selection too).
+      // Not selecting text on the way (the press was the start of a selection too), nor pointing
+      // at what's passed over. So the wheel has to be passed on to what's under the pointer.
       document.documentElement.classList.add("dragging");
+      window.addEventListener("wheel", wheel, { passive: true });
       window.getSelection()?.removeAllRanges();
       h.onStart?.();
     }
@@ -81,6 +82,10 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       });
     }
     ghost.move(ev.clientX, ev.clientY, origin ?? undefined);
+  };
+  const wheel = (ev: WheelEvent) => {
+    scrollUnder(ev);
+    h.onMove?.(last.x, last.y);
   };
   const land = (to: Landing) => {
     const g = ghost!;
@@ -108,6 +113,23 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   window.addEventListener("pointercancel", cancel);
   window.addEventListener("keydown", key);
   window.addEventListener("blur", cancel);
+}
+
+/** Scrolls what's under the pointer, as the wheel would if it weren't dragging. */
+function scrollUnder(ev: WheelEvent) {
+  const page = document.documentElement;
+  page.classList.remove("dragging"); // (for a moment: else nothing's under it)
+  let el = document.elementFromPoint(ev.clientX, ev.clientY);
+  page.classList.add("dragging");
+  for (; el; el = el.parentElement) {
+    const style = getComputedStyle(el);
+    const down = /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight;
+    const across = /(auto|scroll)/.test(style.overflowX) && el.scrollWidth > el.clientWidth;
+    if (down || across) {
+      el.scrollBy(across ? ev.deltaX || (down ? 0 : ev.deltaY) : 0, down ? ev.deltaY : 0);
+      return;
+    }
+  }
 }
 
 const outside = (ev: PointerEvent) => ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight;
