@@ -179,6 +179,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   const was = useRef({ course: course.id, cols: loadColumns(course.id) });
   if (was.current.course !== course.id) was.current = { course: course.id, cols: loadColumns(course.id) };
   const dropColumn = useRef(0); // the column what's dragged goes in: the pointer's
+  const [, showColumn] = useState(0); // (another column can be the same slot: it's drawn there all the same)
   /** Where in `rest` (the cards without it) something dragged goes, with the pointer at (x, y):
    * in the pointer's column, before the last card of it that starts above the pointer, or after
    * its last card once the pointer is past that. There it takes just that card's spot: the cards
@@ -190,6 +191,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     const r = grid.getBoundingClientRect();
     const col = columns === 1 || x < r.left + r.width / 2 ? 0 : 1;
     dropColumn.current = col;
+    showColumn(col);
     const { spots, ends } = stack(rest, heights, columns, was.current.cols);
     let at = -1;
     let last = -1;

@@ -258,7 +258,7 @@ class Ghost {
       this.follower.hide();
     }
     await new Promise(requestAnimationFrame); // (the page has its new order by now)
-    const r = to?.isConnected ? to.getBoundingClientRect() : null;
+    const r = to?.isConnected ? settledRect(to) : null;
     const s = this.el.style;
     s.transition = `transform ${LAND}ms cubic-bezier(0.2, 0, 0, 1), width ${LAND}ms, height ${LAND}ms, box-shadow ${LAND}ms, opacity ${LAND}ms`;
     if (r) {
@@ -277,6 +277,13 @@ class Ghost {
 }
 
 const LAND = 200; // ms: the copy gliding into place when let go
+
+/** Where it ends up: its box without the glide it may be in the middle of (lib/flip.ts). */
+function settledRect(el: HTMLElement): DOMRect {
+  const r = el.getBoundingClientRect();
+  const m = new DOMMatrix(getComputedStyle(el).transform);
+  return new DOMRect(r.left - m.m41, r.top - m.m42, r.width, r.height);
+}
 
 /** Images the follower window can't load (blob: links belong to this page), as data. */
 function inlineImages(from: HTMLElement, to: HTMLElement) {
