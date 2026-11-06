@@ -246,6 +246,13 @@ describe("searching from where you are", () => {
     expect(all(from("lec", { courses: [70], under: `${CS70}/Lectures` }))).toEqual(["lec-02.pdf", "lec-03.pdf"]);
   });
 
+  it("from all files, finds only files and folders, in any course", () => {
+    expect(all(from("lec", { under: "" }))).toContain("lec-02.pdf");
+    expect(all(from("homework 3", {}))).toContain("Homework 3");
+    expect(all(from("homework 3", { under: "" }))).not.toContain("Homework 3"); // (an assignment)
+    expect(all(from("neu100a hw 3", { under: "" }))).toContain("Homework 3 notes.pdf");
+  });
+
   it("in a folder, keeps what the index found there (a view link's file, kept elsewhere)", () => {
     const linked = hit({ title: "HW3_solutions.pdf", path: `${CS70}/HW3_solutions.pdf` });
     const r = find(read("solutions", vocabulary(known, KINDS), NOW), known, none, [linked], [], NOW, null, { courses: [70], under: `${CS70}/Lectures` });

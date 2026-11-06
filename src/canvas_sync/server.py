@@ -617,17 +617,17 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/find")
     def find(q: str = "", limit: int = 40, course: list[int] = Query(default=[]), kind: list[str] = Query(default=[]),
-             since: str = "", until: str = "", source: str = "", under: str = "") -> dict[str, Any]:
+             since: str = "", until: str = "", source: str = "", under: str | None = None) -> dict[str, Any]:
         """The app's search as you type (its find.ts), in the index: `q` is only words to find
         (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind`,
         `since`/`until` and `source` (ed): what the app read as narrowing it down; `under`: only
-        files in that folder (searching from a course's 文件). `corrected`: words taken for
+        files in that folder ("": any folder; searching from a course's 文件 or 全部文件). `corrected`: words taken for
         others, misspelled ("midtrem": midterm)."""
         if under:
             inside(under)
         with engine() as e:
             hits, corrected = e.find(q, min(limit, 500), course, kind or None, since or None, until or None,
-                                     source or None, under or None, prefs_path=prefs_path)
+                                     source or None, under, prefs_path=prefs_path)
             return {"hits": [h.to_dict() for h in hits], "corrected": corrected}
 
     @api.get("/catalog")

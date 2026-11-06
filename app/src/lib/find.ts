@@ -380,7 +380,7 @@ const hitKeyOf = (h: Hit) => `hit:${h.kind}:${h.course_id}:${h.path ?? h.url ?? 
 type Term = PartOf<"word"> | PartOf<"series"> | PartOf<"kind">;
 const isTerm = (p: Part): p is Term => p.role === "word" || p.role === "series" || p.role === "kind";
 
-const isUnder = (path: string, folder: string) => path.startsWith(folder + "/");
+const isUnder = (path: string, folder: string) => folder === "" || path.startsWith(folder + "/"); // ("": the sync folder)
 
 /** What a reading finds: by name in the catalog (and actions), and by the index (`hits`, as it
  * returns them for the reading's `indexQuery`: names first, then what's only inside). `here`: the

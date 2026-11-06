@@ -578,6 +578,7 @@ export const en: Record<string, string | [string, string]> = {
   "在{scope}中搜索": "Search {scope}",
   "只搜“{name}” ›": "Only “{name}” ›",
   "只搜“{name}”里的文件": "Files in “{name}”",
+  "只搜文件": "Files only",
   "搜索整门课 ›": "Search the whole course ›",
   "搜索全部 ›": "Search everything ›",
   "搜索全部课程 ›": "Search all courses ›",

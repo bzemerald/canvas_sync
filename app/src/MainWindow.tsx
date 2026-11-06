@@ -386,12 +386,13 @@ export function MainWindow() {
 
   // What the search box searches. In a course, what the tab shows: 公告 / 作业 / 页面 / 模块 / 成绩
   // narrow their own lists as you type, 文件 (or a folder tab) searches the folder you're in;
-  // anything else, the course. Elsewhere, the folder you're in. "搜索整门课" widens it to the course.
+  // anything else, the course. Elsewhere, the folder you're in (in 全部文件, any: still only files).
+  // "搜索整门课" widens it to the course.
   const filtering = !!tab && !wide && isView(tab) && tab.course === cv?.id && FILTERS_ITSELF.includes(tab.view);
-  const folderScope = !wide && ((cv && filesTab) || (view.kind === "browse" && view.path !== "")) ? browsing : null;
+  const folderScope = !wide && ((cv && filesTab) || view.kind === "browse") ? browsing : null;
   const courseWide = !!cv && !filesTab && !(isView(tab) && FILTERS_ITSELF.includes(tab.view));
   const tabName = tabEntry ? thingName(tabEntry, courseList, "tab") : "";
-  const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path.split("/").pop() ?? path);
+  const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path === "" ? t("全部文件") : path.split("/").pop() ?? path);
   useEffect(() => {
     if (!query.trim()) setWide(false);
   }, [query]);
@@ -403,7 +404,7 @@ export function MainWindow() {
         : filesTab
           ? t("在“{name}”中搜索", { name: folderName(cv.path) })
           : t("在{scope}中搜索", { scope: tabName })
-      : view.kind === "browse" && view.path
+      : view.kind === "browse"
         ? t("在“{name}”中搜索", { name: folderName(view.path) })
         : t("搜索");
   // A smart folder's results (typing in its box searches where it is instead: below).
@@ -416,7 +417,7 @@ export function MainWindow() {
   // What's typed is searched as in the search window, where the box is: the folder,
   // the course (what its tab shows a little first), or everything.
   const scope = useMemo((): Where => {
-    if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : scopeCourses.length ? { courses: scopeCourses } : {}) };
+    if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : folderScope && scopeCourses.length ? { courses: scopeCourses } : {}) };
     return cv ? { courses: [cv.id], kind: kindShown(tab) } : {};
   }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "");
@@ -437,7 +438,7 @@ export function MainWindow() {
       return { text: t("在 {label} 中搜索", { label: course.label }), action: t("搜索全部课程 ›"), onAction: () => searchEverywhere(query) };
     }
     if (view.kind === "browse" && folderScope !== null) {
-      return { text: t("只搜“{name}”里的文件", { name: folderName(folderScope) }), action: t("搜索全部 ›"), onAction: () => setWide(true) };
+      return { text: folderScope ? t("只搜“{name}”里的文件", { name: folderName(folderScope) }) : t("只搜文件"), action: t("搜索全部 ›"), onAction: () => setWide(true) };
     }
     return null;
   })();

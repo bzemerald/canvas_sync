@@ -199,7 +199,7 @@ class Engine:
         hits = self.index.search(query, self.state.courses(), self.settings, limit, course_ids, kinds,
                                  under=folder, also=also, literal=literal, since=since, until=until, source=source)
         home = prefs_path.parent if prefs_path else None
-        if (len(query.split()) >= 2 and not under and home and AppPrefs.load(prefs_path).meaning
+        if (len(query.split()) >= 2 and under is None and home and AppPrefs.load(prefs_path).meaning
                 and meaning.downloaded(home)):
             codes = {c.id: course_label(c, self.settings) for c in self.state.courses()}
             had = {(h.kind, h.course_id, h.path or h.url or h.title) for h in hits}

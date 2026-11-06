@@ -140,14 +140,16 @@ function lastCourse(): number | null {
 const EMPTY = prepare([], () => ({ names: [], aliases: [], kind: [] }));
 const NO_ANSWER: api.FoundInText = { hits: [], corrected: {} };
 const NOWHERE: Scope = {};
+const ALL_FILES: Scope = { under: "" };
 
 /** What's found for `query`, as you type: how it reads, what that finds by name and in the index
  * (or, with nothing typed, what you opened lately and what's due soon), each by key, and which
- * comes first. `scope`: where it's searched from (a course; a folder), unless what's typed names
- * a course. */
+ * comes first. `scope`: where it's searched from (a course; a folder; "": any folder), unless what's
+ * typed names a course. */
 export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[], scope: Scope = NOWHERE) {
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
-  const where = typed.parts.some((p) => p.role === "course") ? NOWHERE : scope;
+  // (Naming a course leaves a folder; from 全部文件, it's that course's files.)
+  const where = typed.parts.some((p) => p.role === "course") ? (scope.under === "" ? ALL_FILES : NOWHERE) : scope;
   const asked = useMemo(() => {
     const q = indexQuery(typed, catalog?.abbreviations ?? {});
     return q && { ...q, courses: q.courses.length ? q.courses : where.courses ?? [], under: where.under };

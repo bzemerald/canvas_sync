@@ -645,7 +645,9 @@ class Index:
         if until:
             where.append("i.date < ?")
             args.append(until)
-        if under is not None:
+        if under == "":  # the whole sync folder: what's a file there, not what's only on Canvas
+            where.append("i.path IS NOT NULL")
+        elif under is not None:
             like = under.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
             others = f" OR i.path IN ({','.join('?' * len(also))})" if also else ""
             where.append(f"(i.path = ? OR i.path LIKE ? ESCAPE '\\'{others})")

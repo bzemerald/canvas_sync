@@ -360,7 +360,7 @@ export interface FoundInText {
 }
 export function find(q: string, opts: { courses?: number[]; kinds?: Kind[]; source?: "ed"; since?: string; until?: string; under?: string; limit?: number } = {}): Promise<FoundInText> {
   const params = new URLSearchParams({ q, limit: String(opts.limit ?? 40) });
-  if (opts.under) params.set("under", opts.under); // only files in this folder
+  if (opts.under !== undefined) params.set("under", opts.under); // only files in this folder ("": any)
   for (const c of opts.courses ?? []) params.append("course", String(c));
   for (const k of opts.kinds ?? []) params.append("kind", k);
   if (opts.source) params.set("source", opts.source);

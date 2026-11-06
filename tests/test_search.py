@@ -130,6 +130,10 @@ def test_api_find_takes_words_and_what_narrows_them(client):
     assert paths(q="lecture", under=folder) and all(p.startswith(folder + "/") for p in paths(q="lecture", under=folder))
     assert find(q="hw", under=folder) == []
     assert client.get("/api/find", params={"q": "hw", "under": "../x"}).status_code == 400
+    # "": any folder. Files, not what's only on Canvas.
+    assert find(q="problem") and all(p for p in paths(q="lecture", under=""))
+    assert "Problem Set 4" in find(q="problem") and "Problem Set 4" not in find(q="problem", under="")
+    assert "Lecture 3.pdf" in find(q="lecture", under="")
 
 
 def test_a_courses_number_is_before_its_term():
