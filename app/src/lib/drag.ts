@@ -31,6 +31,7 @@ export interface DragHandlers {
 
 const THRESHOLD = 5; // px before a press is a drag
 const GHOST_MAX = 260; // px tall at most: a long card or term follows as its top part
+const GHOST_FADE = GHOST_MAX * 0.3; // px at its bottom that fade out, when it's cut short
 
 /** Start watching a press on `source`; it becomes a drag if the pointer moves. */
 export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHandlers): void {
@@ -179,10 +180,11 @@ function faceOf(source: HTMLElement, width: number): HTMLElement {
   return el;
 }
 
-/** Its height, kept to what follows the pointer: a tall one as its top part, fading out. */
+/** Its height, kept to what follows the pointer: a tall one as its top part, fading out at the
+ * copy's bottom edge (let go, the copy grows back to all of it, and the fade goes). */
 function fitted(face: HTMLElement, height: number): number {
   face.style.height = `${height}px`;
-  if (height > GHOST_MAX) face.style.maskImage = `linear-gradient(to bottom, black ${GHOST_MAX * 0.7}px, transparent ${GHOST_MAX}px)`;
+  if (height > GHOST_MAX) face.style.maskImage = "linear-gradient(to bottom, black calc(var(--ghost-h) - var(--ghost-fade)), transparent var(--ghost-h))";
   return Math.min(height, GHOST_MAX);
 }
 
@@ -205,7 +207,7 @@ class Ghost {
   private full: HTMLElement;
   private small: { face: HTMLElement; width: number; height: number } | null = null; // (made when first needed)
   private source: HTMLElement;
-  private springs: Springs<"w" | "h" | "dx" | "dy" | "compact" | "scale" | "opacity">;
+  private springs: Springs<"w" | "h" | "dx" | "dy" | "compact" | "scale" | "opacity" | "fade">;
   private size: { w: number; h: number };
   private grabbed: [number, number]; // dx, dy as grabbed
   private pointer: { x: number; y: number };
@@ -229,8 +231,8 @@ class Ghost {
     this.full.style.opacity = "calc(1 - var(--ghost-compact))";
     this.size = { w: r.width, h: fitted(this.full, r.height) };
     this.springs = new Springs(
-      { w: this.size.w, h: this.size.h, dx: this.grabbed[0], dy: this.grabbed[1], compact: 0, scale: LIFTED, opacity: 0.95 },
-      { w: 0.2, h: 0.2, dx: 0.2, dy: 0.2, compact: 0.003, scale: 0.001, opacity: 0.003 },
+      { w: this.size.w, h: this.size.h, dx: this.grabbed[0], dy: this.grabbed[1], compact: 0, scale: LIFTED, opacity: 0.95, fade: GHOST_FADE },
+      { w: 0.2, h: 0.2, dx: 0.2, dy: 0.2, compact: 0.003, scale: 0.001, opacity: 0.003, fade: 0.2 },
     );
     this.body = document.createElement("div");
     this.body.style.cssText = "position: absolute; inset: 0; border-radius: inherit; overflow: hidden";
@@ -251,7 +253,7 @@ class Ghost {
 
   private get vars(): Record<string, string> {
     const v = this.springs.values;
-    return { "--ghost-w": `${v.w}px`, "--ghost-h": `${v.h}px`, "--ghost-compact": String(v.compact), "--ghost-opacity": String(v.opacity) };
+    return { "--ghost-w": `${v.w}px`, "--ghost-h": `${v.h}px`, "--ghost-compact": String(v.compact), "--ghost-opacity": String(v.opacity), "--ghost-fade": `${v.fade}px` };
   }
 
   private paint() {
@@ -394,7 +396,7 @@ class Ghost {
     this.el.style.transition = `box-shadow ${LAND}ms`;
     if (r) {
       this.el.style.boxShadow = "0 0 0 1px var(--line)";
-      this.springs.set({ w: r.width, h: Math.min(r.height, GHOST_MAX), dx: this.pointer.x - r.left, dy: this.pointer.y - r.top, compact: 0, scale: 1, opacity: 1 });
+      this.springs.set({ w: r.width, h: r.height, fade: 0, dx: this.pointer.x - r.left, dy: this.pointer.y - r.top, compact: 0, scale: 1, opacity: 1 });
     } else {
       this.springs.set({ scale: 0.92, opacity: 0 });
     }
