@@ -71,6 +71,7 @@ export const en: Record<string, string | [string, string]> = {
   "它所在的文件夹不再同步：Canvas 以后在这里新增的文件不会下载": "Its folder isn't synced any more: files Canvas adds here later won't download",
   "停止同步此文件夹": "Stop syncing this folder",
   "恢复同步 {n} 项": ["Sync 1 item again", "Sync {n} items again"],
+  "标为已读 {n} 项": ["Mark 1 item read", "Mark {n} items read"],
   "停止同步 {n} 项（保留文件）": ["Stop syncing 1 item (keep the files)", "Stop syncing {n} items (keep the files)"],
   "停止同步此文件夹（保留文件）": "Stop syncing this folder (keep the files)",
   "快速预览": "Quick Look",

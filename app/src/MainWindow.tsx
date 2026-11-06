@@ -563,6 +563,13 @@ export function MainWindow() {
     if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markFileSeen(x.path), t("标为已读"));
     return [];
   };
+  /** 标为已读, for several selected: new files, and folders with new files in them. */
+  const markSeveralRead = (files: string[], folders: string[] = []): MenuItem[] => {
+    const n = files.length + folders.length;
+    if (!n) return [];
+    const all = [...files.map((p) => () => api.markFileSeen(p)), ...folders.map((p) => () => api.markFolderSeen(p))];
+    return [{ label: t("标为已读 {n} 项", { n }), onSelect: () => void Promise.all(all.map((run) => run())).then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
+  };
   /** What can be done with a thing, besides putting it places (they add that). */
   const ways = (x: Thing): MenuItem[] => [...waysOf(x), ...markRead(x)];
   const waysOf = (x: Thing): MenuItem[] => {
@@ -738,6 +745,7 @@ export function MainWindow() {
     };
     return [
       { label: t("打开 {n} 个文件", { n: files.length }), disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
+      ...markSeveralRead(files.filter((e) => e.new).map((e) => e.path), live.filter((e) => e.type === "dir" && e.new_inside > 0).map((e) => e.path)),
       "separator",
       { label: t("从 Canvas 同步"), disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
       { label: t("恢复原版…"), onSelect: () => setRestoring({ scope, label }) },
@@ -762,7 +770,12 @@ export function MainWindow() {
       onSelect: () => askDelete(onDisk.map((h) => h.path!), onDisk.map((h) => h.title)),
     };
     if (hs.length > 1) {
-      return [{ label: t("打开 {n} 项", { n: hs.length }), onSelect: () => hs.slice(0, 20).forEach(openHere) }, "separator", del];
+      return [
+        { label: t("打开 {n} 项", { n: hs.length }), onSelect: () => hs.slice(0, 20).forEach(openHere) },
+        ...markSeveralRead(onDisk.map((h) => h.path!).filter((p) => newFiles?.includes(p))),
+        "separator",
+        del,
+      ];
     }
     const h = hs[0];
     const x = thingOfHit(h);
@@ -776,6 +789,7 @@ export function MainWindow() {
           ]
         : []),
       ...(h.url ? [{ label: onTheWeb(h.url), onSelect: () => void api.openUrl(h.url!) }] : []),
+      ...(h.path ? markRead({ type: "file", path: h.path }) : []),
       ...(x ? ["separator" as const, pinOf({ ...x, name: h.title })] : []),
       ...(h.path ? ["separator" as const, del] : []),
     ];
