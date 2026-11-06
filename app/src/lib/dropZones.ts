@@ -123,12 +123,14 @@ export function useDropZone(
   const [over, setOver] = useState<Shown | null>(null);
   const slotRef = useRef(slotAt);
   slotRef.current = slotAt;
+  const last = useRef<[number, number] | null>(null); // where the pointer was, over it
   const zone = useRef<Zone>({ el: null, accepts, makesRoom, set: () => {}, drop: () => {} });
   zone.current.accepts = accepts;
   zone.current.makesRoom = makesRoom;
   zone.current.set = (s, x, y, entry) => {
     setState(s);
     setOver(s === "over" ? entry : null);
+    last.current = s === "over" ? [x, y] : null;
     if (s === "over") setSlot(slotRef.current(x, y)); // (a re-render only when it changes)
   };
   zone.current.drop = (entry, x, y) => onDrop(entry, slotRef.current(x, y));
@@ -137,7 +139,11 @@ export function useDropZone(
     zones.add(z);
     return () => void zones.delete(z);
   }, []);
-  return { ref: (el: HTMLElement | null) => void (zone.current.el = el), state, slot, entry: over, id: zone.current as ZoneId };
+  return {
+    ref: (el: HTMLElement | null) => void (zone.current.el = el), state, slot, entry: over, id: zone.current as ZoneId,
+    /** Reads the slot again, the pointer where it is (`slotAt` may say something else by now). */
+    again: () => void (last.current && setSlot(slotRef.current(...last.current))),
+  };
 }
 
 /** Drag something only to put it somewhere (a file, an announcement, a row in a card): press on

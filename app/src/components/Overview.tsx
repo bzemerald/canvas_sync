@@ -13,6 +13,7 @@ import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { useFlip } from "../lib/flip";
+import { Settling, slotInColumn } from "../lib/slot";
 import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
 import {
@@ -51,11 +52,12 @@ function saveColumns(course: number, columns: Record<string, number>) {
 }
 const DROP = "drop"; // the slot that opens for something dropped from elsewhere (as a card key)
 const DROP_HEIGHT = 96;
+const SETTLE = 120; // ms a new place to go holds before the cards move for it
 
 /** Cards in order, each down the column it's in (`was`: where you put it), so that a card put in
  * or taken out moves only the ones below it in its column; a card new here down the shortest (so
  * the columns come out about even). `put`: cards that go in a given column (what's dragged: where
- * the pointer is). Each one's column and top, by key; where each column ends; how tall it all is. */
+ * the pointer is). Each one's column and top, by key; how tall it all is. */
 function stack(keys: string[], heights: Record<string, number>, columns: number, was: Record<string, number> = {}, put: Record<string, number> = {}) {
   const tops = Array.from({ length: columns }, () => 0);
   const spots: Record<string, { col: number; top: number }> = {};
@@ -65,7 +67,7 @@ function stack(keys: string[], heights: Record<string, number>, columns: number,
     spots[k] = { col, top: tops[col] };
     tops[col] += (k === DROP ? DROP_HEIGHT : heights[k] ?? 0) + GAP;
   }
-  return { spots, ends: tops, height: Math.max(0, Math.max(...tops) - GAP) };
+  return { spots, height: Math.max(0, Math.max(...tops) - GAP) };
 }
 
 /** Of boxes, the one (x, y) is in, or nearest; between two it's in (a short card's spot above
@@ -180,28 +182,27 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   if (was.current.course !== course.id) was.current = { course: course.id, cols: loadColumns(course.id) };
   const dropColumn = useRef(0); // the column what's dragged goes in: the pointer's
   const [, showColumn] = useState(0); // (another column can be the same slot: it's drawn there all the same)
-  /** Where in `rest` (the cards without it) something dragged goes, with the pointer at (x, y):
-   * in the pointer's column, before the last card of it that starts above the pointer, or after
-   * its last card once the pointer is past that. There it takes just that card's spot: the cards
-   * before it, and the other column, stay put. So the answer comes from `rest` as it was, not from
-   * what's drawn (the cards making room would change it, and that the cards, and so on); and it
-   * changes only as the pointer passes the top of a card, as in a list. */
+  // Where the pointer says goes on showing once it has held a moment: on the line between two
+  // columns, the cards don't jump back and forth. Let go, it lands where it shows.
+  const settling = useRef<Settling<{ slot: number; col: number }> | null>(null);
+  const reread = useRef(() => {}); // (once it has: the drag and the zone, below, read the slot again)
+  settling.current ??= new Settling(SETTLE, ({ col }) => {
+    dropColumn.current = col;
+    showColumn(col);
+    reread.current();
+  });
+  /** Where in `rest` (the cards without it) something dragged goes, with the pointer at (x, y): in
+   * the pointer's column, by the middles of its cards (lib/slot.ts). There it takes just that
+   * card's spot: the cards before it, and the other column, stay put. So the answer comes from
+   * `rest` as it was, not from what's drawn (the cards making room would change it, and that the
+   * cards, and so on). */
   const slotFor = (rest: string[], x: number, y: number) => {
     if (!grid) return rest.length;
     const r = grid.getBoundingClientRect();
     const col = columns === 1 || x < r.left + r.width / 2 ? 0 : 1;
-    dropColumn.current = col;
-    showColumn(col);
-    const { spots, ends } = stack(rest, heights, columns, was.current.cols);
-    let at = -1;
-    let last = -1;
-    rest.forEach((k, i) => {
-      if (spots[k].col !== col) return;
-      last = i;
-      if (at < 0 || r.top + spots[k].top <= y) at = i; // (down a column, in order)
-    });
-    if (last < 0) return rest.length; // (nothing in that column)
-    return at === last && y >= r.top + ends[col] - GAP - (heights[rest[last]] ?? 0) / 2 ? last + 1 : at; // (past its middle: after it)
+    const { spots } = stack(rest, heights, columns, was.current.cols);
+    const slot = slotInColumn(rest.map((k) => ({ ...spots[k], height: heights[k] ?? 0 })), col, y - r.top);
+    return settling.current!.see(`${slot}:${col}`, { slot, col }).slot;
   };
   // Dragged in from elsewhere: the cards make room where it'd go (a tool or a link: 工具与链接).
   const slotAt = (x: number, y: number) => slotFor(keys, x, y);
@@ -224,6 +225,12 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     thing: (i) => shown[i],
     slotAt: (x, y, from) => slotFor(keys.filter((_, i) => i !== from), x, y),
   });
+  reread.current = () => (drag.again(), zone.again());
+  const dragging = drag.dragging !== null || zone.state === "over";
+  useEffect(() => {
+    if (!dragging) settling.current?.clear();
+  }, [dragging]);
+  useEffect(() => () => settling.current?.clear(), []);
   useFlip(grid, placed);
 
   if (!overview || !cards) return <Loading />;

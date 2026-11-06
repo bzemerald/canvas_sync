@@ -6,7 +6,7 @@
 // dropped in another place too (see dropZones.ts); what you put in a list (not the list's own)
 // can be dragged off it to take it away.
 import { useRef, useState } from "react";
-import { trackDrag, type DragOver } from "./drag";
+import { trackDrag, type DragHandlers, type DragOver } from "./drag";
 import { dragOut } from "./dragOut";
 import { dropZones, type ZoneId } from "./dropZones";
 import type { Shown } from "./things";
@@ -34,6 +34,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
   moveRef.current = onMove;
   const opts = useRef(options);
   opts.current = options;
+  const again = useRef<(() => void) | null>(null); // goes over where the pointer is once more
 
   const handle = (index: number) => ({
     onPointerDown: (e: React.PointerEvent) => {
@@ -105,6 +106,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
           });
         }
         shifts.clear();
+        again.current = null;
         setDrag(null);
       };
       // The copy has landed: it's the item again.
@@ -115,7 +117,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         source.style.opacity = "";
       };
 
-      trackDrag(e, source, {
+      const handlers: DragHandlers = {
         onStart: () => {
           base = measure();
           list = source.parentElement?.getBoundingClientRect() ?? null;
@@ -136,6 +138,7 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
           setDrag({ from: index, target: index });
         },
         onMove: (x, y): DragOver => {
+          again.current = () => void handlers.onMove?.(x, y);
           const elsewhere = dropZones.update(x, y, target, zone);
           const off = !elsewhere && !!remove && !!list &&
             (x < list.left - OFF || x > list.right + OFF || y < list.top - OFF || y > list.bottom + OFF);
@@ -170,7 +173,8 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
         },
         onSettled: settled,
         out: target ? dragOut(target, zone) : undefined, // (files, out of the window: to other apps)
-      });
+      };
+      trackDrag(e, source, handlers);
     },
   });
 
@@ -182,6 +186,8 @@ export function useReorder(count: number, onMove: (from: number, to: number) => 
   return {
     dragging: drag?.from ?? null,
     ref,
+    /** Reads where it'd go again, the pointer where it is (`slotAt` may say something else by now). */
+    again: () => again.current?.(),
     /** On what you grab it by: the item itself, or a header in it. */
     handle,
     item: (index: number) => ({ ref: ref(index), ...handle(index) }),
