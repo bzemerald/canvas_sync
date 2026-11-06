@@ -50,6 +50,7 @@ import { useTrafficLights } from "./lib/window";
 import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
 import { locale, t } from "./lib/i18n";
+import { useLoaded } from "./lib/useLoaded";
 
 // A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually), or
 // where you last were in it (openCourse).
@@ -185,6 +186,7 @@ export function MainWindow() {
     });
   const refresh = () => setVersion((n) => n + 1);
   const seenChanged = () => setSeenTick((n) => n + 1);
+  const newFiles = useLoaded("new-files", api.newFiles, [version, seenTick]).value; // (what a file's menu can mark read)
 
   // -- data ------------------------------------------------------------------------
   useEffect(() => {
@@ -544,10 +546,11 @@ export function MainWindow() {
   const makeDefaultLayout = (place: Place) =>
     layoutId !== null && api.makeDefaultLayout(layoutId, place).then(layoutDone(layoutId, t("其他没单独排过的课程现在也这样排")), fail(t("操作失败")));
 
-  /** 全部标为已读: for a course, one of its views with a count, a folder (see Things.markRead). */
+  /** 全部标为已读: for a course, one of its views with a count, a folder; 标为已读: a new file
+   * (see Things.markRead). */
   const markRead = (x: Thing, count?: number): MenuItem[] => {
-    const item = (n: number | undefined, run: () => Promise<unknown>): MenuItem[] =>
-      n === 0 ? [] : [{ label: t("全部标为已读"), onSelect: () => void run().then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
+    const item = (n: number | undefined, run: () => Promise<unknown>, label = t("全部标为已读")): MenuItem[] =>
+      n === 0 ? [] : [{ label, onSelect: () => void run().then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
     if (x.type === "course") return item(count ?? courseById(x.course)?.new, () => api.markSeen(x.course));
     if (x.type === "view" && VIEW_NEWS[x.view]) {
       const [kind, key] = VIEW_NEWS[x.view]!;
@@ -557,6 +560,7 @@ export function MainWindow() {
       const some = courseList.some((c) => c.new > 0 && (under(c.dir, x.path) || under(x.path, c.dir)));
       return item(count ?? (some ? undefined : 0), () => api.markFolderSeen(x.path));
     }
+    if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markFileSeen(x.path), t("标为已读"));
     return [];
   };
   /** What can be done with a thing, besides putting it places (they add that). */
@@ -687,6 +691,7 @@ export function MainWindow() {
       { label: t("打开"), hint: shortcut.open, onSelect: () => void api.openPath(e.path) },
       ...(isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void quickLook([e.path], 0, "open") }] : []),
       { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(e.path) },
+      ...markRead({ type: "file", path: e.path }),
     ];
     if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
     if (e.link) items.push({ label: t("显示原始文件"), onSelect: () => goPath(parentOf(e.link!), e.link!) });

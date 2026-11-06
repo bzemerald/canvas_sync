@@ -23,7 +23,7 @@ export interface Things {
   /** What can be done with it, besides placing it: 打开, 在文件夹中显示, 在 Canvas 中打开... */
   ways: (thing: Thing) => MenuItem[];
   /** 全部标为已读, for what shows how many new things are in it (a course, a view, a folder) and has
-   * some; `count`: how many, if known. (`ways` has it too.) */
+   * some, or 标为已读 for a new file; `count`: how many, if known. (`ways` has it too.) */
   markRead: (thing: Thing, count?: number) => MenuItem[];
   isPinned: (thing: Thing) => boolean;
   pin: (entry: Shown) => void;

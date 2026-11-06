@@ -381,6 +381,10 @@ export const item = (course: number, kind: DocKind, id: string) =>
 export const grades = (course: number) => api<Grades>(`/courses/${course}/grades`);
 /** Mark the new files in a folder seen ("": all of them). */
 export const markFolderSeen = (path: string) => post("/seen/folder", { path });
+/** Mark a file seen. */
+export const markFileSeen = (path: string) => post("/seen/file", { path });
+/** Where the files not opened yet are. */
+export const newFiles = () => api<string[]>("/new/files");
 /** Mark everything new in a course as seen (or only some kinds of things). */
 /** What's counted as new in a course, by kind. */
 export type NewsKind = "announcement" | "assignment" | "page" | "file" | "post";

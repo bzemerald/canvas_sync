@@ -120,6 +120,10 @@ class FolderSeenRequest(BaseModel):
     path: str  # a folder in the sync folder ("": all of it)
 
 
+class FileSeenRequest(BaseModel):
+    path: str  # a file in the sync folder
+
+
 class ScopeRequest(BaseModel):
     """A term, course, folder or file: paths relative to the sync folder, and/or file ids."""
 
@@ -697,6 +701,19 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         with engine() as e:
             e.state.mark_seen_under(req.path)
         return {"seen": req.path}
+
+    @api.post("/seen/file")
+    def file_seen(req: FileSeenRequest) -> dict[str, str]:
+        """Mark a file seen."""
+        with engine() as e:
+            e.state.mark_file_seen(req.path)
+        return {"seen": req.path}
+
+    @api.get("/new/files")
+    def new_files() -> list[str]:
+        """Where the files not opened yet are: what can be marked read."""
+        with engine() as e:
+            return sorted(e.state.unseen_files())
 
     @api.get("/media")
     async def media(url: str) -> Response:

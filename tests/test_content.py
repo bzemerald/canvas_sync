@@ -215,6 +215,12 @@ def test_whats_new(api, course, root, monkeypatch):
     api.post("/api/open", json={"path": f"{COURSE}/Modules/01 Week 1/lec1.pdf", "reveal": True})  # only showing it
     o = api.get("/api/courses/1/overview").json()
     assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "posts": 0}
+    # What can be marked read; a file that isn't new, or isn't there, changes nothing.
+    new = api.get("/api/new/files").json()
+    assert f"{COURSE}/Modules/01 Week 1/lec1.pdf" in new and f"{COURSE}/Files/lec2.pdf" not in new
+    api.post("/api/seen/file", json={"path": f"{COURSE}/Files/lec2.pdf"})  # (already: nothing changes)
+    api.post("/api/seen/file", json={"path": f"{COURSE}/Nowhere.pdf"})
+    assert api.get("/api/courses/1/overview").json()["new"]["files"] == 1
     # A folder marked read: the new files in it (lec1.pdf is in Modules as a link).
     assert api.post("/api/seen/folder", json={"path": f"{COURSE}/Nowhere"}).status_code == 404
     api.post("/api/seen/folder", json={"path": f"{COURSE}/Modules"})
@@ -258,6 +264,20 @@ def test_new_files_in_the_file_browser(root, fake):
     assert (week["lec2.pdf"].new, week["lec1.pdf"].new) == ("new", None)
     assert top["Modules"].new_inside == top["Files"].new_inside == 1
     assert term["MATH 221"].new_inside == 1  # the file and its view link are one file
+
+
+def test_a_file_marked_read_at_one_of_its_paths_is_read_at_all(root, fake):
+    pull(root, fake)
+    fake.put(102, "lec2.pdf", b"l2")
+    fake.module(1, "Week 1", [{"type": "File", "content_id": 100}, {"type": "File", "content_id": 102}])
+    fake.modules = fake.modules[1:]
+    pull(root, fake)
+    with Engine(root) as e:
+        assert f"{COURSE}/Modules/01 Week 1/lec2.pdf" in e.state.unseen_files()
+        e.state.mark_file_seen(f"{COURSE}/Modules/01 Week 1/lec2.pdf")
+        assert e.state.unseen_files() == {}
+        assert {x.name: x for x in e.list_dir(f"{COURSE}/Modules/01 Week 1")}["lec2.pdf"].new is None
+        assert {x.name: x for x in e.list_dir(COURSE)}["Files"].new_inside == 0
 
 
 def test_external_tools(root, course):
