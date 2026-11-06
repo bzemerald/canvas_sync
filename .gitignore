@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 .claude/ui-test/bin/
 app/src-tauri/backend/
+.DS_Store
