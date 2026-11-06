@@ -165,6 +165,7 @@ function faceOf(source: HTMLElement, width: number): HTMLElement {
   el.removeAttribute("id");
   el.setAttribute("aria-hidden", "true");
   el.dataset.face = "";
+  delete el.dataset.placeholder; // (a card's own place, while it's dragged, shows as an empty slot)
   Object.assign(el.style, {
     position: "absolute",
     left: "0px",
