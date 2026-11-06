@@ -167,6 +167,22 @@ def test_pull_on_the_command_line_syncs_ed_too(root, linked, web, monkeypatch):
         assert [h.title for h in e.search("megathread")] == ["HW 3 megathread"]  # (and indexed)
 
 
+def test_marking_ed_read_takes_its_announcements_too(root, tmp_path, fake, linked):
+    fake.announcements.append({"id": 9, "title": "Welcome", "message": "<p>Hello</p>", "posted_at": "2026-10-10T00:00:00Z",
+                               "html_url": f"{BASE}/courses/1/discussion_topics/9"})
+    pull(root, fake)
+    linked.thread(501, 9000, "Hello", type="announcement", user=1)
+    assert ed_sync(root) is None  # (what's there at first isn't news)
+    linked.thread(501, 9001, "Exam room", type="announcement", user=1)
+    ed_sync(root)
+    def new():
+        with Engine(root) as e:
+            return set(content.news(e.state, e.root, 1)["announcement"])
+    assert "ed-9001" in new()
+    client(root, tmp_path).post("/api/courses/1/seen", json={"kinds": ["post"]})
+    assert new() == {"9"}  # (Canvas's stays new)
+
+
 def test_ed_announcements_are_the_courses(root, fake, linked):
     fake.announcements.append({"id": 9, "title": "Welcome", "message": "<p>Hello</p>", "posted_at": "2026-10-10T00:00:00Z",
                                "html_url": f"{BASE}/courses/1/discussion_topics/9"})
@@ -175,7 +191,7 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
             '<link href="https://x.edu/hw3">the spec</link>.</paragraph></document>')
     linked.thread(501, 9001, "HW 3 deadline moved", body, type="announcement", user=1, created="2026-10-16T09:00:00+10:00")
     linked.thread(501, 9002, "Is lecture recorded?")  # a question: not an announcement
-    # Posted on Canvas and Ed both: it's one announcement (Canvas's).
+    # Posted on Canvas and Ed both: one announcement (Canvas's), and on Ed as what it is there.
     linked.thread(501, 9003, "welcome!", type="announcement", user=1, created="2026-10-10T12:00:00+10:00")
     linked.thread(501, 9004, "Welcome", type="announcement", user=1, created="2026-09-01T09:00:00+10:00")  # (another)
     linked.thread(501, 9005, "Welcome", user=1, created="2026-10-10T12:00:00+10:00", is_pinned=True)  # (pinned, as a post)
@@ -191,9 +207,14 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
         it = content.item(e.state, e.root, 1, "announcement", "ed-9001")
         assert it["html"] == ('<p>HW 3 is due <strong>Friday</strong>; see '
                               '<a href="https://x.edu/hw3">the spec</a>.</p>')
-        # The pinned post is in the discussion, but not news: the Canvas announcement is.
-        assert [p["id"] for p in content.items(e.state, e.root, 1, "post")] == ["ed-9005", "ed-9002"]
-        assert "ed-9005" not in content.news(e.state, e.root, 1)["post"]
+        # Ed lists it all, each the kind it is; what's a copy of the Canvas announcement isn't news.
+        on_ed = {p["id"]: p["kind"] for p in content.items(e.state, e.root, 1, "post")}
+        assert on_ed == {"ed-9001": "announcement", "ed-9002": "post", "ed-9003": "post", "ed-9004": "announcement", "ed-9005": "post"}
+        assert next(iter(on_ed)) == "ed-9005"  # (pinned first)
+        assert content.overview(e.state, e.root, 1)["counts"]["posts"] == 5
+        assert not {"ed-9003", "ed-9005"} & set(content.news(e.state, e.root, 1)["post"])
+        titles = [x.get("name") for x in catalog(e) if x["type"] == "doc" and x.get("kind") == "post"]
+        assert "welcome!" not in titles  # (by name, the Canvas announcement)
         e.reindex()
         assert [h.title for h in e.search("deadline moved")] == ["HW 3 deadline moved"]
 
@@ -303,7 +324,7 @@ def test_ed_posts_are_found_and_go_anywhere_in_their_course(root, tmp_path, link
             ("HW 3 megathread", "ed"), ("HW 3 question", "ed")}
         found = {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e)}
         assert ("doc", "post", "HW 3 megathread") in found and ("doc", "post", "HW 3 question") not in found
-        assert ("view", None, None) in {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e) if x.get("view") == "discussion"}
+        assert ("view", None, None) in {(x["type"], x.get("kind"), x.get("name")) for x in catalog(e) if x.get("view") == "ed"}
 
     # A post is the course's: it can be a tab of it, and pinned; not another course's.
     post = {"type": "doc", "course": 1, "kind": "post", "id": "ed-9001"}

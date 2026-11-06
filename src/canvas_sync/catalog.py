@@ -49,7 +49,10 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
     for cid, kind, n in e.state.db.execute("SELECT course_id, kind, count(*) FROM documents GROUP BY course_id, kind"):
         if cid in has and n:
             has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages",
-                          "post": "discussion"}.get(kind, ""))
+                          "post": "ed"}.get(kind, ""))
+    for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM documents WHERE source = 'ed'"):
+        if cid in has:
+            has[cid].add("ed")
     for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM modules"):
         if cid in has:
             has[cid].add("modules")
@@ -79,8 +82,8 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if kind not in DOC_KINDS:
             continue
         ed = raw.get("ed") or {}
-        if kind == "post" and not (ed.get("pinned") or ed.get("staff")):
-            continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's)
+        if kind == "post" and (ed.get("on_canvas") or not (ed.get("pinned") or ed.get("staff"))):
+            continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's; a copy of a Canvas announcement is that)
         fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
         if kind in ("announcement", "post"):
             fields["date"] = raw.get("posted_at")
@@ -94,7 +97,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                        "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{row['id']}"}
         add(Thing("doc", course=cid, kind=kind, id=row["id"]), **fields)
     for c in courses:
-        for v in ("overview", "modules", "announcements", "discussion", "assignments", "grades", "files", "syllabus", "pages",
+        for v in ("overview", "modules", "announcements", "ed", "assignments", "grades", "files", "syllabus", "pages",
                   "tools", "canvas"):
             if v in has[c.id]:
                 add(view(c.id, v))

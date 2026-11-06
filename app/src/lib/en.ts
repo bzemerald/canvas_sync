@@ -495,7 +495,6 @@ export const en: Record<string, string | [string, string]> = {
   "回复还没下载：连上网后再打开就有了。": "The replies aren't downloaded yet: open this again when you're online.",
   "帖子": "Post",
   "Ed 帖子": "Ed post",
-  "讨论区": "Discussion",
   "没有置顶或教师发的帖子": "Nothing pinned or posted by staff",
   "连不上 Canvas": "Can't reach Canvas",
 
@@ -706,7 +705,7 @@ export const en: Record<string, string | [string, string]> = {
   "第 1 到 9 个标签（9：最后一个）": "Tabs 1 to 9 (9: the last)",
   "下一个标签": "Next tab",
   "上一个标签": "Previous tab",
-  "公告、作业、讨论、页面：上一条 / 下一条": "Announcements, assignments, discussion, pages: previous / next",
+  "公告、作业、Ed、页面：上一条 / 下一条": "Announcements, assignments, Ed, pages: previous / next",
   "向下 / 向上翻页": "Page down / up",
   "选择": "Select",
   "上一级文件夹": "Enclosing folder",

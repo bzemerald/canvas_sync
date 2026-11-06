@@ -166,7 +166,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       : e.view === "modules" ? !!overview?.current_modules.length
         : e.view === "grades" ? !!overview?.counts.grades
           : e.view === "syllabus" ? !!overview?.counts.syllabus
-            : e.view === "discussion" ? !!overview?.counts.posts
+            : e.view === "ed" ? !!overview?.counts.posts
               : true;
   const shown = all.filter((e) => !e.hidden && available(e));
   const add = (entry: Shown, index = all.length) => {
@@ -330,9 +330,9 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
               </Row>
             )),
           };
-        case "discussion":
+        case "ed":
           return {
-            more: more("discussion"), action: markRead(overview.new.posts, ["post"]),
+            more: more("ed"), action: markRead(overview.new.posts, ["post"]),
             body: posts.length === 0 ? <Empty>{t("没有置顶或教师发的帖子")}</Empty> : posts.map((p) => (
               <Row key={p.id} onClick={() => things.open(docThing(course.id, p))} thing={docThing(course.id, p)}>
                 <div className="flex items-center gap-2">

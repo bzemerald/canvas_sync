@@ -34,7 +34,7 @@ const VIEW_WORDS: Record<ViewName, string[]> = {
   overview: ["概览"], // i18n-ignore
   modules: ["模块", "当前模块"], // i18n-ignore
   announcements: ["公告", "最新公告"], // i18n-ignore
-  discussion: ["讨论", "讨论区", "帖子"], // i18n-ignore
+  ed: ["讨论", "讨论区", "帖子"], // i18n-ignore
   assignments: ["作业", "近期截止"], // i18n-ignore
   grades: ["成绩"], // i18n-ignore
   files: ["文件", "最近新增的文件"], // i18n-ignore
@@ -81,7 +81,7 @@ export const describeEntry = (courses: Course[]): Describe => (e) => {
 
 // Where a course's views are on Canvas.
 const VIEW_PATH: Record<ViewName, string> = {
-  overview: "", modules: "/modules", announcements: "/announcements", discussion: "", assignments: "/assignments", grades: "/grades",
+  overview: "", modules: "/modules", announcements: "/announcements", ed: "", assignments: "/assignments", grades: "/grades",
   files: "/files", syllabus: "/assignments/syllabus", pages: "/pages", tools: "", canvas: "",
 };
 
@@ -215,7 +215,7 @@ export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined
  * first). What's typed goes on as typed ("neu 1" ⇥ "neu 100a "), over the last few words; when
  * it's something else ("multivar"), its last word becomes the name ("m53 "). Either narrows search
  * to that course. Else, the word being typed finished as the word of names it most likely is
- * (`words`: "ann" ⇥ "announcements ", "cs70 dis" ⇥ "cs70 discussion ", "midterm r" ⇥ "midterm
+ * (`words`: "ann" ⇥ "announcements ", "cs70 ass" ⇥ "cs70 assignments ", "midterm r" ⇥ "midterm
  * review "), if that's clear (`unsure`: or not). */
 export function completion(reading: Reading, f: Found | undefined, found: Iterable<Found> = [], words?: Map<string, NameWord>,
   unsure = false): string | null {
@@ -386,7 +386,7 @@ export function useNarrowing(query: string, entries: CatalogEntry[] | null, inde
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
   const asked = useMemo(() => {
     const q = index && indexQuery({ ...typed, parts: typed.parts.filter((p) => p.role !== "course") }, abbr);
-    return q ? { ...q, courses: [index.course], kinds: [index.kind] } : null;
+    return q ? { ...q, courses: [index.course], kinds: (index.kind === "post" ? ["post", "announcement"] : [index.kind]) as api.Kind[] } : null; // (Ed lists both)
   }, [typed, abbr, index?.course, index?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const { answer, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
     asked ? api.find(asked.q, { ...asked, limit: 200 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
@@ -410,7 +410,7 @@ const KIND_LABEL: Record<KindId, string> = {
 const KIND_THING: Record<KindId, Thing> = {
   course: { type: "course", course: -1 }, announcement: { type: "view", course: -1, view: "announcements" },
   assignment: { type: "view", course: -1, view: "assignments" }, page: { type: "view", course: -1, view: "pages" },
-  post: { type: "view", course: -1, view: "discussion" },
+  post: { type: "view", course: -1, view: "ed" },
   module: { type: "module", course: -1, module: -1 }, tool: { type: "tool", course: -1, tool: -1 }, link: { type: "link", url: "" },
   note: { type: "note", course: -1, id: "" }, search: { type: "search", query: "", courses: [], kinds: [], content: false },
   file: { type: "view", course: -1, view: "files" }, folder: { type: "folder", path: "" },

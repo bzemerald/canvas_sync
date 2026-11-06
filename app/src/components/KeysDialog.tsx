@@ -20,7 +20,7 @@ export function KeysDialog({ onClose }: { onClose: () => void }) {
       [t("第 1 到 9 个标签（9：最后一个）"), shortcut.tab],
       [t("下一个标签"), shortcut.nextTab],
       [t("上一个标签"), shortcut.prevTab],
-      [t("公告、作业、讨论、页面：上一条 / 下一条"), `${shortcut.up} / ${shortcut.down}`],
+      [t("公告、作业、Ed、页面：上一条 / 下一条"), `${shortcut.up} / ${shortcut.down}`],
       [t("向下 / 向上翻页"), isMac ? "Space / ⇧Space" : "Space / Shift+Space"],
     ]],
     [t("文件"), [

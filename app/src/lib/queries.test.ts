@@ -41,7 +41,7 @@ const things: CatalogEntry[] = [
   course(CS61A, "CS 61A", "Fall 2025", ["Structure and Interpretation of Computer Programs"], ["61a", "cs61a"]),
   course(M54, "MATH 54", "Spring 2026", ["MATH 54-LEC-002", "Linear Algebra and Differential Equations"], ["54", "math54"]),
 
-  ...views(EE, "overview", "announcements", "discussion", "assignments", "grades", "files", "syllabus"),
+  ...views(EE, "overview", "announcements", "ed", "assignments", "grades", "files", "syllabus"),
   // On Ed (what's pinned and staff's posts are in the catalog; the questions are the index's).
   doc(EE, "post", "HW 4 megathread", { date: day(-12), source: "ed" }), doc(EE, "post", "Lab 2 Clarification", { date: day(-5), source: "ed" }),
   doc(EE, "announcement", "Lab Extensions", { date: day(-4), source: "ed" }),
@@ -90,7 +90,7 @@ const things: CatalogEntry[] = [
 // As the app has it (Found.tsx): names as shown, other names, kind words.
 const VIEW: Record<ViewName, string[]> = {
   overview: ["Overview", "概览"], modules: ["Modules", "模块"], announcements: ["Announcements", "公告"], // i18n-ignore
-  discussion: ["Discussion", "讨论", "Post", "帖子"], // i18n-ignore
+  ed: ["Ed", "讨论", "Post", "帖子"], // i18n-ignore
   assignments: ["Assignments", "作业"], grades: ["Grades", "成绩"], files: ["Files", "文件"], syllabus: ["Syllabus", "大纲"], // i18n-ignore
   pages: ["Pages", "页面"], tools: ["Tools and links", "工具与链接"], canvas: ["Open in Canvas"], // i18n-ignore
 };
@@ -227,7 +227,7 @@ describe("on Ed", () => {
   });
   it("ee16a 帖子: the course's discussion, then its posts", () => { // i18n-ignore
     const r = search("ee16a 帖子"); // i18n-ignore
-    expect(r.top).toBe("EE 16A discussion");
+    expect(r.top).toBe("EE 16A ed");
     expect(r.all).toEqual(expect.arrayContaining(["Lab 2 Clarification", "HW 4 megathread"]));
   });
   it("lab 2 clarification: the post by its name", () => {
@@ -235,7 +235,7 @@ describe("on Ed", () => {
   });
   it("ee16a ed: the course's discussion, then what's from Ed, newest first; nothing else", () => {
     const r = search("ee16a ed");
-    expect(r.top).toBe("EE 16A discussion");
+    expect(r.top).toBe("EE 16A ed");
     expect(r.all.slice(1)).toEqual(["Lab Extensions", "Lab 2 Clarification", "HW 4 megathread"]);
   });
   it("ed: only what's from Ed, in any course", () => {

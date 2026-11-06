@@ -691,6 +691,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, f"kinds must be among {NEWS_KINDS}")
         with engine() as e:
             e.state.mark_seen(course_id, kinds=kinds)
+            if kinds and "post" in kinds:  # (Ed's: what's listed there)
+                e.state.mark_seen(course_id, content.ed_announcements(e.state, course_id))
             return news_counts(news(e.state, e.root, course_id))
 
     @api.post("/seen/folder")

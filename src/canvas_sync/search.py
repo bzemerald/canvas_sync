@@ -509,7 +509,7 @@ class Index:
                                  ed.get("category", ""), ed.get("subcategory", "")]).strip(),
                 content_stamp=hashlib.sha1("".join([html, *said]).encode()).hexdigest(),
                 body=lambda h=html, more=said: "\n".join(html_to_text(x) for x in [h, *more]),
-                quiet=kind == "post" and not (ed.get("staff") or ed.get("pinned")),
+                quiet=kind == "post" and (ed.get("on_canvas") or not (ed.get("staff") or ed.get("pinned"))),
                 source=row["source"],
             )
 

@@ -106,13 +106,13 @@ const listed = (list: Shown[], x: Thing) => list.some((e) => same(e, x) && !e.hi
 /** The views that count what's new in them: the kind to mark seen, and its count in `NewCounts`. */
 const VIEW_NEWS: Partial<Record<ViewName, [NewsKind, keyof NewCounts]>> = {
   announcements: ["announcement", "announcements"], assignments: ["assignment", "assignments"], pages: ["page", "pages"],
-  files: ["file", "files"], discussion: ["post", "posts"],
+  files: ["file", "files"], ed: ["post", "posts"],
 };
 // Views that narrow their own lists as you type in the search box.
-const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "discussion", "modules", "grades"];
+const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "ed", "modules", "grades"];
 // What a tab shows, searched from it: that kind comes a little first.
 const VIEW_FINDS: Partial<Record<ViewName, KindId>> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", discussion: "post", modules: "module", files: "file",
+  announcements: "announcement", assignments: "assignment", pages: "page", ed: "post", modules: "module", files: "file",
 };
 // A course's 文件 shows its Files folder as itself (what Canvas's Files has), and the folders of
 // what's from elsewhere in the course first, saying what they are.

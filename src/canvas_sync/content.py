@@ -105,6 +105,16 @@ def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[s
     return [(r["kind"], r["id"], r["title"], json.loads(r["raw"] or "{}")) for r in rows]
 
 
+def on_ed(kind: str, raw: dict[str, Any]) -> bool:
+    """Whether it's listed under the course's Ed: its posts, and its announcements from there."""
+    return kind == "post" or (kind == "announcement" and raw.get("source") == "ed")
+
+
+def ed_announcements(state: State, course_id: int) -> list[tuple[str, str]]:
+    """The course's announcements from Ed, as (kind, id)."""
+    return [(k, i) for k, i, _, raw in _docs(state, course_id, "announcement") if on_ed(k, raw)]
+
+
 def submission(assignment: dict[str, Any]) -> dict[str, Any]:
     """Where you are with an assignment. status: graded / submitted / missing / excused /
     unsubmitted, or None when Canvas can't know (handed in elsewhere, or nothing to hand in).
@@ -202,8 +212,12 @@ def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:
 
 def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
     """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
-    new = news(state, root, course_id).get(kind, {})
-    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind)]
+    new = news(state, root, course_id)
+    if kind == "post":  # (Ed's: its announcements too, each still the kind it is)
+        rows = [d for d in _docs(state, course_id) if on_ed(d[0], d[3])]
+    else:
+        rows = _docs(state, course_id, kind)
+    out = [_summary(course_id, k, i, t, raw, i in new.get(k, {})) for k, i, t, raw in rows]
     if kind == "assignment":
         # Upcoming soonest first, then past ones most recent first, then undated.
         now = now or datetime.now(timezone.utc)
@@ -274,7 +288,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         key=lambda a: a.get("date") or "", reverse=True,
     )
     # Of the posts on Ed: what's pinned, then what staff posted, newest first.
-    posts = [_summary(course_id, k, i, t, raw, i in new["post"]) for k, i, t, raw in docs if k == "post"]
+    posts = [_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(k, raw)]
     staff_posts = sorted((p for p in posts if p["ed"]["pinned"] or p["ed"]["staff"]),
                          key=lambda p: (not p["ed"]["pinned"], _desc(p.get("date"))))
     total = _total(state, course_id)
@@ -307,7 +321,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "announcements": count["announcement"],
             "assignments": count["assignment"],
             "pages": count["page"],
-            "posts": count["post"],
+            "posts": len(posts),
             "files": len(files),
             "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
             "grades": total is not None or bool(graded),

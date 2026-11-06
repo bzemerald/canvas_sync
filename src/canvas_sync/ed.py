@@ -12,6 +12,7 @@ import html
 import json
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -316,9 +317,8 @@ async def _course(e: Engine, client: EdClient, course: int, ed_course: int) -> N
     canvas = _canvas_copies(e, course)
     docs = []
     for d in (document(t, users, course, ed_course, client.region) for t in threads):
-        if _on_canvas(d, canvas):  # the same as a Canvas announcement: it isn't one again
-            if d.kind == "announcement":
-                continue
+        if _on_canvas(d, canvas):  # the same as a Canvas announcement: on Ed, but not one again
+            d = replace(d, kind="post")
             d.raw["ed"]["on_canvas"] = True
         docs.append(d)
     # Replies fetched before, while there are as many; none to fetch where there are none; and

@@ -82,7 +82,7 @@ export interface Catalog {
 const CAP: Record<GroupId, number> = { courses: 3, places: 5, assignments: 4, announcements: 4, files: 5, actions: 3, inside: 5, related: 5 };
 const MOST = 50; // shown in a group asked for all
 // Where each source's things are listed: what "ed" finds besides them.
-const SOURCE_VIEWS: Record<Source, ViewName[]> = { ed: ["discussion"] };
+const SOURCE_VIEWS: Record<Source, ViewName[]> = { ed: ["ed"] };
 const DAY = 24 * 3600 * 1000;
 
 const variants = (s: string) => [...new Set([s, spaced(s)].filter(Boolean))];

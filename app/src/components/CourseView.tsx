@@ -29,10 +29,10 @@ import { tabCommand } from "../lib/keys";
 
 /** Where each kind of document is listed. */
 export const KIND_VIEW: Record<DocKind, ViewName> = {
-  announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus", post: "discussion",
+  announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus", post: "ed",
 };
 export const VIEW_KIND: Partial<Record<ViewName, DocKind>> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", discussion: "post",
+  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", ed: "post",
 };
 
 /** The overview, loaded once per course and version (it also says which tabs to show).
@@ -70,7 +70,7 @@ export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.a
 export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   const c = overview?.counts;
   const has: Record<ViewName, boolean> = {
-    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, discussion: !!c?.posts, assignments: !!c?.assignments,
+    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, ed: !!c?.posts, assignments: !!c?.assignments,
     grades: !!c?.grades, files: c ? c.files > 0 : true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
   };
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
@@ -104,7 +104,7 @@ export function CourseTabs({
   const n = overview?.new;
   const has = viewsWithContent(overview);
   const fresh: Partial<Record<ViewName, number>> = {
-    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages, discussion: n?.posts,
+    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages, ed: n?.posts,
   };
   const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
   const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
@@ -572,6 +572,8 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
 
   // Nothing chosen yet: the newest announcement, the next assignment, the front page (or the best match).
   const current = selected ?? list?.[0]?.id ?? null;
+  // Ed lists its announcements too: each opens as what it is. (Not till that's known.)
+  const currentKind = kind === "post" ? all?.find((x) => x.id === current)?.kind ?? (all ? kind : null) : kind;
   const seen = (id: string) => {
     setOpened((s) => new Set(s).add(id));
     onSeen(); // the counts in the tabs and the sidebar
@@ -623,11 +625,11 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
         ))}
       </ul>
       <div ref={pane} className="min-w-0 flex-1 overflow-y-auto">
-        {current && (
+        {current && currentKind && (
           <ItemView
-            key={`${kind}:${current}`}
+            key={`${currentKind}:${current}`}
             course={course}
-            kind={kind}
+            kind={currentKind}
             id={current}
             version={version}
             onLoaded={(it) => it.new && seen(it.id)}
@@ -657,7 +659,7 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
   );
 }
 
-// -- 讨论 (Ed) ------------------------------------------------------------------------------
+// -- Ed ----------------------------------------------------------------------------------
 
 type PostFilter = "all" | "pinned" | "staff" | "new" | "watched";
 const POST_FILTERS: [PostFilter, string][] = [
@@ -668,11 +670,11 @@ const keeps: Record<PostFilter, (p: ItemSummary) => boolean> = {
   watched: (p) => !!(p.ed?.watched || p.ed?.starred),
 };
 
-/** A course's posts on Ed, pinned ones first then newest, as Ed lists them; narrowed to what's
+/** What a course has on Ed, its announcements too, pinned first then newest, as Ed lists them; narrowed to what's
  * pinned, staff's, new or watched, and to one category. */
 function PostList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
   const thing = useThing();
-  const [filter, setFilter] = usePref<PostFilter>("discussion.filter", "all");
+  const [filter, setFilter] = usePref<PostFilter>("ed.filter", "all");
   const [category, setCategory] = useState("");
   const categories = useMemo(() => [...new Set(list.map((p) => p.ed?.category ?? "").filter(Boolean))].sort(), [list]);
   const shown = list.filter((p) => keeps[filter](p) && (!category || p.ed?.category === category));
@@ -702,6 +704,7 @@ function PostList({ course, list, current, onSelect }: { course: number; list: I
               {p.new && <NewDot />}
               {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
               <span className={`truncate text-sm ${p.new ? "font-medium" : ""}`}>{p.title}</span>
+              {p.ed?.type === "announcement" && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">{t("公告")}</span>}
               <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
             </div>
             <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
