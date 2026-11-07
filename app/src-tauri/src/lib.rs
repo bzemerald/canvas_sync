@@ -16,6 +16,8 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 mod dragout;
 #[cfg(target_os = "macos")]
 mod panel;
+#[cfg(windows)]
+mod tray;
 #[cfg(target_os = "macos")]
 mod quicklook;
 
@@ -290,7 +292,12 @@ struct LauncherKeys(Mutex<Option<Shortcut>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Closed, it's still running: starting it again brings it back. (Not in development, or an
+    // installed copy in the tray would stop `tauri dev` from starting.)
+    #[cfg(all(windows, not(debug_assertions)))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app.clone())));
+    builder
         .manage(BackendState::default())
         .manage(LauncherKeys::default())
         .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
@@ -308,6 +315,10 @@ pub fn run() {
             start_backend(app.handle());
             #[cfg(target_os = "macos")]
             hide_after_full_screen(app.handle());
+            #[cfg(windows)]
+            if let Err(e) = tray::start(app.handle()) {
+                eprintln!("could not add the tray icon: {e}");
+            }
             if let Some(w) = app.get_webview_window(GHOST) {
                 let _ = w.set_ignore_cursor_events(true); // the pointer goes through, to the drag
                 // Above the menu bar, as the system's own drag images are: at a lower level macOS
@@ -334,9 +345,15 @@ pub fn run() {
                 let _ = window.hide();
             }
             // On macOS closing the window leaves the app (and its search shortcut) running, as
-            // Mac apps do; the Dock icon brings the window back. Elsewhere there's no tray icon
-            // yet to get back to a hidden app, so closing the window quits.
+            // Mac apps do; the Dock icon brings the window back. On Windows the tray icon does.
+            // Without either there's no getting back to a hidden app, so closing the window quits.
             ("main", WindowEvent::CloseRequested { api, .. }) => {
+                #[cfg(windows)]
+                if window.app_handle().tray_by_id(tray::ID).is_some() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
                 if cfg!(target_os = "macos") {
                     api.prevent_close();
                     // Hiding a full-screen window leaves its Space behind, black: leave full
@@ -361,6 +378,8 @@ pub fn run() {
             set_launcher_keys,
             show_ghost,
             dragout::drag_out,
+            #[cfg(windows)]
+            tray::set_tray_labels,
             #[cfg(target_os = "macos")]
             quicklook::quick_look
         ])

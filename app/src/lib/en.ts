@@ -309,6 +309,7 @@ export const en: Record<string, string | [string, string]> = {
   "同步 {name}": "Sync {name}",
   "打开设置": "Open Settings",
   "打开主窗口": "Open the main window",
+  "退出": "Quit",
   "逾期未交": "Overdue",
   "已评分": "Graded",
   "还没到截止时间": "Not due yet",

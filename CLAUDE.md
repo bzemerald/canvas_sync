@@ -78,6 +78,7 @@ without the Canvas website or Finder.
     `src-tauri/src/quicklook.rs`: Quick Look (macOS), the system's panel, zooming out of the icon
     that has the file's `data-ql` (`src/lib/quicklook.ts`).
     `src-tauri/src/dragout.rs`: dragging files out to other apps, the system's drag (a copy).
+    `src-tauri/src/tray.rs`: the tray icon (Windows): closing the window hides it, as on macOS.
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
 
 ## Commands

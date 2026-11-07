@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
@@ -7,7 +8,7 @@ import { ChooseCoursesPage } from "./components/ChooseCourses";
 import { MissingFolderPage } from "./components/MissingFolder";
 import { SignInPage } from "./components/SignIn";
 import * as api from "./lib/api";
-import { applyLanguage, type LangPref } from "./lib/i18n";
+import { applyLanguage, t, type LangPref } from "./lib/i18n";
 import { loadLauncherKeys } from "./lib/launcherKeys";
 
 // One bundle serves both windows; the window's label picks the UI.
@@ -33,6 +34,7 @@ export default function App() {
     if (!isLauncher) {
       checkStep();
       void loadLauncherKeys().catch(() => {});
+      void invoke("set_tray_labels", { open: t("打开主窗口"), quit: t("退出") }).catch(() => {}); // (Windows has one)
     }
     return () => void off.then((f) => f());
   }, []);
