@@ -8,6 +8,7 @@ import { Pill } from "./Status";
 import { pathTree, type TreeNode } from "../lib/tree";
 import { trashName } from "../lib/keys";
 import { t } from "../lib/i18n";
+import { titlesAlong } from "../lib/things";
 
 const WHY: Record<string, string> = { modified: t("改回原版"), missing: t("重新放回"), ignored: t("重新放回") };
 const edited = (f: FileStatus) => f.states.includes("modified");
@@ -100,7 +101,7 @@ function FileTree({ files }: { files: FileStatus[] }) {
             <button onClick={() => toggle(n.path)} style={pad} className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-chip">
               {isOpen ? <ChevronDown className="size-3.5 shrink-0 text-muted" /> : <ChevronRight className="size-3.5 shrink-0 text-muted" />}
               <FileIcon name={n.name} dir />
-              <span className="min-w-0 flex-1 truncate" title={n.path}>{n.name.replaceAll("/", " / ")}</span>
+              <span className="min-w-0 flex-1 truncate" title={n.path}>{titlesAlong(n.path).slice(-n.name.split("/").length).join(" / ")}</span>
               {gone > 0 && <Pill icon={<Trash2 />} n={gone} label={t("其中 {n} 个会重新放回", { n: gone })} className="bg-danger text-on-accent" />}
               {changed > 0 && <Pill icon={<Pencil />} n={changed} label={t("其中 {n} 个会改回原版", { n: changed })} className="bg-warn text-on-accent" />}
             </button>
