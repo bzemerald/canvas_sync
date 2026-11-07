@@ -12,7 +12,7 @@ import {
 } from "./components/Found";
 import { Marked } from "./components/Marked";
 import {
-  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_LISTS, useOverview,
+  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, NewTab, VIEW_LISTS, useOverview,
 } from "./components/CourseView";
 import { CourseOverview, LinksPage, NoteEditor } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
@@ -60,7 +60,8 @@ import { useLoaded } from "./lib/useLoaded";
 // `path` is the folder 文件 (or a folder tab) is in; `item` the announcement / assignment / page
 // being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
 // `found`: what's marked there, having come from search (lib/marks.ts).
-type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean; found?: string };
+// `blank`: a new tab is showing (`tab` is the one before it, to go back to when it's closed).
+type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean; found?: string; blank?: boolean };
 type View =
   | CourseView // first: opened on its first tab
   | { kind: "browse"; path: string; select?: string; found?: string }
@@ -269,8 +270,8 @@ export function MainWindow() {
   const toTab = (v: CourseView, x: Thing): CourseView => {
     const c = courseById(v.id);
     // A folder tab is at its folder; 文件 starts at the course's, and so does clicking it again.
-    const fresh = v.tab.type === "folder" || x.type === "folder" || same(v.tab, x);
-    return { ...v, tab: x, item: undefined, select: undefined, first: false, found: undefined, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
+    const fresh = v.tab.type === "folder" || x.type === "folder" || (same(v.tab, x) && !v.blank);
+    return { ...v, tab: x, item: undefined, select: undefined, first: false, found: undefined, blank: false, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
   };
   // The first tab that shows something here (not one that opens a file, a tool or a link).
   const firstTab = (list: Shown[], id: number): Thing => thingOf(list.find((e) => !e.hidden && !opensElsewhere(e)) ?? viewOf(id, "overview"));
@@ -310,7 +311,7 @@ export function MainWindow() {
   const course = cv ? courseById(cv.id) : null;
   const tab = cv?.tab ?? null;
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;
-  const filesTab = view.kind === "browse" || (!!tab && (isView(tab, "files") || tab.type === "folder"));
+  const filesTab = view.kind === "browse" || (!!tab && !cv?.blank && (isView(tab, "files") || tab.type === "folder"));
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
   const browsing = filesView ? view.path : null;
   const folderShown = filesTab ? browsing : null; // a course's other tabs remember a folder, but don't show it
@@ -400,9 +401,9 @@ export function MainWindow() {
   // narrow their own lists as you type, 文件 (or a folder tab) searches the folder you're in;
   // anything else, the course. Elsewhere, the folder you're in (in 全部文件, any: still only files).
   // "搜索整门课" widens it to the course.
-  const filtering = !!tab && !wide && isView(tab) && tab.course === cv?.id && FILTERS_ITSELF.includes(tab.view);
+  const filtering = !!tab && !cv?.blank && !wide && isView(tab) && tab.course === cv?.id && FILTERS_ITSELF.includes(tab.view);
   const folderScope = !wide && ((cv && filesTab) || view.kind === "browse") ? browsing : null;
-  const courseWide = !!cv && !filesTab && !(isView(tab) && FILTERS_ITSELF.includes(tab.view));
+  const courseWide = !!cv && !filesTab && (!!cv.blank || !(isView(tab) && FILTERS_ITSELF.includes(tab.view)));
   const tabName = tabEntry ? thingName(tabEntry, courseList, "tab") : "";
   const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path === "" ? t("全部文件") : path.split("/").pop() ?? path);
   useEffect(() => {
@@ -430,8 +431,8 @@ export function MainWindow() {
   // the course (what its tab shows a little first), or everything.
   const scope = useMemo((): Where => {
     if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : folderScope && scopeCourses.length ? { courses: scopeCourses } : {}) };
-    return cv ? { courses: [cv.id], ...shownOn(tab) } : {};
-  }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
+    return cv ? { courses: [cv.id], ...shownOn(cv.blank ? null : tab) } : {};
+  }, [folderScope, cv?.id, cv?.blank, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "" || !!smart);
   const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
   const actions = useMemo(() => actionsFor(names), [names]);
@@ -546,8 +547,9 @@ export function MainWindow() {
     const id = layoutId;
     keepLayout(id, { ...courseLayout, [place]: next });
     api.arrangeCourse(id, place, next).then((l) => keepLayout(id, l), fail(t("操作失败")));
-    // The tab you're on, just hidden or taken away: to the first one.
-    if (place === "tabs" && cv && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
+    // The tab you're on, just hidden or taken away: to the first one. (On a new tab, `tab` is the
+    // one before it: nothing to do.)
+    if (place === "tabs" && cv && !cv.blank && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
   };
   const layoutDone = (id: number, message: string) => (l: CourseLayout) => {
     keepLayout(id, l);
@@ -903,7 +905,7 @@ export function MainWindow() {
   /** What's showing here, as a thing: to pin it from 置顶's +. */
   const shownThing: Shown | null = cv && course
     ? filesTab ? (cv.path === course.dir ? { type: "course", course: course.id } : { type: "folder", path: cv.path })
-      : isView(tab, "overview") ? { type: "course", course: course.id } : tabEntry
+      : cv.blank || isView(tab, "overview") ? { type: "course", course: course.id } : tabEntry
     : view.kind === "browse" && view.path ? { type: "folder", path: view.path } : null;
   const addMenu = (): MenuItem[] => [
     { label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) },
@@ -1000,6 +1002,7 @@ export function MainWindow() {
 
   /** What the open course's page shows, as its tab has it. */
   const coursePage = (cv: CourseView, course: Course, tab: Thing) => {
+    if (cv.blank) return <NewTab course={course} overview={overview} entries={tabs} onShow={(x) => replaceView(toTab(cv, x))} />;
     if (isView(tab, "overview")) {
       return (
         <CourseOverview
@@ -1215,7 +1218,7 @@ export function MainWindow() {
               <Breadcrumb
                 path={filesTab ? cv.path : course.dir}
                 root={{ path: course.dir, label: course.label, icon: <CourseIcon course={course} /> }}
-                inline={inlineOf(course, tab)}
+                inline={inlineOf(course, cv.blank ? null : tab)}
                 onGo={(p) => (p === course.dir && !filesTab ? openCourse(course) : goPath(p))}
               />
             )}
@@ -1244,6 +1247,7 @@ export function MainWindow() {
           <CourseTabs
             course={course}
             tab={tab}
+            blank={!!cv.blank}
             overview={overview}
             entries={courseLayout ? tabs : null}
             own={!!courseLayout?.own.tabs}
@@ -1251,6 +1255,8 @@ export function MainWindow() {
             onReset={() => void resetLayout(["tabs"])}
             onMakeDefault={() => void makeDefaultLayout("tabs")}
             onTab={(x) => go(toTab(cv, x))}
+            onNewTab={() => go({ ...cv, blank: true, found: undefined, select: undefined })}
+            onCloseBlank={() => replaceView({ ...cv, blank: false })}
             onSay={say}
           />
         )}

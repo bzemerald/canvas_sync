@@ -4,7 +4,7 @@
 import {
   Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessageCircle, MessagesSquare, Paperclip, Pin,
   AppWindow, BookOpen, ClipboardList,
-  Megaphone,
+  Megaphone, Plus, X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
@@ -15,8 +15,8 @@ import { useLoaded } from "../lib/useLoaded";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ViewName, changed, ofCourse, opensElsewhere, ownIn, putAt, refill, same, slotIndex, thingKey,
-  thingOfItem, without,
+  type Shown, type Thing, type ViewName, changed, isView, ofCourse, opensElsewhere, ownIn, putAt, refill, same, slotIndex, thingKey,
+  thingOf, thingOfItem, without,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import { ReadingBar, useNarrowing } from "./Found";
@@ -76,21 +76,32 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }
 
+/** The tabs showing: what's not hidden and, of the course's own views, has something in it; and
+ * `current`, whatever it is. */
+function tabsShown(entries: Shown[], course: Course, overview: Overview | null, current?: Thing | null): Shown[] {
+  const has = viewsWithContent(overview);
+  return entries.filter((e) => (current && same(e, current)) || (!e.hidden && (!ownIn("tabs", e, course.id) || has.has((e as { view: ViewName }).view))));
+}
+
 /** A course's tabs: its views, and whatever of the course you put there (a page, a folder, a
  * module, a tool, a note, a search; or a web link). Drag them into your order; drag something of
  * the course onto them and it's a tab where you let go; drag one you put there off, and it's
  * gone. Right-click to rename any of them, hide the course's own, take away what you put there.
  * Views with nothing in them aren't shown; 概览 and 文件 always are, unless you hid them.
- * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end. */
+ * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end.
+ * "+" opens a new tab (`blank`, and `NewTab`). */
 export function CourseTabs({
-  course, tab, overview, entries: loaded, own, onTab, onArrange, onReset, onMakeDefault, onSay,
+  course, tab, blank, overview, entries: loaded, own, onTab, onNewTab, onCloseBlank, onArrange, onReset, onMakeDefault, onSay,
 }: {
   course: Course;
-  tab: Thing; // what's showing
+  tab: Thing; // what's showing (or was, before the new tab)
+  blank: boolean; // the new tab is showing
   overview: Overview | null;
   entries: Shown[] | null; // every tab, in order, hidden ones too (null: not loaded yet)
   own: boolean; // arranged for this course (else as every course is)
   onTab: (t: Thing) => void;
+  onNewTab: () => void;
+  onCloseBlank: () => void;
   onArrange: (entries: Shown[]) => void; // for this course
   onReset: () => void; // back to how every course is
   onMakeDefault: () => void; // every course (not arranged for itself) like this one
@@ -101,12 +112,12 @@ export function CourseTabs({
   const [renaming, setRenaming] = useState<Shown | null>(null);
   const entries = loaded ?? [];
   const n = overview?.new;
-  const has = viewsWithContent(overview);
   const fresh: Partial<Record<ViewName, number>> = n ?? {};
   const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
-  const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
-  const extra = !loaded || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
+  const visible = tabsShown(entries, course, overview, blank ? null : tab);
+  const extra = !loaded || blank || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
   const name = (e: Shown) => thingName(e, things.courses, "tab");
+  const current = (e: Thing) => !blank && same(tab, e);
 
   // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them. Going round, not to one that opens
   // somewhere else (a tool, a link).
@@ -117,14 +128,14 @@ export function CourseTabs({
       let next: Shown | undefined;
       if (typeof command === "number") next = command === 9 ? visible.at(-1) : visible[command - 1];
       else {
-        const round = visible.filter((e) => same(e, tab) || !opensElsewhere(e));
-        const i = round.findIndex((e) => same(e, tab));
+        const round = visible.filter((e) => current(e) || !opensElsewhere(e));
+        const i = round.findIndex(current);
         const step = command === "next" ? 1 : -1;
         next = i < 0 ? round.at(step > 0 ? 0 : -1) : round[(i + step + round.length) % round.length];
       }
       if (!next) return;
       ev.preventDefault();
-      if (same(next, tab)) return;
+      if (current(next)) return;
       if (opensElsewhere(next)) things.open(next);
       else onTab(next);
     };
@@ -194,7 +205,7 @@ export function CourseTabs({
       data-tab={i === null ? undefined : ""}
       {...props}
       onContextMenu={(ev) => ev.stopPropagation()} // (the input's own: paste)
-      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${same(tab, e) ? "border-accent" : "border-transparent"}`}
+      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${current(e) ? "border-accent" : "border-transparent"}`}
     >
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <RenameInput
@@ -218,9 +229,9 @@ export function CourseTabs({
         ev.stopPropagation();
         things.menu(menu(e), ev.clientX, ev.clientY);
       }}
-      aria-current={same(tab, e) ? "page" : undefined}
+      aria-current={current(e) ? "page" : undefined}
       title={opensHint(e) ?? (!isOwn(e) && i !== null ? t("拖离标签栏可以移除") : undefined)}
-      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${same(tab, e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${e.hidden || e === extra ? "italic" : ""}`}
+      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${current(e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${e.hidden || e === extra ? "italic" : ""}`}
     >
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <span className="max-w-48 truncate">{name(e)}</span>
@@ -250,11 +261,55 @@ export function CourseTabs({
     >
       {visible.map((e, i) => button(e, drag.item(i), i))}
       {extra && button(extra, {}, null)}
+      {blank && (
+        <div aria-current="page" className="-mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-accent py-2 pr-1.5 pl-3 text-sm font-medium whitespace-nowrap text-fg">
+          {t("新标签页")}
+          <button onClick={onCloseBlank} aria-label={t("关闭新标签页")} title={t("关闭新标签页")}
+            className="grid size-4 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
+      {loaded && (
+        <button onClick={() => !blank && onNewTab()} aria-label={t("新标签页")} title={t("新标签页")}
+          className="ml-0.5 grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
+          <Plus className="size-4" />
+        </button>
+      )}
       {!loaded && <span aria-hidden className="invisible py-2 text-sm">&nbsp;</span>}
       {markerLeft !== null && (
         <span aria-hidden className="pointer-events-none absolute top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" style={{ left: markerLeft - 1 }} />
       )}
     </nav>
+  );
+}
+
+/** A new tab: where to go next in the course, its views. What's picked is shown instead of it. */
+export function NewTab({ course, overview, entries, onShow }: {
+  course: Course;
+  overview: Overview | null;
+  entries: Shown[]; // the course's tabs, hidden ones too
+  onShow: (tab: Thing) => void; // a tab already: go there
+}) {
+  const things = useThings();
+  const fresh: Partial<Record<ViewName, number>> = overview?.new ?? {};
+  const views = tabsShown(entries, course, overview).filter((e) => ownIn("tabs", e, course.id));
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-center pb-[12vh]">
+      <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 px-6">
+        {views.map((e) => {
+          const count = isView(e) ? fresh[e.view] : 0;
+          return (
+            <button key={thingKey(e)} onClick={() => onShow(thingOf(e))} title={t("在标签栏里：转到那里")}
+              className="relative flex w-28 flex-col items-center gap-2 rounded-lg px-2 py-3 text-sm text-fg-soft hover:bg-chip hover:text-fg">
+              <ThingIcon thing={e} courses={things.courses} className="size-5" />
+              <span className="max-w-full truncate">{thingName(e, things.courses, "tab")}</span>
+              {!!count && <span className="absolute top-1.5 right-2"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
