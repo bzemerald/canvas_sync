@@ -1726,7 +1726,7 @@ function SectionHeader({ title, editor, action, onMenu, collapsed, onToggle, gra
     <div
       {...grab}
       className="group mt-4 flex items-center gap-1 px-2 pb-1"
-      onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
+      onContextMenu={onMenu && !editor ? (e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)) : undefined} // (the input's own: paste)
     >
       <h2 className="min-w-0 flex-1">
         {editor ?? <button
