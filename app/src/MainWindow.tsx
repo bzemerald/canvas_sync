@@ -48,7 +48,7 @@ import {
   type Shown, type Thing, type ThingOf, type ViewName, changed, fromEd, isView, opensElsewhere, putAt, same, thingKey, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
-import { useTrafficLights } from "./lib/window";
+import { ownFrame, useTrafficLights } from "./lib/window";
 import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
 import { locale, t } from "./lib/i18n";
@@ -1186,7 +1186,8 @@ export function MainWindow() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header data-tauri-drag-region="deep" className="flex h-13 shrink-0 items-center gap-2 border-b border-line px-4">
+        {/* (On Windows, room at the right end for the window's buttons.) */}
+        <header data-tauri-drag-region="deep" className={`flex h-13 shrink-0 items-center gap-2 border-b border-line pl-4 ${ownFrame ? "pr-[146px]" : "pr-4"}`}>
           <div className="flex shrink-0">
             <ToolButton title={t("后退 ({back})", { back: shortcut.back })} disabled={hist.i === 0} onClick={() => step(-1)}><ChevronLeft className="size-4" /></ToolButton>
             <ToolButton title={t("前进 ({forward})", { forward: shortcut.forward })} disabled={hist.i === hist.stack.length - 1} onClick={() => step(1)}><ChevronRight className="size-4" /></ToolButton>

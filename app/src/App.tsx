@@ -7,9 +7,11 @@ import { MainWindow, StartupError } from "./MainWindow";
 import { ChooseCoursesPage } from "./components/ChooseCourses";
 import { MissingFolderPage } from "./components/MissingFolder";
 import { SignInPage } from "./components/SignIn";
+import { WindowControls } from "./components/WindowControls";
 import * as api from "./lib/api";
 import { applyLanguage, t, type LangPref } from "./lib/i18n";
 import { loadLauncherKeys } from "./lib/launcherKeys";
+import { ownFrame } from "./lib/window";
 
 // One bundle serves both windows; the window's label picks the UI.
 const isLauncher = getCurrentWindow().label === "launcher";
@@ -40,11 +42,19 @@ export default function App() {
   }, []);
 
   if (isLauncher) return <Launcher />;
-  if (error) return <StartupError message={error} />;
-  if (step === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
-  if (step === "sign in") return <SignInPage onDone={checkStep} />;
-  if (step === "folder") return <MissingFolderPage root={root ?? ""} onDone={checkStep} />;
-  // Choosing starts the first sync; the main window picks it up.
-  if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} />;
-  return <MainWindow />;
+  const page = () => {
+    if (error) return <StartupError message={error} />;
+    if (step === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
+    if (step === "sign in") return <SignInPage onDone={checkStep} />;
+    if (step === "folder") return <MissingFolderPage root={root ?? ""} onDone={checkStep} />;
+    // Choosing starts the first sync; the main window picks it up.
+    if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} />;
+    return <MainWindow />;
+  };
+  return (
+    <>
+      {page()}
+      {ownFrame && <WindowControls />}
+    </>
+  );
 }

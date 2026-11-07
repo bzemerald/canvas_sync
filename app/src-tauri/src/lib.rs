@@ -319,6 +319,13 @@ pub fn run() {
             if let Err(e) = tray::start(app.handle()) {
                 eprintln!("could not add the tray icon: {e}");
             }
+            // Its title bar is the toolbar, as on macOS (the page draws the buttons: WindowControls).
+            // Here, as the Overlay style in tauri.conf.json is only macOS's.
+            #[cfg(windows)]
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_decorations(false);
+                let _ = w.set_shadow(true);
+            }
             if let Some(w) = app.get_webview_window(GHOST) {
                 let _ = w.set_ignore_cursor_events(true); // the pointer goes through, to the drag
                 // Above the menu bar, as the system's own drag images are: at a lower level macOS
