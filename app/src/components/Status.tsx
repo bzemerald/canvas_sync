@@ -131,5 +131,5 @@ export function Loading({ className = "px-6 py-8 text-sm" }: { className?: strin
     const timer = setTimeout(() => setSlow(true), 400);
     return () => clearTimeout(timer);
   }, []);
-  return <p className={`${className} text-muted transition-opacity duration-200 ${slow ? "opacity-100" : "opacity-0"}`}>{t("正在加载…")}</p>;
+  return <p data-loading className={`${className} text-muted transition-opacity duration-200 ${slow ? "opacity-100" : "opacity-0"}`}>{t("正在加载…")}</p>;
 }

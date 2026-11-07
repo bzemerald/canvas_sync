@@ -69,7 +69,7 @@ function mark(root: Element, re: RegExp): HTMLElement[][] {
       range.setStart(nodes[i]!, from);
       range.setEnd(nodes[i]!, to);
       range.surroundContents(el);
-      found[place]!.unshift(el);
+      found[place]!.push(el);
     }
   }
   return found.filter((f) => f.length);
@@ -131,8 +131,14 @@ export function Marked({ pattern, place, tools, onClear, children }: {
     const re = compiled(pattern);
     let gone = false; // gone to what's found, once, when it's first there
     let frame = 0;
-    const update = () => {
-      frame = 0;
+    let waiting = false; // changed while text is selected
+    let holding = false; // staying at what's found, as what's above it loads
+    const selecting = () => {
+      const s = document.getSelection();
+      return !!s && !s.isCollapsed && el.contains(s.anchorNode);
+    };
+    const rebuild = () => {
+      waiting = false;
       unmark(el);
       const all = mark(el, re);
       changes.takeRecords(); // (those were ours)
@@ -141,23 +147,48 @@ export function Marked({ pattern, place, tools, onClear, children }: {
       found.current = mine;
       setCount(mine.length);
       if (!tools) return;
-      if (!gone && mine.length) {
+      if (!gone && mine.length && !el.querySelector("[data-loading]")) {
         gone = true;
+        holding = true;
         // (Not if some are in view: a title, or what a module or a file was opened at.)
         const seen = mine.findIndex((f) => inView(f[0]!));
         if (seen < 0) bringIntoView(mine[0]![0]!, "auto");
         show(Math.max(seen, 0));
       } else show(Math.min(shown.current, Math.max(mine.length - 1, 0)));
     };
+    // Marking again moves the text under a selection, so that waits till it's over.
+    const update = () => {
+      frame = 0;
+      if (selecting()) waiting = true;
+      else rebuild();
+    };
+    const selectionChanged = () => {
+      if (waiting && !selecting()) update();
+    };
+    // A picture above it, once loaded, pushes it down; till you go somewhere yourself, it stays.
+    const loaded = () => {
+      const f = holding && found.current[shown.current];
+      if (f) bringIntoView(f[0]!, "auto");
+    };
+    const letGo = () => {
+      holding = false;
+    };
     const changes = new MutationObserver(() => {
       frame ||= requestAnimationFrame(update);
     });
     changes.observe(el, { childList: true, characterData: true, subtree: true });
+    document.addEventListener("selectionchange", selectionChanged);
+    el.addEventListener("load", loaded, true);
+    const yours = ["wheel", "pointerdown", "keydown"];
+    yours.forEach((e) => window.addEventListener(e, letGo, true));
     shown.current = 0;
-    update();
+    rebuild();
     return () => {
       cancelAnimationFrame(frame);
       changes.disconnect();
+      document.removeEventListener("selectionchange", selectionChanged);
+      el.removeEventListener("load", loaded, true);
+      yours.forEach((e) => window.removeEventListener(e, letGo, true));
       unmark(el);
       found.current = [];
       setCount(0);
