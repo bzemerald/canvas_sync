@@ -49,6 +49,7 @@ export const en: Record<string, string | [string, string]> = {
   "新标签页": "New tab",
   "关闭新标签页": "Close the new tab",
   "在标签栏里：转到那里": "In the tab bar: go there",
+  "在这个标签里打开": "Open in this tab",
   "拖离标签栏可以移除": "Drag it off the tabs to remove it",
   "打开失败": "Couldn't open it",
   "放在这里置顶": "Drop here to pin",

@@ -16,7 +16,7 @@ import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
 import {
   type Shown, type Thing, type ViewName, changed, isView, ofCourse, opensElsewhere, ownIn, putAt, refill, same, slotIndex, thingKey,
-  thingOf, thingOfItem, without,
+  thingOf, thingOfItem, view as viewOf, without,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import { ReadingBar, useNarrowing } from "./Found";
@@ -284,24 +284,37 @@ export function CourseTabs({
   );
 }
 
-/** A new tab: where to go next in the course, its views. What's picked is shown instead of it. */
-export function NewTab({ course, overview, entries, onShow }: {
+/** A new tab: where to go next in the course: its views (hidden ones too, to bring them back) and
+ * 工具与链接; what else is hidden there. What's picked is shown instead of it; not yet a tab, it's
+ * one now, the last. */
+export function NewTab({ course, overview, entries, onOpen, onShow }: {
   course: Course;
   overview: Overview | null;
   entries: Shown[]; // the course's tabs, hidden ones too
+  onOpen: (entries: Shown[], tab: Thing) => void; // now a tab, and shown
   onShow: (tab: Thing) => void; // a tab already: go there
 }) {
   const things = useThings();
   const fresh: Partial<Record<ViewName, number>> = overview?.new ?? {};
-  const views = tabsShown(entries, course, overview).filter((e) => ownIn("tabs", e, course.id));
+  const has = viewsWithContent(overview);
+  const shown = tabsShown(entries, course, overview);
+  const views: Shown[] = [
+    ...entries.filter((e) => (ownIn("tabs", e, course.id) ? has.has((e as { view: ViewName }).view) : e.hidden)),
+    ...(entries.some((e) => isView(e, "tools")) ? [] : [viewOf(course.id, "tools")]),
+  ];
+  const pick = (x: Shown) => {
+    if (shown.some((e) => same(e, x))) return onShow(thingOf(x));
+    onOpen(putAt(entries, { ...x, hidden: false }, slotIndex(entries, shown, shown.length)), thingOf(x));
+  };
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center pb-[12vh]">
       <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 px-6">
         {views.map((e) => {
           const count = isView(e) ? fresh[e.view] : 0;
+          const here = shown.some((x) => same(x, e));
           return (
-            <button key={thingKey(e)} onClick={() => onShow(thingOf(e))} title={t("在标签栏里：转到那里")}
-              className="relative flex w-28 flex-col items-center gap-2 rounded-lg px-2 py-3 text-sm text-fg-soft hover:bg-chip hover:text-fg">
+            <button key={thingKey(e)} onClick={() => pick(e)} title={here ? t("在标签栏里：转到那里") : t("在这个标签里打开")}
+              className={`relative flex w-28 flex-col items-center gap-2 rounded-lg px-2 py-3 text-sm hover:bg-chip hover:text-fg ${here ? "text-fg-soft" : "text-muted"}`}>
               <ThingIcon thing={e} courses={things.courses} className="size-5" />
               <span className="max-w-full truncate">{thingName(e, things.courses, "tab")}</span>
               {!!count && <span className="absolute top-1.5 right-2"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}

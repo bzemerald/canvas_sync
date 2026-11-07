@@ -542,14 +542,16 @@ export function MainWindow() {
     if (view.kind === "search" && same(view.search, x)) go({ kind: "browse", path: "" });
   };
   /** One of the open course's places as it should be. */
-  const arrangeLayout = (place: Place, next: Shown[]) => {
+  /** `then`: the tab to go to now. */
+  const arrangeLayout = (place: Place, next: Shown[], then?: Thing) => {
     if (!courseLayout || layoutId === null) return;
     const id = layoutId;
     keepLayout(id, { ...courseLayout, [place]: next });
     api.arrangeCourse(id, place, next).then((l) => keepLayout(id, l), fail(t("操作失败")));
+    if (then && cv) replaceView(toTab(cv, then));
     // The tab you're on, just hidden or taken away: to the first one. (On a new tab, `tab` is the
     // one before it: nothing to do.)
-    if (place === "tabs" && cv && !cv.blank && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
+    else if (place === "tabs" && cv && !cv.blank && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
   };
   const layoutDone = (id: number, message: string) => (l: CourseLayout) => {
     keepLayout(id, l);
@@ -1002,7 +1004,9 @@ export function MainWindow() {
 
   /** What the open course's page shows, as its tab has it. */
   const coursePage = (cv: CourseView, course: Course, tab: Thing) => {
-    if (cv.blank) return <NewTab course={course} overview={overview} entries={tabs} onShow={(x) => replaceView(toTab(cv, x))} />;
+    if (cv.blank) {
+      return <NewTab course={course} overview={overview} entries={tabs} onOpen={(next, x) => arrangeLayout("tabs", next, x)} onShow={(x) => replaceView(toTab(cv, x))} />;
+    }
     if (isView(tab, "overview")) {
       return (
         <CourseOverview
