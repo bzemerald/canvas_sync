@@ -29,7 +29,7 @@ import { RenameInput } from "./RenameInput";
 import { RichText } from "./RichText";
 import { Loading, NewDot } from "./Status";
 import { Thumb } from "./Thumb";
-import { SourceTag, ThingIcon, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
+import { SourceTag, ThingIcon, pinItem, sections, thingName, useThing, useThings } from "./Things";
 
 const GAP = 16; // px between cards
 
@@ -243,7 +243,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
       <div className="mx-auto max-w-md px-6 py-16 text-sm text-fg-soft">
         <p className="mb-2 text-base text-fg">{t("这门课在 Canvas 上几乎没有内容。")}</p>
         <p className="text-muted">{t("很多课程把材料放在课程网站、Ed 或 Gradescope 上。")}</p>
-        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-4 text-accent hover:underline">{t("在 Canvas 中打开这门课")}</button>
+        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-4 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
       </div>
     );
   }
@@ -268,7 +268,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     const list = place === "overview" ? all : links;
     return [
       { label: t("重命名"), onSelect: () => setRenaming({ place, entry: e }) },
-      ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, place === "overview" ? "card" : "row") }), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
+      ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
       ownIn(place, e, course.id)
         ? { label: t("隐藏“{name}”", { name }), onSelect: () => onArrange(place, changed(list, e, { hidden: true })) }
         : { label: place === "overview" ? t("删除卡片") : t("删除链接"), danger: true, onSelect: () => takeAway(place, e, name) },
@@ -653,7 +653,7 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   };
   const menu = (e: Shown): MenuItem[] => sections(things.ways(e), [
     { label: t("重命名"), onSelect: () => setRenaming(e) },
-    ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
+    ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
     ownIn("links", e, course.id)
       ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
       : { label: t("删除链接"), danger: true, onSelect: () => takeAway(e) },

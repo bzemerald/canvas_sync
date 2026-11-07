@@ -590,7 +590,7 @@ export function MainWindow() {
         return courseById(x.course) ? [
           openIt,
           { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${x.course}`) },
-          { label: t("在 {app} 中显示课程文件", { app: fileManager }), onSelect: () => reveal(courseById(x.course)!.dir) },
+          { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(courseById(x.course)!.dir) },
         ] : [];
       case "folder":
         return [openIt, { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(x.path) }];
@@ -654,13 +654,14 @@ export function MainWindow() {
   const askDelete = (paths: string[], names: string[]) => paths.length > 0 && setDeleting({ paths, label: countLabel(names) });
   const untrack = (paths: string[], names: string[]) =>
     api.untrack(paths).then(() => {
-      say(t("已停止同步 {what}：文件留在原处，现在是你自己的了", { what: countLabel(names) }));
+      say(t("已停止同步 {what}。文件留在原处", { what: countLabel(names) }));
       refresh();
     }, fail(t("停止同步失败")));
   const track = (paths: string[], names: string[]) =>
     api.track(paths).then(() => {
-      say(t("已恢复同步 {what}，下次同步时会更新", { what: countLabel(names) }));
+      say(t("已恢复同步 {what}", { what: countLabel(names) }));
       refresh();
+      void startSync({ paths }, countLabel(names));
     }, fail(t("恢复同步失败")));
   const deleteItem = (e: Entry): MenuItem => ({
     label: t("移到{trash}…", { trash: trashName }), hint: shortcut.delete, danger: true, disabled: syncBusy, onSelect: () => askDelete([e.path], [e.name]),
@@ -679,8 +680,8 @@ export function MainWindow() {
         ...(e.url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) }] : []),
         ...(e.type === "dir"
           ? ["separator" as const, e.skipped
-            ? { label: t("恢复同步此文件夹"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
-            : { label: t("停止同步此文件夹"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) }]
+            ? { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
+            : { label: t("停止同步"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) }]
           : []),
       ];
     }
@@ -694,11 +695,11 @@ export function MainWindow() {
         { label: t("重命名"), hint: shortcut.rename, onSelect: () => setRenaming(e.path) },
         ...(e.renamed_from ? [{ label: t("恢复原名（{name}）", { name: e.renamed_from }), onSelect: () => void renameFolder(e.path, "") }] : []),
         "separator",
-        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
-        { label: t("恢复此文件夹的原版…"), disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
+        ...(e.skipped ? [] : [{ label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ paths: [e.path] }, e.name) }]),
+        ...(e.changes ? [{ label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) }] : []),
         e.skipped
-          ? { label: t("恢复同步此文件夹"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
-          : { label: t("停止同步此文件夹（保留文件）"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
+          ? { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) }
+          : { label: t("停止同步"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
         "separator",
         deleteItem(e),
       ];
@@ -717,9 +718,9 @@ export function MainWindow() {
     } else if (e.file_id !== null) {
       items.push(
         "separator",
-        { label: t("从 Canvas 同步"), disabled: syncBusy, onSelect: () => startSync({ file_ids: [e.file_id!] }, e.name) },
-        { label: t("恢复 Canvas 原版…"), disabled: !e.states.includes("modified"), onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) },
-        { label: t("停止同步（保留文件）"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
+        { label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ file_ids: [e.file_id!] }, e.name) },
+        ...(e.states.includes("modified") ? [{ label: t("恢复原版…@@file"), onSelect: () => setRestoring({ scope: { file_ids: [e.file_id!] }, label: e.name }) }] : []),
+        { label: t("停止同步"), disabled: syncBusy, onSelect: () => void untrack([e.path], [e.name]) },
       );
     }
     items.push("separator", deleteItem(e));
@@ -733,11 +734,11 @@ export function MainWindow() {
     return sections(
       [{ label: t("显示改动"), checked: showChanges, hint: shortcut.toggleChanges || undefined, onSelect: () => setShowChanges(!showChanges) }],
       [
-        { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
-        { label: t("恢复此文件夹的原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
+        { label: t("立即同步"), disabled: syncBusy, onSelect: () => (here ? startSync({ paths: [here] }, label) : startSync({}, t("全部课程"))) },
+        { label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
         { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
       ],
-      course ? [{ label: t("在 Canvas 中打开这门课"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : [],
+      course ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : [],
     );
   };
   const entriesMenu = (es: Entry[]): MenuItem[] => {
@@ -756,13 +757,13 @@ export function MainWindow() {
       { label: t("打开 {n} 个文件", { n: files.length }), disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
       ...markSeveralRead(files.filter((e) => e.new).map((e) => e.path), live.filter((e) => e.type === "dir" && e.new_inside > 0).map((e) => e.path)),
       "separator",
-      { label: t("从 Canvas 同步"), disabled: syncBusy || !synced.length, onSelect: () => startSync(scope, label) },
+      ...(synced.length ? [{ label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync(scope, label) }] : []),
       { label: t("恢复原版…"), onSelect: () => setRestoring({ scope, label }) },
       ...(resume.length
-        ? [{ label: t("恢复同步 {n} 项", { n: resume.length }), disabled: syncBusy, onSelect: () => void track(resume.map((e) => e.path), resume.map((e) => e.name)) }]
+        ? [{ label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track(resume.map((e) => e.path), resume.map((e) => e.name)) }]
         : []),
-      ...(stop.length || !resume.length
-        ? [{ label: t("停止同步 {n} 项（保留文件）", { n: stop.length }), disabled: syncBusy || !stop.length, onSelect: () => void untrack(stop.map((e) => e.path), stop.map((e) => e.name)) }]
+      ...(stop.length
+        ? [{ label: t("停止同步"), disabled: syncBusy, onSelect: () => void untrack(stop.map((e) => e.path), stop.map((e) => e.name)) }]
         : []),
       "separator",
       {
@@ -809,14 +810,17 @@ export function MainWindow() {
 
   const unhide = (c: Course) =>
     api.hideCourse(c.id, false, c.excluded ? true : undefined).then(() => {
-      say(c.excluded ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
+      say(c.excluded && syncBusy ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
       refresh();
+      if (c.excluded && !syncBusy) void startSync({ paths: [c.dir] }, c.label);
     }, fail(t("操作失败")));
   /** A hidden term back, synced again: its courses each as they were before hiding. */
   const unhideTerm = (term: string, list: Course[]) =>
     api.hideCourses(list.map((c) => c.id), false, list.some((c) => c.excluded) ? true : undefined).then(() => {
       say(t("“{name}”回来了", { name: term }));
       refresh();
+      const excluded = list.filter((c) => c.excluded);
+      if (excluded.length && !syncBusy) void startSync({ paths: excluded.map((c) => c.dir) }, term);
     }, fail(t("操作失败")));
   const hiddenCourseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
@@ -830,32 +834,31 @@ export function MainWindow() {
     ...markRead({ type: "course", course: c.id }),
     { label: t("查看文件"), onSelect: () => go({ kind: "course", id: c.id, tab: viewOf(c.id, "files"), path: c.dir }) },
     { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
-    { label: t("在 {app} 中显示课程文件", { app: fileManager }), onSelect: () => reveal(c.dir) },
+    { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(c.dir) },
     "separator",
-    { label: t("从 Canvas 同步此课程"), disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },
-    { label: t("恢复此课程的原版…"), disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
+    { label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },
+    ...(changes[c.id] ? [{ label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) }] : []),
     "separator",
     pinOf({ type: "course", course: c.id }),
-    { label: t("重命名课程"), onSelect: () => setRenamingHere(row) },
-    ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.display_code }), onSelect: () => renameCourse(c, "") }] : []),
+    { label: t("重命名"), onSelect: () => setRenamingHere(row) },
+    ...(c.renamed ? [{ label: t("恢复原名"), onSelect: () => renameCourse(c, "") }] : []),
     { label: t("更换图标…"), onSelect: () => setChoosingIcon(c) },
+    { label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null, preset: { courses: [c.id] } }) },
     "separator",
-    { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: null, preset: { courses: [c.id] } }) },
-    "separator",
-    { label: t("隐藏此课程…"), onSelect: () => setHiding({ courses: [c] }) },
+    { label: t("隐藏…"), onSelect: () => setHiding({ courses: [c] }) },
   ];
 
   const termMenu = (key: string, term: string, list: Course[]): MenuItem[] => {
     return [
-      { label: t("从 Canvas 同步 {term}", { term }), disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
-      { label: t("恢复 {term} 的原版…", { term }), disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
+      { label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
+      ...(list.some((c) => changes[c.id]) ? [{ label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) }] : []),
       "separator",
-      { label: t("重命名学期"), onSelect: () => setRenamingHere(`term:${key}`) },
+      { label: t("重命名"), onSelect: () => setRenamingHere(`term:${key}`) },
       ...(list[0].term_label !== list[0].term
-        ? [{ label: t("恢复原名（{name}）", { name: list[0].term ?? t("无学期") }), onSelect: () => renameTerm(key, "") }]
+        ? [{ label: t("恢复原名"), onSelect: () => renameTerm(key, "") }]
         : []),
       "separator",
-      { label: t("隐藏此学期…"), onSelect: () => setHiding({ courses: list, term }) },
+      { label: t("隐藏…"), onSelect: () => setHiding({ courses: list, term }) },
     ];
   };
 
@@ -869,7 +872,7 @@ export function MainWindow() {
       x.type === "search" ? [{ label: t("编辑…"), onSelect: () => setEditing({ folder: { ...x, title: x.title ?? "" } }) }] : [],
       [
         { label: t("重命名"), onSelect: () => setRenamingHere(`pin:${thingKey(x)}`) },
-        ...(x.title && x.type !== "search" ? [{ label: t("恢复原名（{name}）", { name: ownName(x, courseList) }), onSelect: () => savePinned(changed(pinned, x, { title: "" })) }] : []),
+        ...(x.title && x.type !== "search" ? [{ label: t("恢复原名"), onSelect: () => savePinned(changed(pinned, x, { title: "" })) }] : []),
       ],
       moveItems(x),
       [x.type === "search"

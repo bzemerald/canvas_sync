@@ -164,5 +164,5 @@ export function opensHint(thing: Thing): string | undefined {
   if (thing.type === "file") return t("用默认应用打开");
   if (thing.type === "course") return undefined;
   if (thing.type === "tool") return t("在浏览器中打开这个工具（通过 Canvas 登录）");
-  return isView(thing, "canvas") ? t("在 Canvas 中打开这门课") : t("在浏览器中打开");
+  return isView(thing, "canvas") ? t("在 Canvas 中打开") : t("在浏览器中打开");
 }

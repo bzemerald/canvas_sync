@@ -140,6 +140,16 @@ def test_untrack_a_folder_stops_new_files_too(root, fake):
     assert ("download", f"{WEEK1}/next.pdf") in kinds(pull(root, fake))
 
 
+def test_syncing_just_the_folder_you_track_again_gets_whats_new(root, fake):
+    pull(root, fake)
+    with Engine(root) as e:
+        e.untrack([WEEK1])
+    new_module_file(fake, 101, "next.pdf")
+    with Engine(root) as e:
+        e.track([WEEK1])
+    assert ("download", f"{WEEK1}/next.pdf") in kinds(pull(root, fake, scope=Scope([WEEK1])))
+
+
 def test_api(root, fake):
     pull(root, fake)
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as c:

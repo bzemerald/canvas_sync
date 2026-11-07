@@ -24,7 +24,7 @@ import type { MenuItem } from "./Menu";
 import { RenameInput } from "./RenameInput";
 import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
-import { SourceTag, ThingIcon, onTheWeb, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
+import { SourceTag, ThingIcon, onTheWeb, opensHint, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
 import { shortcut, tabCommand } from "../lib/keys";
 
@@ -183,7 +183,7 @@ export function CourseTabs({
       ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
       : [
           { label: t("重命名"), onSelect: () => setRenaming(e) },
-          ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, "tab") }), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
+          ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
           isOwn(e)
             ? { label: t("隐藏“{name}”标签", { name: name(e) }), disabled: visible.length <= 1, onSelect: () => onArrange(changed(entries, e, { hidden: true })) }
             : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
@@ -875,7 +875,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
     return (
       <div className="p-8 text-sm text-fg-soft">
         <p>{t("在已同步的内容里找不到它（可能是新的，或者不是公告）。")}</p>
-        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-2 text-accent hover:underline">{t("在 Canvas 中打开这门课")}</button>
+        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-2 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
       </div>
     );
   }
