@@ -179,7 +179,6 @@ export interface Course {
   dir: string; // where its files are (an implementation detail the UI mostly keeps to itself)
   label: string; // what to call it: the name you gave it, else its course code
   renamed: boolean;
-  default_name: string; // renaming to this gives it its original name back
   term_label: string | null; // the term, as you named it
   source_dirs: Partial<Record<"files" | "modules" | "attachments", string>>; // where what's from each part of Canvas goes
   new: number; // things in it you haven't opened yet
@@ -440,6 +439,9 @@ export interface SidebarOrder {
   courses: number[];
 }
 export const sidebarOrder = () => api<SidebarOrder>("/sidebar");
+/** What the app calls a course, or a term (by its name on Canvas); "": its own name. The folder stays as it is. */
+export const setCourseTitle = (course: number, title: string) => put<void>(`/courses/${course}/title`, { title });
+export const setTermTitle = (term: string, title: string) => put<void>("/terms/title", { term, title });
 /** A course's icon: {icon, color}, {emoji}, {icon: "none"}; null: the app's pick. */
 export const setCourseIcon = (course: number, icon: { icon?: string; color?: string; emoji?: string } | null) =>
   post<{ icon: Course["icon"] }>(`/courses/${course}/icon`, icon ?? {});

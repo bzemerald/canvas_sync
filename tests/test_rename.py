@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from canvas_sync import Engine
-from canvas_sync.config import Account, Settings, save_pinned
+from canvas_sync.config import Account, Settings, needs_titles, save_pinned
 from canvas_sync.things import Entry, Thing
 from canvas_sync.plan import Scope
 from canvas_sync.server import create_app
@@ -140,6 +141,74 @@ def api(root, fake):
         yield c
 
 
+def names_in_app(api) -> tuple[str, str, bool]:
+    c = api.get("/api/courses").json()[0]
+    return c["label"], c["term_label"], c["renamed"]
+
+
+def test_a_course_and_term_are_renamed_without_touching_their_folders(root, fake, api):
+    pull(root, fake)
+    before = sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if ".canvas" not in p.parts)
+    code = COURSE.split("/")[-1]
+
+    assert api.put("/api/courses/1/title", json={"title": " 线/代 "}).status_code == 200
+    assert api.put("/api/terms/title", json={"term": "Fall 2026", "title": "大二上"}).status_code == 200
+    assert names_in_app(api) == ("线/代", "大二上", True)
+    assert api.get("/api/courses").json()[0]["dir"] == COURSE
+    assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if ".canvas" not in p.parts) == before
+    assert names(root) == {}
+    assert pull(root, fake).actions == []
+    with Engine(root) as e:
+        e.reindex()
+        assert [h.title for h in e.search("线/代 lec1")] == ["lec1.pdf"]  # a course's title answers too
+
+    # Its own name, or none: back to that.
+    assert api.put("/api/courses/1/title", json={"title": code}).status_code == 200
+    assert api.put("/api/terms/title", json={"term": "Fall 2026", "title": ""}).status_code == 200
+    assert names_in_app(api) == (code, "Fall 2026", False)
+    settings = Settings.load(root / ".canvas/config.toml")
+    assert settings.course_titles == {} and settings.term_titles == {}
+
+    assert api.put("/api/courses/99/title", json={"title": "x"}).status_code == 404
+    assert api.put("/api/terms/title", json={"term": "Nope", "title": "x"}).status_code == 404
+
+
+def test_a_course_without_a_folder_can_be_renamed(root, fake, api):
+    pull(root, fake)
+    shutil.rmtree(root / COURSE)
+    assert api.put("/api/courses/1/title", json={"title": "线代"}).status_code == 200
+    assert names_in_app(api)[0] == "线代"
+
+
+def test_renaming_a_course_folder_leaves_what_the_app_calls_it(root, fake, api):
+    pull(root, fake)
+    assert api.post("/api/rename", json={"path": COURSE, "name": "Folder"}).status_code == 200
+    assert names_in_app(api) == (COURSE.split("/")[-1], "Fall 2026", False)
+    assert api.get("/api/courses").json()[0]["dir"] == "Fall 2026/Folder"
+
+
+def test_names_from_folders_become_titles_once(root, fake):
+    pull(root, fake)
+    rename(root, COURSE, "线性代数")
+    rename(root, "Fall 2026", "2026 秋")
+    cfg = root / ".canvas/config.toml"
+    text = cfg.read_text(encoding="utf-8")
+    start, end = text.index("[course_titles]"), text.index("[course_aliases]")
+    cfg.write_text(text[:start] + text[end:], encoding="utf-8")  # (as an older version wrote it)
+    assert needs_titles(cfg)
+
+    with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as client:
+        assert not needs_titles(cfg)
+        assert names_in_app(client) == ("线性代数", "2026 秋", True)
+        assert (root / "2026 秋/线性代数").is_dir()
+        assert names(root) == {COURSE: "线性代数", "Fall 2026": "2026 秋"}  # (the folders keep their names)
+
+        # Once: going back to its own name doesn't bring it back.
+        client.put("/api/courses/1/title", json={"title": ""})
+    create_app(Account(BASE, root), "s")
+    assert Settings.load(cfg).course_titles == {}
+
+
 def test_api_rename_and_pin(api, root):
     assert api.put("/api/pinned", json={"entries": [{"type": "folder", "path": WEEK1}]}).json() == [
         {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1}
@@ -153,12 +222,12 @@ def test_api_rename_and_pin(api, root):
 
     api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
     [course] = api.get("/api/courses").json()
-    assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "Linear Algebra" and course["renamed"]
-    assert course["default_name"] == "MATH 221" and course["term_label"] == "Fall 2026"
+    assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "MATH 221" and not course["renamed"]
+    assert course["term_label"] == "Fall 2026"
     assert course["source_dirs"]["modules"] == "Fall 2026/Linear Algebra/Modules"
     assert api.get("/api/pinned").json()[0]["path"] == "Fall 2026/Linear Algebra/Modules/Week One"
     # Search results call the course by its new name too.
-    assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"Linear Algebra"}
+    assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"MATH 221"}
 
 
 def test_pinned_courses(api, root):
@@ -168,7 +237,7 @@ def test_pinned_courses(api, root):
     course = {"type": "course", "course": 1, "title": "", "hidden": False, "name": "MATH 221", "exists": True, "in_course": 1}
     assert api.get("/api/pinned").json() == [course]
     assert 'type = "course"' in cfg.read_text(encoding="utf-8")
-    api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
+    api.put("/api/courses/1/title", json={"title": "Linear Algebra"})
     assert api.get("/api/pinned").json()[0]["name"] == "Linear Algebra"  # by id: renaming doesn't matter
-    api.post("/api/rename", json={"path": "Fall 2026", "name": "2026 秋"})
+    api.put("/api/terms/title", json={"term": "Fall 2026", "title": "2026 秋"})
     assert api.get("/api/courses").json()[0]["term_label"] == "2026 秋"

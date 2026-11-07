@@ -44,10 +44,12 @@ from .content import news, news_counts
 from .api import CanvasClient, CanvasError
 from .discover import FILE_REF
 from .config import (
-    PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, migrate, needs_migration, save_course_place, save_pinned,
+    PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, add_titles, migrate, needs_migration, needs_titles,
+    save_course_place, save_pinned,
     save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
 )
 from .engine import Engine
+from .layout import titles_of_folders
 from .local import inside as in_folder
 from .local import open_path
 from .places import PLACES, Place, as_course, describe, usual
@@ -190,6 +192,11 @@ class IconRequest(BaseModel):
     emoji: str | None = None
 
 
+class TitleRequest(BaseModel):
+    title: str = ""  # "": its own name again
+    term: str = ""   # /terms/title: which, by its name on Canvas
+
+
 class HideRequest(BaseModel):
     hidden: bool
     syncing: bool | None = None  # False: also stop syncing it; True: sync it again; None: leave as is
@@ -259,6 +266,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             if account is not None and needs_migration(cfg := account.root / META_DIR / "config.toml"):
                 with Engine(account.root) as e:
                     migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
+            if account is not None and needs_titles(cfg := account.root / META_DIR / "config.toml"):
+                with Engine(account.root) as e:
+                    add_titles(cfg, *titles_of_folders(e.settings, e.state.courses()))
             AppPrefs.migrate(prefs_path)
         except Exception:  # (a broken config.toml: every request says so)
             pass
@@ -883,6 +893,22 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         set_course_icon(config(), course_id, icon)
         with engine() as e:
             return {"icon": e.settings.course_icons.get(course_id)}
+
+    @api.put("/courses/{course_id}/title")
+    def course_title(course_id: int, req: TitleRequest) -> None:
+        with engine() as e:
+            try:
+                content.rename_course(e, course_id, req.title)
+            except LookupError as err:
+                raise HTTPException(404, str(err))
+
+    @api.put("/terms/title")
+    def term_title(req: TitleRequest) -> None:
+        with engine() as e:
+            try:
+                content.rename_term(e, req.term, req.title)
+            except LookupError as err:
+                raise HTTPException(404, str(err))
 
     def hide(course_ids: list[int], req: HideRequest) -> None:
         if req.hidden:

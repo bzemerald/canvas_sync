@@ -184,9 +184,12 @@ def _fts_term(term: str, exact: bool = False) -> str:
 
 def course_label(c: Course, settings: Settings) -> str:
     """What the app calls a course: the name you gave it, else its course code."""
-    layout = Layout(settings)
-    renamed = settings.folder_names.get(layout.canonical_course_dir(c).as_posix())
-    return renamed or settings.course_names.get(c.id) or c.code
+    return settings.course_titles.get(c.id) or settings.course_names.get(c.id) or c.code
+
+
+def term_label(c: Course, settings: Settings) -> str | None:
+    """What the app calls a course's term: the name you gave it, else Canvas's."""
+    return settings.term_titles.get(c.term or "") or c.term
 
 
 # A term in a course's code: "Spring", "SP26", "FL25", "2026".
@@ -232,7 +235,8 @@ class CourseMatcher:
             names = [c.code, c.name, settings.course_names.get(c.id, "")]
             # A course folder you renamed (to "线代", say) answers to that name too.
             renamed = settings.folder_names.get(Layout(settings).canonical_course_dir(c).as_posix())
-            aliases = [*settings.course_aliases.get(c.id, []), *([renamed] if renamed else [])]
+            title = settings.course_titles.get(c.id)
+            aliases = [*settings.course_aliases.get(c.id, []), *[n for n in (title, renamed) if n]]
             keys = {_norm(n) for n in [*names, *aliases] if n} | code_keys(c.code)
             for k in keys - {""}:
                 self.exact.setdefault(k, set()).add(c.id)

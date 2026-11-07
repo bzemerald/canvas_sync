@@ -71,26 +71,28 @@ type View =
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
 const layouts = new Map<number, Layout>(); // each course's, as last loaded: drawn at once when it's opened again
 
-function groupByTerm(list: Course[]): [string, Course[]][] {
-  const groups = new Map<string, Course[]>();
-  for (const c of list) {
-    const term = c.term_label ?? t("无学期");
-    groups.set(term, [...(groups.get(term) ?? []), c]);
-  }
-  return [...groups.entries()].sort(([a], [b]) => termRank(b) - termRank(a));
-}
-
 /** A term in the sidebar: `label` as you named it, `key` as Canvas does (what its place is saved by). */
 type TermGroup = { label: string; key: string; courses: Course[] };
+
+function groupByTerm(list: Course[]): TermGroup[] {
+  const groups = new Map<string, Course[]>();
+  for (const c of list) {
+    const key = c.term ?? "";
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => termRank(b) - termRank(a))
+    .map(([key, courses]) => ({ key, courses, label: courses[0].term_label ?? t("无学期") }));
+}
 
 /** The sidebar's terms and courses as you dragged them. Terms you haven't placed (a new one)
  * come first, newest first; courses you haven't placed come last in their term. */
 function arrange(list: Course[], order: SidebarOrder): TermGroup[] {
   const place = <T,>(saved: T[], k: T, unplaced: number) => (saved.includes(k) ? saved.indexOf(k) : unplaced);
   return groupByTerm(list)
-    .map(([label, courses], i) => ({
+    .map(({ label, key, courses }, i) => ({
       label,
-      key: courses[0].term ?? "",
+      key,
       i,
       courses: courses
         .map((c, j) => ({ c, j }))
@@ -631,10 +633,23 @@ export function MainWindow() {
     ];
   };
 
+  /** What the app calls a course, or a term: changed here at once. The folders stay as they are. */
+  const saveTitle = (saved: Promise<unknown>) => saved.then(refresh, (e) => {
+    fail(t("重命名失败"))(e);
+    refresh();
+  });
+  const renameCourse = (c: Course, title: string) => {
+    setCourseList((list) => list.map((x) => (x.id === c.id ? { ...x, label: title || x.display_code, renamed: !!title && title !== x.display_code } : x)));
+    void saveTitle(api.setCourseTitle(c.id, title));
+  };
+  const renameTerm = (key: string, title: string) => {
+    setCourseList((list) => list.map((x) => ((x.term ?? "") === key ? { ...x, term_label: title || x.term } : x)));
+    void saveTitle(api.setTermTitle(key, title));
+  };
+
   /** Rename a folder, then follow it: any open view inside it moves to the new path. */
   const renameFolder = async (path: string, name: string) => {
     setRenaming(null);
-    setRenamingHere(null);
     try {
       const { path: renamed } = await api.rename(path, name);
       const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
@@ -843,8 +858,8 @@ export function MainWindow() {
     { label: t("恢复此课程的原版…"), disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
     "separator",
     pinOf({ type: "course", course: c.id }),
-    { label: t("重命名课程"), disabled: syncBusy, onSelect: () => setRenamingHere(row) },
-    ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.default_name }), disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
+    { label: t("重命名课程"), onSelect: () => setRenamingHere(row) },
+    ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.display_code }), onSelect: () => renameCourse(c, "") }] : []),
     { label: t("更换图标…"), onSelect: () => setChoosingIcon(c) },
     "separator",
     { label: t("新建智能文件夹（限此课程）…"), onSelect: () => setEditing({ folder: null, preset: { courses: [c.id] } }) },
@@ -852,24 +867,14 @@ export function MainWindow() {
     { label: t("隐藏此课程…"), onSelect: () => setHiding({ courses: [c] }) },
   ];
 
-  // The term's own folder, if its courses share one (they do with the default layout).
-  const termDirOf = (list: Course[]) => {
-    const parents = [...new Set(list.map((c) => parentOf(c.dir)))];
-    return parents.length === 1 && parents[0] ? parents[0] : null;
-  };
   const termMenu = (key: string, term: string, list: Course[]): MenuItem[] => {
-    const termDir = termDirOf(list);
     return [
       { label: t("从 Canvas 同步 {term}", { term }), disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
       { label: t("恢复 {term} 的原版…", { term }), disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
-      ...(termDir
-        ? [
-            "separator" as const,
-            { label: t("重命名学期"), disabled: syncBusy, onSelect: () => setRenamingHere(`term:${key}`) },
-            ...(list[0].term && list[0].term !== term
-              ? [{ label: t("恢复原名（{name}）", { name: list[0].term! }), disabled: syncBusy, onSelect: () => void renameFolder(termDir, list[0].term!) }]
-              : []),
-          ]
+      "separator",
+      { label: t("重命名学期"), onSelect: () => setRenamingHere(`term:${key}`) },
+      ...(list[0].term_label !== list[0].term
+        ? [{ label: t("恢复原名（{name}）", { name: list[0].term ?? t("无学期") }), onSelect: () => renameTerm(key, "") }]
         : []),
       "separator",
       { label: t("隐藏此学期…"), onSelect: () => setHiding({ courses: list, term }) },
@@ -958,9 +963,13 @@ export function MainWindow() {
   /** The sidebar's row `row`, if it's the one being renamed: its name, as an input. */
   const nameEditor = (row: string, initial: string, submit: (name: string) => void, hint?: string, className = "h-5 text-sm") =>
     renamingHere !== row ? undefined : (
-      <RenameInput initial={initial} hint={hint} onSubmit={submit} onCancel={() => setRenamingHere(null)} className={`block w-full ${className}`} />
+      <RenameInput initial={initial} hint={hint} onCancel={() => setRenamingHere(null)} className={`block w-full ${className}`}
+        onSubmit={(name) => {
+          setRenamingHere(null);
+          submit(name);
+        }} />
     );
-  const folderHint = t("只改在这里显示的名字，同步不受影响。");
+  const titleHint = t("只改应用里显示的名字，文件夹和同步不受影响。");
   const renderPinned = (x: Shown) => {
     const c = x.type === "course" ? courseById(x.course) : null;
     const inCourse = x.in_course != null ? courseById(x.in_course)
@@ -977,11 +986,8 @@ export function MainWindow() {
         icon={<ThingIcon thing={x} courses={courseList} />}
         title={nameOf(x)}
         editor={c
-          ? nameEditor(`pin:${thingKey(x)}`, c.label, (name) => void renameFolder(c.dir, name), folderHint)
-          : nameEditor(`pin:${thingKey(x)}`, nameOf(x), (title) => {
-              savePinned(changed(pinned, x, { title }));
-              setRenamingHere(null);
-            })}
+          ? nameEditor(`pin:${thingKey(x)}`, c.label, (name) => renameCourse(c, name), titleHint)
+          : nameEditor(`pin:${thingKey(x)}`, nameOf(x), (title) => savePinned(changed(pinned, x, { title })))}
         subtitle={where}
         count={c?.new}
         muted={gone}
@@ -1139,16 +1145,13 @@ export function MainWindow() {
               collapsed={isCollapsed(`term:${g.key}`)}
               onToggle={() => toggle(`term:${g.key}`)}
               onMenu={(x, y) => openMenu(termMenu(g.key, g.label, g.courses), x, y)}
-              editor={nameEditor(`term:${g.key}`, g.label, (name) => {
-                const dir = termDirOf(g.courses);
-                if (dir) void renameFolder(dir, name);
-              }, folderHint, "h-[18px] text-[11px] font-medium")}
+              editor={nameEditor(`term:${g.key}`, g.label, (name) => renameTerm(g.key, name), titleHint, "h-[18px] text-[11px] font-medium")}
               onReorder={(ids) => reorderTerm(g.key, ids)}
               renderCourse={(c) => (
                 <NavItem
                   icon={<CourseIcon course={c} />}
                   title={c.label}
-                  editor={nameEditor(`course:${c.id}`, c.label, (name) => void renameFolder(c.dir, name), folderHint)}
+                  editor={nameEditor(`course:${c.id}`, c.label, (name) => renameCourse(c, name), titleHint)}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isPinned({ type: "course", course: c.id })}
                   count={c.new}
@@ -1166,8 +1169,8 @@ export function MainWindow() {
                 collapsed={!hiddenOpen}
                 onToggle={() => setHiddenOpen(!hiddenOpen)}
               />
-              {hiddenOpen && groupByTerm(hiddenCourses).map(([term, list]) => (
-                <div key={term}>
+              {hiddenOpen && groupByTerm(hiddenCourses).map(({ key, label: term, courses: list }) => (
+                <div key={key}>
                   <p
                     onContextMenu={(e) => {
                       e.preventDefault();

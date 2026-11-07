@@ -69,6 +69,20 @@ class Placement:
     links: tuple[PurePosixPath, ...] = ()  # symlinks pointing at it
 
 
+def titles_of_folders(settings: Settings, courses: Iterable[Course]) -> tuple[dict[int, str], dict[str, str]]:
+    """The course and term titles that renamed folders stood for, before titles were their own."""
+    names, layout = settings.folder_names, Layout(settings)
+    titles: dict[int, str] = {}
+    terms: dict[str, str] = {}
+    for c in courses:
+        folder = layout.canonical_course_dir(c)
+        if folder.as_posix() in names:
+            titles[c.id] = names[folder.as_posix()]
+        if len(folder.parts) > 1 and folder.parent.as_posix() in names:
+            terms[c.term or ""] = names[folder.parent.as_posix()]
+    return titles, terms
+
+
 class Layout:
     def __init__(self, settings: Settings, courses: Iterable[Course] = ()):
         self.s = settings

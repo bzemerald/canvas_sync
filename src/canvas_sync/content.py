@@ -21,7 +21,8 @@ from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
-from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url
+from .config import set_title
+from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url, term_label
 from .state import NEWS_KINDS, FileRecord, State
 from .text import html_to_text
 
@@ -46,21 +47,37 @@ TOOL_NAMES = {"gradescope": "Gradescope", "edstem": "Ed", "quiz-lti": "New Quizz
 HOSTING = {"instructure", "amazonaws", "herokuapp", "azurewebsites", "cloudfront", "edu"}
 
 
+def rename_course(e: Engine, course: int, title: str) -> None:
+    """What the app calls a course. Its own name, or none: it goes back to that."""
+    c = next((c for c in e.state.courses() if c.id == course), None)
+    if c is None:
+        raise LookupError(f"no course {course}")
+    title = title.strip()
+    own = title in ("", e.settings.course_names.get(c.id) or c.code)
+    set_title(e.meta / "config.toml", "course_titles", str(course), None if own else title)
+
+
+def rename_term(e: Engine, term: str, title: str) -> None:
+    """What the app calls a term, by its name on Canvas ("": the courses without one)."""
+    if not any((c.term or "") == term for c in e.state.courses()):
+        raise LookupError(f"no term {term}")
+    title = title.strip()
+    set_title(e.meta / "config.toml", "term_titles", term, None if title in ("", term) else title)
+
+
 def courses(e: Engine) -> list[dict[str, Any]]:
     """Your courses, as the app lists them: each with what you call it, where its folder is,
     and how much is new in it."""
     out = []
     for c in e.state.courses():
-        d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
+        canonical = e.layout.canonical_course_dir(c)
         new = news_counts(news(e.state, e.root, c.id))
-        term_renamed = len(d.parts) > 1 and d.parent.name != canonical.parent.name
         out.append({
-            **asdict(c), "dir": d.as_posix(),
+            **asdict(c), "dir": e.layout.course_dir(c).as_posix(),
             "display_code": e.settings.course_names.get(c.id) or c.code,
             "label": course_label(c, e.settings),       # what the app calls it
-            "renamed": d.name != canonical.name,         # you gave it a name
-            "default_name": canonical.name,              # renaming to this undoes that
-            "term_label": d.parent.name if term_renamed else c.term,
+            "renamed": c.id in e.settings.course_titles,  # you gave it a name
+            "term_label": term_label(c, e.settings),
             # Where what's from each part of Canvas goes (files, modules, attachments).
             "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
             "new": new["total"],                         # things you haven't opened

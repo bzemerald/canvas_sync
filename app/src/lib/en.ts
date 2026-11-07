@@ -90,7 +90,7 @@ export const en: Record<string, string | [string, string]> = {
   "从 Canvas 同步此课程": "Sync this course from Canvas",
   "恢复此课程的原版…": "Restore this course's originals…",
   "重命名课程": "Rename course",
-  "只改在这里显示的名字，同步不受影响。": "Only changes the name shown here; syncing isn't affected.",
+  "只改应用里显示的名字，文件夹和同步不受影响。": "Only the name in the app changes; its folder and syncing aren't affected.",
   "恢复原名（{name}）": "Restore original name ({name})",
   "新建智能文件夹（限此课程）…": "New smart folder for this course…",
   "从 Canvas 同步 {term}": "Sync {term} from Canvas",

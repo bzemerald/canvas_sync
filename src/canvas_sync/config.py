@@ -49,6 +49,12 @@ hidden = []    # course ids the app doesn't show (in its sidebar, search, what's
 [course_names]
 # Rename a course folder:  12345 = "Linear Algebra"
 
+[course_titles]
+# What the app calls a course (its folder keeps its name):  12345 = "线代"
+
+[term_titles]
+# What the app calls a term, by its name on Canvas:  "Fall 2026" = "大二上"
+
 [course_aliases]
 # Extra names search understands for a course:  12345 = ["linalg", "线代"]
 
@@ -192,6 +198,8 @@ class Settings:
     exclude: list[int] = field(default_factory=list)
     hidden: list[int] = field(default_factory=list)   # not shown in the app
     course_names: dict[int, str] = field(default_factory=dict)
+    course_titles: dict[int, str] = field(default_factory=dict)  # what the app calls them
+    term_titles: dict[str, str] = field(default_factory=dict)    # (by the term's name on Canvas)
     course_dir: str = "{term}/{code}"
     views: list[str] = field(default_factory=lambda: ["modules", "files"])
     link_other_views: bool = True
@@ -229,6 +237,8 @@ class Settings:
             exclude=[int(x) for x in courses.get("exclude", [])],
             hidden=[int(x) for x in courses.get("hidden", [])],
             course_names={int(k): str(v) for k, v in data.get("course_names", {}).items()},
+            course_titles={int(k): str(v) for k, v in data.get("course_titles", {}).items()},
+            term_titles={str(k): str(v) for k, v in data.get("term_titles", {}).items()},
             course_dir=layout.get("course_dir", d.course_dir),
             views=list(layout.get("views", d.views)),
             link_other_views=bool(layout.get("link_other_views", d.link_other_views)),
@@ -495,6 +505,18 @@ def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> 
 
 
 @_writes
+def set_title(path: Path, table: str, key: str, title: str | None) -> None:
+    """What the app calls a course or a term (`table`: course_titles, term_titles); None: its own name."""
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    titles = doc.setdefault(table, tomlkit.table())
+    if title is None:
+        titles.pop(key, None)
+    else:
+        titles[key] = title
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+@_writes
 def set_ed_courses(path: Path, links: dict[int, int]) -> None:
     """Which Ed course is each of these courses' ([ed.courses]; 0: none)."""
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
@@ -526,6 +548,24 @@ def save_course_place(path: Path, course_id: int, place: str, items: list[Entry]
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     _put_place(doc, course_id, place, items)
     path.write_text(_dump(doc), encoding="utf-8")
+
+
+def needs_titles(path: Path) -> bool:
+    """config.toml is from when a course or term was called what its folder was."""
+    return "course_titles" not in tomlkit.parse(path.read_text(encoding="utf-8"))
+
+
+@_writes
+def add_titles(path: Path, courses: dict[int, str], terms: dict[str, str]) -> None:
+    """The names courses and terms had from their folders, as titles. (The folders stay as they are.)"""
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    doc["course_titles"] = tomlkit.table()
+    doc["term_titles"] = tomlkit.table()
+    for course, title in courses.items():
+        doc["course_titles"][str(course)] = title
+    for term, title in terms.items():
+        doc["term_titles"][term] = title
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 def needs_migration(path: Path) -> bool:
