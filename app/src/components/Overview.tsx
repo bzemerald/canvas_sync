@@ -88,15 +88,12 @@ const LOADING = "px-2 py-3 text-sm"; // (as Empty)
 const hasCard = (e: Thing) =>
   e.type === "view" ? !["overview", "pages", "canvas"].includes(e.view) : !["tool", "link", "course"].includes(e.type);
 
-export function CourseOverview({ course, overview, cards, links, own, onArrange, onReset, onMakeDefault, onSay, onMarkSeen }: {
+export function CourseOverview({ course, overview, cards, links, onArrange, onSay, onMarkSeen }: {
   course: Course;
   overview: Overview | null;
   cards: Shown[] | null; // the overview's, in order, hidden ones too
   links: Shown[]; // 工具与链接's
-  own: boolean; // arranged for the course (else as every course is)
   onArrange: (place: "overview" | "links", entries: Shown[]) => void;
-  onReset: () => void; // back to the default arrangement (what was added stays)
-  onMakeDefault: () => void; // this arrangement for every course that doesn't have its own
   onSay: (message: string, action?: { label: string; run: () => void }) => void;
   onMarkSeen: (of: NewsView) => void;
 }) {
@@ -261,9 +258,6 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   /** The overview, right-clicked between the cards. (Hidden cards come back through 添加卡片.) */
   const overviewMenu = (): MenuItem[] => [
     { label: t("添加卡片…"), onSelect: () => setAdding(true) },
-    "separator",
-    { label: t("设为所有课程的默认概览"), onSelect: onMakeDefault },
-    { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
   ];
   const rename = (place: "overview" | "links", e: Shown, title: string) => {
     onArrange(place, changed(place === "overview" ? all : links, e, { title }));

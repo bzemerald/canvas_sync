@@ -231,10 +231,6 @@ const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "PUT", b
 /** One of a course's places as it should be (its own things it leaves out come back). */
 export const arrangeCourse = (course: number, place: Place, entries: Shown[]) =>
   put<CourseLayout>(`/courses/${course}/layout/${place}`, { entries });
-/** Back to the default; what was added stays, after the rest. */
-export const resetCourseLayout = (course: number, place: Place) => post<CourseLayout>(`/courses/${course}/layout/${place}/reset`, {});
-/** Its tabs, or its overview, as every course's default (what it added stays its own). */
-export const makeDefaultLayout = (course: number, place: Place) => post<CourseLayout>(`/courses/${course}/layout/${place}/default`, {});
 export const note = (course: number, id: string) => api<{ text: string }>(`/courses/${course}/notes/${id}`);
 export const saveNote = (course: number, id: string, text: string) =>
   api<{ text: string }>(`/courses/${course}/notes/${id}`, { method: "PUT", body: JSON.stringify({ text }) });

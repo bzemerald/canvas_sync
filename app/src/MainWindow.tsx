@@ -553,24 +553,6 @@ export function MainWindow() {
     // one before it: nothing to do.)
     else if (place === "tabs" && cv && !cv.blank && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
   };
-  const layoutDone = (id: number, message: string) => (l: CourseLayout) => {
-    keepLayout(id, l);
-    say(message);
-  };
-  /** Back to the default, one place after another (each writes config.toml). */
-  const resetLayout = async (places: Place[]) => {
-    if (layoutId === null) return;
-    const id = layoutId;
-    try {
-      let l: CourseLayout | null = null;
-      for (const place of places) l = await api.resetCourseLayout(id, place);
-      if (l) layoutDone(id, places.includes("tabs") ? t("这门课的标签恢复了默认") : t("这门课的概览恢复了默认，添加的卡片还在"))(l);
-    } catch (e) {
-      fail(t("操作失败"))(e);
-    }
-  };
-  const makeDefaultLayout = (place: Place) =>
-    layoutId !== null && api.makeDefaultLayout(layoutId, place).then(layoutDone(layoutId, t("其他没单独排过的课程现在也这样排")), fail(t("操作失败")));
 
   /** 全部标为已读: for a course, one of its views with a count, a folder; 标为已读: a new file
    * (see Things.markRead). */
@@ -1019,10 +1001,7 @@ export function MainWindow() {
           overview={overview}
           cards={courseLayout?.overview ?? null}
           links={courseLayout?.links ?? []}
-          own={!!courseLayout && (courseLayout.own.overview || courseLayout.own.links)}
           onArrange={arrangeLayout}
-          onReset={() => void resetLayout(["overview", "links"])}
-          onMakeDefault={() => void makeDefaultLayout("overview")}
           onSay={say}
           onMarkSeen={(of) => void api.markSeen(course.id, of).then(refresh, fail(t("标记失败")))}
         />
