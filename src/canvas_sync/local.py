@@ -50,7 +50,9 @@ def open_path(path: Path, reveal: bool = False, preview: bool = False) -> None:
         subprocess.run(["open", *(["-R"] if reveal else []), str(path)], check=False)
     elif sys.platform == "win32":
         if reveal:
-            subprocess.run(["explorer", f"/select,{path}"], check=False)
+            # (A string: as a list, a path with spaces quotes the whole "/select,...", and Explorer
+            # then opens Documents.)
+            subprocess.run(f'explorer /select,"{path}"', check=False)
         else:
             os.startfile(path)  # type: ignore[attr-defined]
     else:

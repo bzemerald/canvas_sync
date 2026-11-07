@@ -7,7 +7,7 @@ import io
 import os
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from PIL import Image
 
 from canvas_sync import CanvasClient, Engine
 from canvas_sync.config import Account, load_pinned, save_pinned
+from canvas_sync.local import open_path
 from canvas_sync.things import Entry, Thing
 from canvas_sync.plan import Scope
 from canvas_sync.server import create_app
@@ -326,3 +327,12 @@ def make_docx(text: str) -> bytes:
         for name, xml in parts.items():
             z.writestr(name, xml)
     return buf.getvalue()
+
+
+def test_explorer_shows_a_path_with_spaces(monkeypatch):
+    # Only the path is quoted: with all of "/select,..." quoted, Explorer opens Documents instead.
+    ran = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr("canvas_sync.local.subprocess.run", lambda command, **_: ran.append(command))
+    open_path(PureWindowsPath(r"C:\Canvas\Fall 2026\NEU 198"), reveal=True)  # type: ignore[arg-type]
+    assert ran == [r'explorer /select,"C:\Canvas\Fall 2026\NEU 198"']
