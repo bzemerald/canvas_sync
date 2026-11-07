@@ -358,7 +358,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: React.ReactNode; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -476,19 +476,6 @@ function MoveFolderDialog({ root, onClose }: { root: string; onClose: () => void
 /** AI assistants (MCP): adding `canvas mcp` (agent.py) to the AI apps on this computer, or by hand
  * to others. It reads what's synced here, only. */
 function AssistantSection() {
-  const [open, setOpen] = useState(false);
-  return (
-    <Section title={t("AI 助手")}>
-      <Row label={t("连接到 AI 桌面软件")}
-        hint={t("允许外部 AI 软件（如 ChatGPT 和 Claude）搜索和阅读你已同步的课程。")}>
-        <Button onClick={() => setOpen(true)}>{t("连接到…")}</Button>
-      </Row>
-      {open && <AssistantsDialog onClose={() => setOpen(false)} />}
-    </Section>
-  );
-}
-
-function AssistantsDialog({ onClose }: { onClose: () => void }) {
   const [apps, setApps] = useState<api.Assistant[] | null>(null);
   const [how, setHow] = useState<{ command: string; args: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -515,49 +502,48 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
   const servers = how && { "canvas-sync": { command: how.command, args: how.args } };
   return (
     <>
-    {/* (Escape reaches both dialogs: only the one on top closes.) */}
-    <Dialog title={t("连接到 AI 桌面软件")} onClose={asking ? stay : onClose} width="max-w-xl"
-      footer={<Button primary onClick={onClose}>{t("完成")}</Button>}>
-      {apps && (
-        <div className="mb-4 divide-y divide-line rounded-lg border border-line">
-          {installed.length === 0 && <p className="px-3 py-2.5 text-muted">{t("这台电脑上没找到支持的 AI 应用。")}</p>}
-          {installed.map((a) => {
-            const note = errors[a.id]
-              ?? (added.has(a.id) && a.added
-                ? (a.restart ? t("重新打开 {app} 后就能用。", { app: a.name }) : t("在 {app} 新开的对话里就能用。", { app: a.name }))
-                : a.added && !a.current ? t("用的是另一份 Canvas Sync。") : null);
-            return (
-              <div key={a.id} className="flex items-center gap-3 px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5">
-                    {a.name}
-                    {a.added && (a.current
-                      ? <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已连接@@assistant")} />
-                      : <CircleQuestionMark className="size-3.5 text-warn" aria-label={t("用的是另一份 Canvas Sync。")} />)}
-                  </p>
-                  {note && <p className={`mt-0.5 text-xs ${errors[a.id] ? "text-danger" : "text-muted"}`}>{note}</p>}
-                </div>
-                {a.added && a.current
-                  ? <Button disabled={busy !== null} onClick={() => void ask(a, false)}>{t("断开…@@assistant")}</Button>
-                  : <Button disabled={busy !== null} onClick={() => void ask(a, true)}>
-                      {a.added ? t("改用这一份…") : t("连接…@@assistant")}
-                    </Button>}
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <Section title={t("AI 助手")}>
+      <div className="px-4 py-3">
+        <p className="text-sm">{t("连接到 AI 桌面软件")}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted">{t("允许外部 AI 软件（如 ChatGPT 和 Claude）搜索和阅读你已同步的课程。")}</p>
+      </div>
+      {apps && installed.length === 0 && <p className="px-4 py-3 text-sm text-muted">{t("这台电脑上没找到支持的 AI 应用。")}</p>}
+      {installed.map((a) => {
+        const note = errors[a.id]
+          ?? (added.has(a.id) && a.added
+            ? (a.restart ? t("重新打开 {app} 后就能用。", { app: a.name }) : t("在 {app} 新开的对话里就能用。", { app: a.name }))
+            : a.added && !a.current ? t("用的是另一份 Canvas Sync。") : null);
+        return (
+          <Row key={a.id}
+            label={
+              <span className="flex items-center gap-1.5">
+                {a.name}
+                {a.added && (a.current
+                  ? <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已连接@@assistant")} />
+                  : <CircleQuestionMark className="size-3.5 text-warn" aria-label={t("用的是另一份 Canvas Sync。")} />)}
+              </span>
+            }
+            hint={note && <span className={errors[a.id] ? "text-danger" : ""}>{note}</span>}>
+            {a.added && a.current
+              ? <Button disabled={busy !== null} onClick={() => void ask(a, false)}>{t("断开…@@assistant")}</Button>
+              : <Button disabled={busy !== null} onClick={() => void ask(a, true)}>
+                  {a.added ? t("改用这一份…") : t("连接…@@assistant")}
+                </Button>}
+          </Row>
+        );
+      })}
       {how && servers && (
-        <details className="mb-3">
+        <details className="px-4 py-3">
           <summary className="cursor-default text-xs text-muted select-none hover:text-fg">{t("手动添加到其他应用")}</summary>
-          <div className="mt-3">
+          <div className="mt-3 space-y-4">
             <Copyable label={t("配置")} hint={t("大多数应用的 MCP 设置用这个格式：")}
               text={JSON.stringify({ mcpServers: servers }, null, 2)} />
             <Copyable label={t("命令")} hint={t("只要填命令的应用用这个：")} text={`"${how.command}" ${how.args.join(" ")}`} />
           </div>
         </details>
       )}
-    </Dialog>
+    </Section>
+    {/* (Outside the card: its rows are divided by borders.) */}
     {asking && (
       <AssistantChangeDialog app={asking.app} preview={asking.preview} onClose={() => setAsking(null)}
         onDone={(now) => {
@@ -659,7 +645,7 @@ function Copyable({ label, hint, text }: { label: string; hint: string; text: st
     setTimeout(() => setCopied(false), 1500);
   }, () => {});
   return (
-    <div className="mb-4">
+    <div>
       <div className="mb-1.5 flex items-end gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium">{label}</p>

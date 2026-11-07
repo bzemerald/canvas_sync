@@ -310,7 +310,6 @@ export const en: Record<string, string | [string, string]> = {
   "AI 助手": "AI assistants",
   "允许外部 AI 软件（如 ChatGPT 和 Claude）搜索和阅读你已同步的课程。":
     "Allow external AI apps (such as ChatGPT or Claude) to search and read your synced course content.",
-  "连接到…": "Link To…",
   "连接到 AI 桌面软件": "Link an external AI app",
   "读不懂这个应用的设置文件，所以没有改动它。可以用下面的“手动添加到其他应用”。":
     "Couldn't read this app's settings file, so nothing was changed. You can use “Add to another app by hand” below.",
