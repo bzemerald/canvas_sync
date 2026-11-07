@@ -334,12 +334,16 @@ export function MainWindow() {
   const settled = !!cv && !!courseLayout && layout?.id === cv.id; // (see settle)
   const shownSpare: Spare | null = !cv ? null : cv.blank ? "new" : !settled || listed(tabs, cv.tab) ? null : cv.tab;
   const kept = cv ? spares.get(cv.id) : undefined;
-  const spare = shownSpare ?? (kept === "new" || (kept && !listed(tabs, kept)) ? kept : null);
+  const keptListed = !!kept && kept !== "new" && listed(tabs, kept); // (made a tab: it's not kept there any more)
+  const spare = shownSpare ?? (keptListed ? null : kept ?? null);
   useEffect(() => {
     if (!cv || !settled) return;
     if (shownSpare) setSpare(cv.id, shownSpare);
-    else lastTab.current.set(cv.id, cv.tab);
-  }, [cv?.id, settled, spareKey(shownSpare), spareKey(kept), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
+    else {
+      lastTab.current.set(cv.id, cv.tab);
+      if (keptListed) setSpare(cv.id, null);
+    }
+  }, [cv?.id, settled, spareKey(shownSpare), spareKey(kept), keptListed, tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;
   const filesTab = view.kind === "browse" || (!!tab && !cv?.blank && (isView(tab, "files") || tab.type === "folder"));
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
@@ -380,11 +384,11 @@ export function MainWindow() {
   const closeSpare = () => {
     if (!cv) return;
     setSpare(cv.id, null);
-    if (cv.blank) replaceView({ ...cv, blank: false });
-    else if (shownSpare) {
-      const before = lastTab.current.get(cv.id);
-      replaceView(toTab(cv, before && listed(tabs, before) ? before : firstTab(tabs, cv.id)));
-    }
+    if (!cv.blank && !shownSpare) return;
+    // (A new tab's `tab` is the one before it, unless that's no longer a tab.)
+    const before = [cv.blank ? cv.tab : null, lastTab.current.get(cv.id)].find((x) => x && listed(tabs, x));
+    if (cv.blank && before && same(before, cv.tab)) replaceView({ ...cv, blank: false });
+    else replaceView(toTab(cv, before ?? firstTab(tabs, cv.id)));
   };
   /** Anything, wherever it opens: a file in its app; a tool, a link, the course on Canvas in the
    * browser; a search as a smart folder; the rest in its course's page. Noted, with what had been
