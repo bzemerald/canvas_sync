@@ -198,6 +198,7 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
     linked.thread(501, 9003, "welcome!", type="announcement", user=1, created="2026-10-10T12:00:00+10:00")
     linked.thread(501, 9004, "Welcome", type="announcement", user=1, created="2026-09-01T09:00:00+10:00")  # (another)
     linked.thread(501, 9005, "Welcome", user=1, created="2026-10-10T12:00:00+10:00", is_pinned=True)  # (pinned, as a post)
+    linked.thread(501, 9006, "Welcome", user=2, created="2026-10-10T12:00:00+10:00")  # (a student's, the same title: their own)
     assert ed_sync(root) is None
 
     with Engine(root) as e:
@@ -212,17 +213,18 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
                               '<a href="https://x.edu/hw3">the spec</a>.</p>')
         # Ed lists it all, each the kind it is; what's a copy of the Canvas announcement isn't news.
         on_ed = {p["id"]: p["kind"] for p in content.ed_items(e.state, e.root, 1)}
-        assert on_ed == {"ed-9001": "announcement", "ed-9002": "post", "ed-9003": "announcement", "ed-9004": "announcement", "ed-9005": "post"}
+        assert on_ed == {"ed-9001": "announcement", "ed-9002": "post", "ed-9003": "announcement", "ed-9004": "announcement", "ed-9005": "post", "ed-9006": "post"}
         assert next(iter(on_ed)) == "ed-9005"  # (pinned first)
-        assert {p["id"] for p in content.items(e.state, e.root, 1, "post")} == {"ed-9002", "ed-9005"}  # (a kind is that kind)
-        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 5
+        assert {p["id"] for p in content.items(e.state, e.root, 1, "post")} == {"ed-9002", "ed-9006"}  # (a kind is that kind; 9005 is staff's, so Canvas's too)
+        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 6
         assert content.overview(e.state, e.root, 1)["counts"]["announcements"] == 3
         assert not {"ed-9003", "ed-9005"} & {i for ids in content.news(e.state, e.root, 1).values() for i in ids}
         names = [x.get("name") for x in catalog(e) if x["type"] == "doc" and x.get("id", "").startswith("ed-")]
         assert "welcome!" not in names  # (by name, the Canvas announcement)
         e.reindex()
         assert [h.title for h in e.search("deadline moved")] == ["HW 3 deadline moved"]
-        assert "welcome!" not in [h.title for h in e.search("welcome")]  # (nor found twice)
+        found = {h.doc_id for h in e.search("welcome")}
+        assert {"9", "ed-9006"} <= found and not {"ed-9003", "ed-9005"} & found  # (nor found twice)
 
     # Each source keeps its own: syncing Canvas leaves Ed's, and the other way round.
     pull(root, fake)

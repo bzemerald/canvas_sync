@@ -423,9 +423,11 @@ def relative_url(url: str | None) -> str | None:
 
 
 def canvas_copy(kind: str, raw: dict[str, Any]) -> bool:
-    """An announcement on Ed that's one of the course's Canvas announcements too: on Ed it's listed
-    as itself; as an announcement, and in search, it's Canvas's."""
-    return kind == "announcement" and bool((raw.get("ed") or {}).get("on_canvas"))
+    """What staff put on Ed that's one of the course's Canvas announcements too, as an announcement
+    or a post: on Ed it's listed as itself; elsewhere, and in search, it's Canvas's. (A student's
+    question with the same title is just that.)"""
+    ed = raw.get("ed") or {}
+    return bool(ed.get("on_canvas")) and (kind == "announcement" or bool(ed.get("staff")))
 
 
 DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body",
