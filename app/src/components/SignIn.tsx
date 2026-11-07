@@ -59,7 +59,7 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-4 text-sm">
       <label className="block">
-        <span className="mb-1 block font-medium">{another ? t("另一所学校的 Canvas 网址") : t("学校的 Canvas 网址")}</span>
+        <span className="mb-1 block font-medium">{t("学校的 Canvas 网址")}</span>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("例如 bcourses.berkeley.edu")} autoFocus
           spellCheck={false} autoCapitalize="off" className={inputClass} />
       </label>

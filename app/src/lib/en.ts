@@ -517,7 +517,6 @@ export const en: Record<string, string | [string, string]> = {
   // -- signing in
   "选择同步文件夹": "Choose a sync folder",
   "学校的 Canvas 网址": "Your school's Canvas address",
-  "另一所学校的 Canvas 网址": "Your other school's Canvas address",
   "还没选": "None chosen yet",
   "例如 bcourses.berkeley.edu": "e.g. bcourses.berkeley.edu",
   "访问令牌": "Access token",
