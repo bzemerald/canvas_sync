@@ -420,3 +420,15 @@ def test_grades(root, course):
     pull(root, course)
     with Engine(root) as e:
         assert content.grades(e.state, e.root, 1)["total"] is None
+
+
+def test_a_page_whose_name_starts_with_ed_isnt_from_ed(root, course):
+    """A page's id comes from its title: "Ed Discussion" is ed-discussion."""
+    course.pages["ed-discussion"] = {"url": "ed-discussion", "title": "Ed Discussion", "body": "<p>Join</p>"}
+    pull(root, course)
+    with Engine(root) as e:
+        assert content.ed_items(e.state, e.root, 1) == []
+        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 0
+        assert "ed-discussion" in {p["id"] for p in content.items(e.state, e.root, 1, "page")}
+    assert content.on_ed("post", "ed-5") and content.on_ed("announcement", "ed-5")
+    assert not content.on_ed("page", "ed-discussion") and not content.on_ed("announcement", "7")

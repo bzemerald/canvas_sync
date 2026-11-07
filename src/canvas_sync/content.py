@@ -108,9 +108,10 @@ def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[s
     return [(r["kind"], r["id"], r["title"], json.loads(r["raw"] or "{}")) for r in rows]
 
 
-def on_ed(doc_id: str) -> bool:
-    """Whether a document is from Ed (see ed.document), whatever its kind: what the `ed` view has."""
-    return doc_id.startswith("ed-")
+def on_ed(kind: str, doc_id: str) -> bool:
+    """Whether a document is from Ed (see ed.document), whatever its kind: what the `ed` view has.
+    (Not a page: its id comes from its title, and "Ed Discussion" is ed-discussion.)"""
+    return kind in ("announcement", "post") and doc_id.startswith("ed-")
 
 
 # The views that count what's new in them: whether (kind, id) is in each.
@@ -119,7 +120,7 @@ NEWS_VIEWS: dict[str, Callable[[str, str], bool]] = {
     "assignments": lambda kind, _: kind == "assignment",
     "pages": lambda kind, _: kind == "page",
     "files": lambda kind, _: kind == "file",
-    "ed": lambda _, doc_id: on_ed(doc_id),
+    "ed": on_ed,
 }
 
 
@@ -266,7 +267,7 @@ def _ed_order(p: dict[str, Any]) -> tuple[bool, float]:
 
 
 def _on_ed(course_id: int, docs: list[tuple[str, str, str, dict[str, Any]]], new: dict[str, dict[str, bool]]) -> list[dict[str, Any]]:
-    return sorted((_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(i)), key=_ed_order)
+    return sorted((_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(k, i)), key=_ed_order)
 
 
 def ed_items(state: State, root: Path, course_id: int) -> list[dict[str, Any]]:

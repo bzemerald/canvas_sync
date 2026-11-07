@@ -672,7 +672,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """One item in full. Opening it is reading it: it's no longer new. One from Ed comes
         with its replies as they are now (fetched, when there are new ones)."""
         with engine() as e:
-            if doc_id.startswith("ed-") and account.ed_region and (ed_token := account.ed_token()):
+            if content.on_ed(kind, doc_id) and account.ed_region and (ed_token := account.ed_token()):
                 await ed.fetch_replies(e, ed_token, account.ed_region, course_id, kind, doc_id)
             found = content.item(e.state, e.root, course_id, kind, doc_id)
             if found is not None:
