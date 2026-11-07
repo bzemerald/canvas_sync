@@ -198,6 +198,27 @@ fn present(w: &tauri::WebviewWindow) {
     }
 }
 
+/// Shows or hides the window that carries what's dragged, leaving the focus where it is: losing
+/// it would end the drag. (On Windows, Tauri's show() activates a window, whatever its settings.)
+#[tauri::command]
+fn show_ghost(app: AppHandle, shown: bool) {
+    let Some(w) = app.get_webview_window(GHOST) else { return };
+    #[cfg(windows)]
+    if let Ok(hwnd) = w.hwnd() {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn ShowWindow(hwnd: *mut std::ffi::c_void, how: i32) -> i32;
+        }
+        const SW_HIDE: i32 = 0;
+        const SW_SHOWNOACTIVATE: i32 = 4;
+        unsafe { ShowWindow(hwnd.0, if shown { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = if shown { w.show() } else { w.hide() };
+    }
+}
+
 /// Hides the main window when it has finished leaving full screen, if it was closed while
 /// full screen. (Its Resized events come as leaving starts, when hiding is too early: AppKit
 /// brings the window back when the animation ends.)
@@ -338,6 +359,7 @@ pub fn run() {
             show_main,
             show_launcher,
             set_launcher_keys,
+            show_ghost,
             dragout::drag_out,
             #[cfg(target_os = "macos")]
             quicklook::quick_look

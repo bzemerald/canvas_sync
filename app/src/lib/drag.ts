@@ -4,6 +4,7 @@
 // Pointer events rather than HTML5 drag and drop, which on Windows fights the webview's own
 // handling of files dropped on the window, and leaves no say over what dragging looks like.
 // Where the copy would be cut off by the window's edge, a window of its own carries it on.
+import { invoke } from "@tauri-apps/api/core";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
@@ -506,7 +507,7 @@ class Follower {
           await win.setPosition(new LogicalPosition(this.placed[0], this.placed[1]));
         } else if (this.want !== this.shown) {
           this.shown = this.want;
-          await (this.shown ? win.show() : win.hide());
+          await invoke("show_ghost", { shown: this.shown });
           this.onShown(this.shown);
         } else break;
       }
