@@ -11,6 +11,8 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from .state import META_DIR
@@ -47,11 +49,14 @@ class MoveError(Exception):
 
 
 _NOT_CONTENT = {".DS_Store", "Thumbs.db", "desktop.ini"}  # (what file managers leave in a folder)
+_TRIES = 3  # putting a file back: what has it open (Spotlight, an antivirus) lets go in a moment
 
 
-def move_tree(src: Path, dst: Path) -> bool:
-    """Everything in `src` moved into `dst`, an empty folder (made if it isn't there). On failure
-    `src` is as it was. True: it was copied (another disk), and `src` still has to be deleted."""
+def move_sync_folder(src: Path, dst: Path, use: Callable[[], None]) -> str | None:
+    """Everything in the sync folder `src` moved into `dst`, an empty folder (made if it isn't
+    there), then `use()` to start using it there. On the same disk it's renamed; on another,
+    copied, and `src` deleted once it's in use. A MoveError: `src` is as it was, or, "partly
+    moved", what couldn't go back is in `dst`. Returns `src` if it couldn't all be deleted."""
     if dst == src or dst.is_relative_to(src):
         raise MoveError("can't move into itself")
     if dst.exists() and not dst.is_dir():
@@ -60,24 +65,51 @@ def move_tree(src: Path, dst: Path) -> bool:
     if any(p.name not in _NOT_CONTENT for p in there):
         raise MoveError("move target not empty")
     made = not dst.exists()
-    for p in there:
-        p.unlink()
-    dst.mkdir(parents=True, exist_ok=True)
     items = list(src.iterdir())
     try:
-        if src.stat().st_dev == dst.stat().st_dev:
-            try:
-                _rename_into(items, dst)
-                return False
-            except OSError as err:
-                if err.errno != errno.EXDEV:
-                    raise
-        _copy_into(src, items, dst)
-        return True
-    except (OSError, MoveError):
-        if made:
-            dst.rmdir()
+        for p in there:
+            p.unlink()
+        dst.mkdir(parents=True, exist_ok=True)
+        copied = _move_into(src, items, dst)
+    except OSError as err:
+        _drop(dst, made)
+        raise MoveError(f"could not move: {err}") from err
+    except MoveError:
+        _drop(dst, made)
         raise
+    try:
+        use()
+    except Exception as err:
+        _clear(dst) if copied else _back(items, dst)
+        _drop(dst, made)
+        raise MoveError(f"could not move: {err}") from err
+    try:
+        (shutil.rmtree if copied else os.rmdir)(src)
+    except OSError:
+        return str(src) if copied else None
+    return None
+
+
+def _move_into(src: Path, items: list[Path], dst: Path) -> bool:
+    """True: copied (another disk)."""
+    if src.stat().st_dev == dst.stat().st_dev:
+        try:
+            _rename_into(items, dst)
+            return False
+        except OSError as err:
+            if err.errno != errno.EXDEV:
+                raise
+    _copy_into(src, items, dst)
+    return True
+
+
+def _drop(dst: Path, made: bool) -> None:
+    """`dst` gone again, if it was made for this and nothing was left in it."""
+    if made:
+        try:
+            dst.rmdir()
+        except OSError:
+            pass
 
 
 def _rename_into(items: list[Path], dst: Path) -> None:
@@ -87,14 +119,35 @@ def _rename_into(items: list[Path], dst: Path) -> None:
             os.rename(p, dst / p.name)
             moved.append(p)
     except OSError:
-        for p in reversed(moved):
-            os.rename(dst / p.name, p)
+        _back(moved, dst)
         raise
 
 
+def _back(items: list[Path], dst: Path) -> None:
+    """What was renamed into `dst`, back where it was; what won't go back: MoveError."""
+    stuck = []
+    for p in reversed(items):
+        for i in range(_TRIES):
+            try:
+                os.rename(dst / p.name, p)
+                break
+            except OSError:
+                if i + 1 < _TRIES:
+                    time.sleep(0.5)
+        else:
+            stuck.append(p)
+    if stuck:
+        raise MoveError(f"partly moved\n{stuck[0].parent}\n{dst}")
+
+
 def _copy_into(src: Path, items: list[Path], dst: Path) -> None:
-    size = sum(os.lstat(os.path.join(folder, f)).st_size for folder, _, files in os.walk(src) for f in files)
-    if shutil.disk_usage(dst).free < size:
+    sizes, links = 0, False
+    for folder, dirs, files in os.walk(src):
+        sizes += sum(os.lstat(os.path.join(folder, f)).st_size for f in files)
+        links = links or any(os.path.islink(os.path.join(folder, n)) for n in dirs + files)
+    if links and not _holds_links(dst):  # (exFAT, FAT: a view's links can't go there)
+        raise MoveError("links not supported there")
+    if shutil.disk_usage(dst).free < sizes:
         raise MoveError("not enough room")
     try:
         for p in items:
@@ -103,9 +156,14 @@ def _copy_into(src: Path, items: list[Path], dst: Path) -> None:
             else:
                 shutil.copy2(p, dst / p.name, follow_symlinks=False)
     except OSError:
-        for p in dst.iterdir():  # (it was empty: all of this is what was just copied)
-            shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
+        _clear(dst)
         raise
+
+
+def _clear(dst: Path) -> None:
+    """What was copied into `dst` (it was empty: all of it), gone."""
+    for p in dst.iterdir():
+        shutil.rmtree(p, ignore_errors=True) if p.is_dir() and not p.is_symlink() else p.unlink(missing_ok=True)
 
 
 def open_path(path: Path, reveal: bool = False, preview: bool = False) -> None:
@@ -138,8 +196,11 @@ def sha256_file(path: Path) -> str:
 def can_symlink(folder: Path) -> bool:
     """Whether symlinks can be made in `folder`. Windows allows them only to admins or
     with Developer Mode on."""
-    if sys.platform != "win32":
-        return True
+    return sys.platform != "win32" or _holds_links(folder)
+
+
+def _holds_links(folder: Path) -> bool:
+    """Whether a symlink can be made in `folder` (not on exFAT or FAT, say)."""
     probe = folder / f".symlink-probe-{os.getpid()}"
     try:
         os.symlink("target", probe)

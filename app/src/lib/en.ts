@@ -594,6 +594,11 @@ export const en: Record<string, string | [string, string]> = {
     "Choose an empty folder. All your course files and settings move there, with nothing to download again.",
   "文件已经移好了，但旧文件夹没能删干净，可以自己删掉：{path}":
     "Your files have moved, but the old folder couldn't be fully deleted. You can delete it yourself: {path}",
+  "没能移动同步文件夹，有些文件也没能移回去。它们现在在 {dst}，把它们移回 {src} 后再试一次。":
+    "Couldn't move the sync folder, and some files couldn't be moved back. They're in {dst} now: move them back to {src}, then try again.",
+  "那个磁盘（比如 exFAT 或 FAT 格式的 U 盘、移动硬盘）放不了同步文件夹里的链接。请选别的位置。":
+    "That disk (an exFAT or FAT drive, say) can't hold the links in the sync folder. Choose another place.",
+  "应用还在忙别的事，过一会儿再试。": "The app is still busy with something else. Try again in a moment.",
   "没能移动同步文件夹，文件还在原来的位置。可能有文件正被其他应用使用，关掉后再试一次。":
     "Couldn't move the sync folder, so your files are still where they were. Another app may be using one of them: close it and try again.",
   "不能移到现在的同步文件夹里面。请选别的文件夹。": "It can't move inside the current sync folder. Choose another folder.",

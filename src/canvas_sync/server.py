@@ -12,7 +12,6 @@ import asyncio
 import hashlib
 import json
 import os
-import shutil
 import re
 import secrets
 import socket
@@ -52,7 +51,7 @@ from .config import (
 from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
-from .local import MoveError, move_tree, open_path
+from .local import MoveError, move_sync_folder, open_path
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
 from .search import course_label
@@ -68,6 +67,9 @@ MEDIA_MAX_BYTES = 25 * 1024 * 1024
 DEFAULT_ROOT = Path("~/Canvas")
 # What works before an account is set up: enough to set one up.
 SETUP_PATHS = {"/health", "/prefs", "/account", "/account/setup", "/open"}
+# What can be asked while the sync folder moves: none of it opens the folder's databases.
+WHILE_MOVING = {"/health", "/sync", "/account", "/account/move"}
+MOVE_WAIT = 30.0  # seconds a move waits for what's being answered (a slow thumbnail) to finish
 # Opening the app syncs, unless it synced this recently.
 LAUNCH_GRACE = timedelta(minutes=10)
 STARTUP_DELAY = 3.0  # seconds before that first sync, so the app comes up first
@@ -289,6 +291,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     job = SyncJob()
     meaning_job = MeaningJob()
     moving = False  # the sync folder is on its way elsewhere (POST /account/move)
+    busy = 0  # requests being answered that use the sync folder: a move waits for them
+    counting = threading.Lock()
     home = prefs_path.parent  # the app's own folder (models/ is in it)
     tasks: set[asyncio.Task[None]] = set()
 
@@ -296,15 +300,24 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         if not secrets.compare_digest(authorization, f"Bearer {token}"):
             raise HTTPException(401, "bad token")
 
-    def ready(request: Request) -> None:
+    def ready(request: Request) -> Iterator[None]:
+        nonlocal busy
         path = request.url.path
         path = path[path.find("/api") + 4:]
         if account is None and path not in SETUP_PATHS:
             raise HTTPException(409, "not set up")
-        if moving and path not in {"/health", "/sync", "/account", "/account/move"}:
-            raise HTTPException(409, "moving the sync folder")  # (its databases are on their way)
-        if missing() and path not in SETUP_PATHS | {"/account/folder"}:
-            raise HTTPException(409, "sync folder missing")
+        counted = path not in WHILE_MOVING
+        with counting:
+            if moving and counted:
+                raise HTTPException(409, "moving the sync folder")  # (its databases are on their way)
+            busy += counted
+        try:
+            if missing() and path not in SETUP_PATHS | {"/account/folder"}:
+                raise HTTPException(409, "sync folder missing")
+            yield
+        finally:
+            with counting:
+                busy -= counted
 
     def missing() -> bool:
         """The sync folder isn't where it was (moved, renamed or deleted)."""
@@ -458,25 +471,28 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """Everything in the sync folder, moved to an empty folder, and used from there."""
         nonlocal moving
         assert account is not None
-        if job.running or meaning_job.phase in ("downloading", "indexing"):
-            raise HTTPException(409, "wait for the sync to finish")
-        old, new = account.root.resolve(), Path(req.root).expanduser().resolve()
-        moving = True
-        left_behind = None
+        with counting:
+            if moving:
+                raise HTTPException(409, "moving the sync folder")
+            if job.running or meaning_job.phase in ("downloading", "indexing"):
+                raise HTTPException(409, "wait for the sync to finish")
+            moving = True  # (from now on nothing else opens the folder)
         try:
+            for _ in range(int(MOVE_WAIT / 0.05)):  # what's being answered finishes first
+                if busy == 0:
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                raise HTTPException(409, "the app is busy")
+            old, new = account.root.resolve(), Path(req.root).expanduser().resolve()
+
+            def use() -> None:  # (only now is the old one gone: a crash before it leaves a whole copy)
+                replace(account, root=new).save()
+                account.root = new
             try:
-                copied = await asyncio.to_thread(move_tree, old, new)
+                left_behind = await asyncio.to_thread(move_sync_folder, old, new, use)
             except MoveError as err:
                 raise HTTPException(400, str(err))
-            except OSError as err:
-                raise HTTPException(400, f"could not move: {err}")
-            account.root = new  # (only now is the old one gone: a crash before it leaves a whole copy)
-            account.save()
-            try:
-                await asyncio.to_thread(shutil.rmtree if copied else os.rmdir, old)
-            except OSError:
-                if copied:
-                    left_behind = str(old)
         finally:
             moving = False
         update_files()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -431,18 +432,99 @@ def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keych
     seen = {}
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         moved_setup(api, root, tmp_path)
-        real = server.move_tree
+        real = server.move_sync_folder
 
-        def looking(src, dst):
+        def looking(src, dst, use):
             seen["courses"] = api.get("/api/courses").status_code
             seen["sync"] = api.post("/api/sync").status_code
             h = api.get("/api/health").json()
             seen["health"] = (h["folder_missing"], h["choosing"])
             seen["state"] = api.get("/api/sync").status_code
-            return real(src, dst)
-        monkeypatch.setattr(server, "move_tree", looking)
+            seen["again"] = api.post("/api/account/move", json={"root": str(tmp_path / "Other")}).status_code
+            return real(src, dst, use)
+        monkeypatch.setattr(server, "move_sync_folder", looking)
         assert api.post("/api/account/move", json={"root": str(tmp_path / "New")}).status_code == 200
-    assert seen == {"courses": 409, "sync": 409, "health": (False, False), "state": 200}
+    assert seen == {"courses": 409, "sync": 409, "health": (False, False), "state": 200, "again": 409}
+    assert not (tmp_path / "Other").exists()
+
+
+def test_a_move_waits_for_what_is_being_answered(root, tmp_path, canvas, keychain, monkeypatch):
+    keychain[BASE] = "t"
+    order: list[str] = []
+    asked, answer = threading.Event(), threading.Event()
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        moved_setup(api, root, tmp_path)
+        real_status, real_move = Engine.status, server.move_sync_folder
+
+        def slow(self, *args, **kw):
+            asked.set()
+            answer.wait(5)
+            order.append("answered")
+            return real_status(self, *args, **kw)
+
+        def moving(src, dst, use):
+            order.append("moved")
+            return real_move(src, dst, use)
+        monkeypatch.setattr(Engine, "status", slow)
+        monkeypatch.setattr(server, "move_sync_folder", moving)
+        reading = threading.Thread(target=lambda: api.get("/api/status"))
+        reading.start()
+        assert asked.wait(5)
+        moved: list[int] = []
+        move = threading.Thread(target=lambda: moved.append(
+            api.post("/api/account/move", json={"root": str(tmp_path / "New")}).status_code))
+        move.start()
+        time.sleep(0.5)
+        assert order == []  # (still being answered: the move waits)
+        answer.set()
+        reading.join(5)
+        move.join(10)
+    assert order == ["answered", "moved"] and moved == [200]
+
+
+def test_a_move_that_cannot_go_back_says_where_things_are(root, tmp_path, canvas, keychain, monkeypatch):
+    import os as real_os
+
+    keychain[BASE] = "t"
+    real_rename = real_os.rename
+    new = (tmp_path / "New").resolve()
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        moved_setup(api, root, tmp_path)
+        n = [0]
+
+        def stuck(a, b, **kw):  # the second fails; putting the first back fails too
+            n[0] += 1
+            if n[0] == 2 or Path(a).parent == new:
+                raise PermissionError("in use")
+            real_rename(a, b)
+        monkeypatch.setattr("canvas_sync.local.os.rename", stuck)
+        monkeypatch.setattr("canvas_sync.local.time.sleep", lambda s: None)
+        r = api.post("/api/account/move", json={"root": str(new)})
+    assert r.status_code == 400 and r.json()["detail"] == f"partly moved\n{root.resolve()}\n{new}"
+    assert len(list(new.iterdir())) == 1  # (the one that wouldn't go back)
+    assert Account.load() is None or Account.load().root == root
+
+
+def test_a_move_to_a_disk_without_links_says_so(root, tmp_path, canvas, keychain, monkeypatch):
+    import errno
+
+    keychain[BASE] = "t"
+    new = (tmp_path / "Stick").resolve()
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        files = moved_setup(api, root, tmp_path)
+
+        def exdev(a, b, **kw):
+            raise OSError(errno.EXDEV, "cross-device")
+
+        def no_links(target, link, **kw):
+            raise OSError(errno.EPERM, "not here")
+        monkeypatch.setattr("canvas_sync.local.os.rename", exdev)
+        monkeypatch.setattr("canvas_sync.local.os.symlink", no_links)
+        r = api.post("/api/account/move", json={"root": str(new)})
+        assert r.status_code == 400 and r.json()["detail"] == "links not supported there"
+        assert not new.exists()
+        assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")
+                      if "-wal" not in p.name and "-shm" not in p.name) == files
 
 
 def test_move_folder_waits_for_a_sync(root, tmp_path, canvas, keychain, monkeypatch):

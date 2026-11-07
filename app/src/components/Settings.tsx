@@ -468,7 +468,7 @@ function MoveFolderDialog({ root, onClose }: { root: string; onClose: () => void
         <Button disabled={busy} onClick={() => void choose()}>{t("选择…")}</Button>
       </div>
       <p className="mt-1.5 mb-3 text-xs text-muted">{t("选一个空文件夹。所有课程文件和设置都会搬过去，不用重新下载。")}</p>
-      {error && <p className="mb-3 text-danger">{error}</p>}
+      {error && <p className="mb-3 text-danger [overflow-wrap:anywhere] select-text">{error}</p>}
     </Dialog>
   );
 }

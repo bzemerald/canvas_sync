@@ -2,12 +2,15 @@
 // the module loads, like other tables of words: the language is settled by then.)
 import { t } from "./i18n";
 
-const SAYINGS: [RegExp, string][] = [
-  // (First: it quotes the system's error, which may say anything.)
+const SAYINGS: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
+  // (First: they quote paths and the system's error, which may say anything.)
+  [/^partly moved\n(.*)\n(.*)$/, (m) => t("没能移动同步文件夹，有些文件也没能移回去。它们现在在 {dst}，把它们移回 {src} 后再试一次。", { src: m[1], dst: m[2] })],
   [/could not move/, t("没能移动同步文件夹，文件还在原来的位置。可能有文件正被其他应用使用，关掉后再试一次。")],
   [/move into itself/, t("不能移到现在的同步文件夹里面。请选别的文件夹。")],
   [/move target not empty/, t("这个文件夹不是空的。请选一个空文件夹。")],
   [/not enough room/, t("那里的磁盘空间不够放下同步文件夹。")],
+  [/links not supported there/, t("那个磁盘（比如 exFAT 或 FAT 格式的 U 盘、移动硬盘）放不了同步文件夹里的链接。请选别的位置。")],
+  [/the app is busy/, t("应用还在忙别的事，过一会儿再试。")],
   [/moving the sync folder/, t("正在移动同步文件夹，等移动完成再试")],
   [/does not exist/, t("找不到这个文件了（可能已经在别处删除或移动）")],
   [/can't be changed/, t("这个不能改")],
@@ -32,8 +35,11 @@ const SAYINGS: [RegExp, string][] = [
 ];
 
 export function friendly(message: string): string {
-  const said = SAYINGS.find(([re]) => re.test(message));
-  return said ? said[1] : message;
+  for (const [re, saying] of SAYINGS) {
+    const m = message.match(re);
+    if (m) return typeof saying === "string" ? saying : saying(m);
+  }
+  return message;
 }
 
 const ED_SAYS: Record<string, string> = {
