@@ -12,7 +12,7 @@ import {
 } from "./components/Found";
 import { Marked } from "./components/Marked";
 import {
-  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, NewTab, VIEW_LISTS, useOverview,
+  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, NewTab, type Spare, VIEW_LISTS, useOverview,
 } from "./components/CourseView";
 import { CourseOverview, LinksPage, NoteEditor } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
@@ -45,7 +45,7 @@ import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
 import { termRank } from "./lib/terms";
 import {
-  type Shown, type Thing, type ThingOf, type ViewName, changed, folderTitle, fromEd, isView, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingOf, thingOfHit,
+  type Shown, type Thing, type ThingOf, type ViewName, changed, folderTitle, fromEd, isView, ofCourse, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingNamed, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
 import { ownFrame, useTrafficLights } from "./lib/window";
@@ -317,6 +317,29 @@ export function MainWindow() {
   }, [cv]);
   const course = cv ? courseById(cv.id) : null;
   const tab = cv?.tab ?? null;
+  // The tab at the end of each course's tabs (this run of the app): the new tab, or something shown
+  // that isn't one of its tabs. Showing one puts it there, in place of what was; going to another
+  // tab, it stays, until closed.
+  const [spares, setSpares] = useState<ReadonlyMap<number, Spare>>(new Map());
+  const spareKey = (s: Spare | null | undefined) => (!s ? "" : s === "new" ? s : thingKey(s));
+  const setSpare = (id: number, s: Spare | null) =>
+    setSpares((m) => {
+      if (spareKey(m.get(id)) === spareKey(s)) return m;
+      const next = new Map(m);
+      if (s) next.set(id, s);
+      else next.delete(id);
+      return next;
+    });
+  const lastTab = useRef(new Map<number, Thing>()); // the tab you were last on, in each course
+  const settled = !!cv && !!courseLayout && layout?.id === cv.id; // (see settle)
+  const shownSpare: Spare | null = !cv ? null : cv.blank ? "new" : !settled || listed(tabs, cv.tab) ? null : cv.tab;
+  const kept = cv ? spares.get(cv.id) : undefined;
+  const spare = shownSpare ?? (kept === "new" || (kept && !listed(tabs, kept)) ? kept : null);
+  useEffect(() => {
+    if (!cv || !settled) return;
+    if (shownSpare) setSpare(cv.id, shownSpare);
+    else lastTab.current.set(cv.id, cv.tab);
+  }, [cv?.id, settled, spareKey(shownSpare), spareKey(kept), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;
   const filesTab = view.kind === "browse" || (!!tab && !cv?.blank && (isView(tab, "files") || tab.type === "folder"));
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
@@ -348,12 +371,28 @@ export function MainWindow() {
       .catch(fail(t("打开失败")))
       .finally(() => setOpening((k) => (k === key ? null : k)));
   };
+  /** Going somewhere in the course from its new tab (picking it there, opening it while the new
+   * tab shows): the new tab turns into it, a tab for now, or none (it has a tab). */
+  const intoNewTab = (x: Thing) => {
+    if (cv?.blank && course && !opensElsewhere(x) && ofCourse(x, course)) setSpare(cv.id, null);
+  };
+  /** The tab at the end, closed; showing, back to the tab you were on before it. */
+  const closeSpare = () => {
+    if (!cv) return;
+    setSpare(cv.id, null);
+    if (cv.blank) replaceView({ ...cv, blank: false });
+    else if (shownSpare) {
+      const before = lastTab.current.get(cv.id);
+      replaceView(toTab(cv, before && listed(tabs, before) ? before : firstTab(tabs, cv.id)));
+    }
+  };
   /** Anything, wherever it opens: a file in its app; a tool, a link, the course on Canvas in the
    * browser; a search as a smart folder; the rest in its course's page. Noted, with what had been
    * typed in search (`query`): what you open most and lately comes first there. `found`: what to
    * mark where it shows. */
   const open = (x: Thing, query = "", found?: string) => {
     api.noteOpened(thingKey(x), query);
+    intoNewTab(x);
     if (x.type === "course") {
       const c = courseById(x.course);
       if (c) openCourse(c, found);
@@ -495,7 +534,10 @@ export function MainWindow() {
     }
     const path = f.type === "hit" ? f.hit.path : f.entry.type === "file" ? f.entry.path : null;
     const found = markPattern(reading, vocab, f.hit?.snippet);
-    if (how === "reveal" && path) return goPath(parentOf(path), path, found);
+    if (how === "reveal" && path) {
+      intoNewTab({ type: "folder", path: parentOf(path) });
+      return goPath(parentOf(path), path, found);
+    }
     if (f.type === "hit") {
       if (how === "canvas") return void api.openCanvas(f.hit);
       const x = thingOfHit(f.hit);
@@ -506,7 +548,7 @@ export function MainWindow() {
       if (url) void api.openUrl(url).then(() => api.noteOpened(f.key, query));
       return;
     }
-    open(thingOf(f.entry), query, found);
+    open(thingNamed(f.entry), query, found);
   };
   /** Whether it started: not if signed out, or if one is already running (that one is shown). */
   const startSync = async (scope: Scope, label: string): Promise<boolean> => {
@@ -997,7 +1039,14 @@ export function MainWindow() {
       return (
         <NewTab course={course} overview={overview} entries={tabs} typing={searching} found={foundHere}
           box={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} completion={query ? completing : null} autoFocus />}
-          onOpen={(next, x) => arrangeLayout("tabs", next, x)} onShow={(x) => replaceView(toTab(cv, x))} />
+          onOpen={(next, x) => {
+            intoNewTab(x);
+            arrangeLayout("tabs", next, x);
+          }}
+          onShow={(x) => {
+            intoNewTab(x);
+            replaceView(toTab(cv, x));
+          }} />
       );
     }
     if (isView(tab, "overview")) {
@@ -1260,12 +1309,13 @@ export function MainWindow() {
             course={course}
             tab={tab}
             blank={!!cv.blank}
+            spare={spare}
             overview={overview}
             entries={courseLayout ? tabs : null}
             onArrange={(next) => arrangeLayout("tabs", next)}
             onTab={(x) => go(toTab(cv, x))}
             onNewTab={() => go({ ...cv, blank: true, found: undefined, select: undefined })}
-            onCloseBlank={() => replaceView({ ...cv, blank: false })}
+            onCloseSpare={closeSpare}
             onSay={say}
           />
         )}

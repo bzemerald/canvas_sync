@@ -76,31 +76,36 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }
 
-/** The tabs showing: what's not hidden and, of the course's own views, has something in it; and
- * `current`, whatever it is. */
+/** The tabs showing: what's not hidden and, of the course's own views, has something in it (or
+ * is `current`). */
 function tabsShown(entries: Shown[], course: Course, overview: Overview | null, current?: Thing | null): Shown[] {
   const has = viewsWithContent(overview);
-  return entries.filter((e) => (current && same(e, current)) || (!e.hidden && (!ownIn("tabs", e, course.id) || has.has((e as { view: ViewName }).view))));
+  return entries.filter((e) => !e.hidden && ((current && same(e, current)) || !ownIn("tabs", e, course.id) || has.has((e as { view: ViewName }).view)));
 }
+
+/** The one place at the end of a course's tabs: a new tab, or something shown that isn't one of
+ * its tabs (a temporary tab). It stays while you go to other tabs, until closed. */
+export type Spare = Thing | "new";
 
 /** A course's tabs: its views, and whatever of the course you put there (a page, a folder, a
  * module, a tool, a note, a search; or a web link). Drag them into your order; drag something of
  * the course onto them and it's a tab where you let go; drag one you put there off, and it's
  * gone. Right-click to rename any of them, hide the course's own, take away what you put there.
  * Views with nothing in them aren't shown; 概览 and 文件 always are, unless you hid them.
- * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end.
- * "+" opens a new tab (`blank`, and `NewTab`). */
+ * At the end, one more (`spare`), with its ×: a new tab ("+", `blank`, and `NewTab`), or, in its
+ * place, something shown that isn't a tab (a page, when 页面 is hidden). "+" only when it's empty. */
 export function CourseTabs({
-  course, tab, blank, overview, entries: loaded, onTab, onNewTab, onCloseBlank, onArrange, onSay,
+  course, tab, blank, spare, overview, entries: loaded, onTab, onNewTab, onCloseSpare, onArrange, onSay,
 }: {
   course: Course;
   tab: Thing; // what's showing (or was, before the new tab)
   blank: boolean; // the new tab is showing
+  spare: Spare | null;
   overview: Overview | null;
   entries: Shown[] | null; // every tab, in order, hidden ones too (null: not loaded yet)
   onTab: (t: Thing) => void;
-  onNewTab: () => void;
-  onCloseBlank: () => void;
+  onNewTab: () => void; // (or to the one there)
+  onCloseSpare: () => void;
   onArrange: (entries: Shown[]) => void; // for this course
   onSay: (message: string, action?: { label: string; run: () => void }) => void;
 }) {
@@ -112,33 +117,37 @@ export function CourseTabs({
   const fresh: Partial<Record<ViewName, number>> = n ?? {};
   const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
   const visible = tabsShown(entries, course, overview, blank ? null : tab);
-  const extra = !loaded || blank || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
+  const extra = !loaded || !spare || spare === "new" ? null : entries.find((e) => same(e, spare)) ?? (spare as Shown); // (as named there, if hidden)
   const name = (e: Shown) => thingName(e, things.courses, "tab");
   const current = (e: Thing) => !blank && same(tab, e);
 
-  // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them. Going round, not to one that opens
-  // somewhere else (a tool, a link).
+  // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them (9 and round: the one at the end
+  // too). Going round, not to one that opens somewhere else (a tool, a link). ⌘T: a new tab, if
+  // there's room (or to the one there).
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const command = tabCommand(ev);
       if (command === "new") {
         ev.preventDefault();
-        if (!blank) onNewTab();
+        if (!blank && (!spare || spare === "new")) onNewTab();
         return;
       }
-      if (command === null || !visible.length) return;
-      let next: Shown | undefined;
-      if (typeof command === "number") next = command === 9 ? visible.at(-1) : visible[command - 1];
+      if (command === null || !loaded) return;
+      const stops: (Shown | "new")[] = [...visible, ...(spare === "new" ? ["new" as const] : extra ? [extra] : [])];
+      const on = (s: Shown | "new") => (s === "new" ? blank : current(s));
+      let next: Shown | "new" | undefined;
+      if (typeof command === "number") next = command === 9 ? stops.at(-1) : visible[command - 1];
       else {
-        const round = visible.filter((e) => current(e) || !opensElsewhere(e));
-        const i = round.findIndex(current);
+        const round = stops.filter((s) => on(s) || s === "new" || !opensElsewhere(s));
+        const i = round.findIndex(on);
         const step = command === "next" ? 1 : -1;
         next = i < 0 ? round.at(step > 0 ? 0 : -1) : round[(i + step + round.length) % round.length];
       }
       if (!next) return;
       ev.preventDefault();
-      if (current(next)) return;
-      if (opensElsewhere(next)) things.open(next);
+      if (on(next)) return;
+      if (next === "new") onNewTab();
+      else if (opensElsewhere(next)) things.open(next);
       else onTab(next);
     };
     window.addEventListener("keydown", onKey);
@@ -180,7 +189,7 @@ export function CourseTabs({
   const menu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? things.markRead(e, fresh[e.view]) : things.ways(e),
     e === extra
-      ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
+      ? [{ label: t("加为标签"), onSelect: () => onArrange(putAt(entries, { ...e, hidden: false }, slotIndex(entries, visible, visible.length))) }]
       : [
           { label: t("重命名"), onSelect: () => setRenaming(e) },
           ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
@@ -191,10 +200,10 @@ export function CourseTabs({
     [pinItem(things, e)],
   );
 
-  const button = (e: Shown, props: object, i: number | null) => same(e, renaming) ? (
+  const button = (e: Shown, props: object) => same(e, renaming) ? (
     <div
       key={thingKey(e)}
-      data-tab={i === null ? undefined : ""}
+      data-tab=""
       {...props}
       onContextMenu={(ev) => ev.stopPropagation()} // (the input's own: paste)
       className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${current(e) ? "border-accent" : "border-transparent"}`}
@@ -213,7 +222,7 @@ export function CourseTabs({
   ) : (
     <button
       key={thingKey(e)}
-      data-tab={i === null ? undefined : ""}
+      data-tab=""
       {...props}
       onClick={() => (opensElsewhere(e) ? things.open(e) : onTab(e))}
       onContextMenu={(ev) => {
@@ -222,14 +231,33 @@ export function CourseTabs({
         things.menu(menu(e), ev.clientX, ev.clientY);
       }}
       aria-current={current(e) ? "page" : undefined}
-      title={opensHint(e) ?? (!isOwn(e) && i !== null ? t("拖离标签栏可以移除") : undefined)}
-      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${current(e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"} ${e.hidden || e === extra ? "italic" : ""}`}
+      title={opensHint(e) ?? (!isOwn(e) ? t("拖离标签栏可以移除") : undefined)}
+      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${current(e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
     >
+      {inside(e)}
+    </button>
+  );
+  const inside = (e: Shown) => (
+    <>
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <span className="max-w-48 truncate">{name(e)}</span>
       {isOwn(e) && !!fresh[e.view] && <Count n={fresh[e.view]!} label={t("{n} 个新的", { n: fresh[e.view]! })} />}
       {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
-    </button>
+    </>
+  );
+
+  /** The tab at the end: the new tab, or one for now (in italics); either with its ×. */
+  const spareTab = (on: boolean, label: React.ReactNode, show: () => void, close: string, onMenu?: (ev: React.MouseEvent) => void) => (
+    <div className={`-mb-px flex shrink-0 items-center border-b-2 pr-1.5 ${on ? "border-accent" : "border-transparent"}`}>
+      <button onClick={show} onContextMenu={onMenu} aria-current={on ? "page" : undefined}
+        className={`flex items-center gap-1.5 py-2 pr-1.5 pl-3 text-sm whitespace-nowrap ${on ? "font-medium text-fg" : "text-muted hover:text-fg"}`}>
+        {label}
+      </button>
+      <button onClick={onCloseSpare} aria-label={close} title={close}
+        className="grid size-4 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
+        <X className="size-3" />
+      </button>
+    </div>
   );
 
   return (
@@ -248,18 +276,15 @@ export function CourseTabs({
       aria-label={t("课程")}
       onContextMenu={(e) => e.preventDefault()} // (a tab has its own menu; the bar, none)
     >
-      {visible.map((e, i) => button(e, drag.item(i), i))}
-      {extra && button(extra, {}, null)}
-      {blank && (
-        <div aria-current="page" className="-mb-px flex shrink-0 items-center gap-1.5 border-b-2 border-accent py-2 pr-1.5 pl-3 text-sm font-medium whitespace-nowrap text-fg">
-          {t("新标签页")}
-          <button onClick={onCloseBlank} aria-label={t("关闭新标签页")} title={t("关闭新标签页")}
-            className="grid size-4 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
-            <X className="size-3" />
-          </button>
-        </div>
-      )}
-      {loaded && !blank && (
+      {visible.map((e, i) => button(e, drag.item(i)))}
+      {loaded && spare === "new" && spareTab(blank, t("新标签页"), () => !blank && onNewTab(), t("关闭新标签页"))}
+      {extra && spareTab(current(extra), <span className="flex items-center gap-1.5 italic">{inside(extra)}</span>, () => !current(extra) && onTab(extra), t("关闭"),
+        (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          things.menu(menu(extra), ev.clientX, ev.clientY);
+        })}
+      {loaded && !spare && (
         <button onClick={onNewTab} aria-label={t("新标签页")} title={`${t("新标签页")} (${shortcut.newTab})`}
           className="ml-0.5 grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
           <Plus className="size-4" />

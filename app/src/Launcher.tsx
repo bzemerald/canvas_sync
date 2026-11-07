@@ -20,7 +20,7 @@ import { lang, t } from "./lib/i18n";
 import { type Example, examples, seeded } from "./lib/examples";
 import { markPattern } from "./lib/marks";
 import { termRank } from "./lib/terms";
-import { type Thing, isView, thingKey, thingOf, thingOfHit } from "./lib/things";
+import { type Thing, isView, thingKey, thingNamed, thingOfHit } from "./lib/things";
 
 const mod = isMac ? "⌘" : "Ctrl";
 const NO_COURSES: api.Course[] = [];
@@ -136,7 +136,7 @@ export function Launcher() {
     else if (e.type === "link") await api.openExternal(e.url);
     else if (e.type === "tool") await api.launch(e.course, { tool_id: e.tool });
     else if (isView(e, "canvas")) await api.openUrl(`/courses/${e.course}`);
-    else return there(thingOf(e), foundIn(f.hit));
+    else return there(thingNamed(e), foundIn(f.hit));
     await done(f.key);
   };
 

@@ -47,6 +47,9 @@ const FIELDS: { [T in Thing["type"]]: (keyof ThingOf<T>)[] } = {
   view: ["course", "view"],
 };
 
+/** Just the thing, and what it's called by itself (to name a tab for it, say). */
+export const thingNamed = (e: Shown): Shown => ({ ...thingOf(e), ...(e.name ? { name: e.name } : {}) });
+
 /** Just the thing (an entry without what the place says about it). */
 export function thingOf(e: Thing): Thing {
   const out: Record<string, unknown> = { type: e.type };
@@ -114,11 +117,11 @@ export function ownIn(place: "tabs" | "overview" | "links", t: Thing, course: nu
 export const opensElsewhere = (t: Thing) =>
   t.type === "file" || t.type === "tool" || t.type === "link" || t.type === "course" || isView(t, "canvas");
 
-/** A search result, as a thing: the file, the announcement / assignment / page, the syllabus. */
-export function thingOfHit(h: Hit): Thing | null {
+/** A search result, as a thing: the file, the announcement / assignment / page (named), the syllabus. */
+export function thingOfHit(h: Hit): Shown | null {
   if (h.path) return { type: "file", path: h.path };
   if (h.kind === "syllabus") return view(h.course_id, "syllabus");
-  if (h.doc_id && h.kind !== "file") return { type: "doc", course: h.course_id, kind: h.kind, id: h.doc_id };
+  if (h.doc_id && h.kind !== "file") return { type: "doc", course: h.course_id, kind: h.kind, id: h.doc_id, name: h.title };
   return null;
 }
 
