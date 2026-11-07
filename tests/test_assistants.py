@@ -56,6 +56,42 @@ def test_a_file_it_cant_read_is_left_alone(tmp_path: Path):
     assert "// my servers" in desktop.path.read_text()
 
 
+def test_preview_says_what_would_change_and_changes_nothing(tmp_path: Path):
+    backups = tmp_path / "backups"
+    desktop, codex = app("claude-desktop"), app("codex")
+
+    got = assistants.preview(desktop, CMD, ARGS, backups)  # (no file yet)
+    assert (got["action"], got["exists"], got["backup"], got["removed"]) == ("add", False, None, None)
+    assert got["path"] == str(desktop.path) and got["key"] == "mcpServers"
+    assert not desktop.path.exists() and not backups.exists()
+
+    desktop.path.parent.mkdir(parents=True)
+    desktop.path.write_text(json.dumps({"mcpServers": {"github": {"env": {"TOKEN": "secret"}}}}))
+    before = desktop.path.read_text()
+    got = assistants.preview(desktop, CMD, ARGS, backups)
+    assert got["exists"] and got["backup"] == str(backups / "claude-desktop.json")
+    assert "secret" not in str(got)  # (others' entries aren't shown)
+    assert desktop.path.read_text() == before and not backups.exists()
+
+    # What it shows is what's written.
+    assistants.add(desktop, CMD, ARGS, backups)
+    assert json.loads("{" + got["added"] + "}")[assistants.NAME] == assistants.entry(desktop)
+    assert got["added"].startswith('"canvas-sync": {')
+    assert (backups / "claude-desktop.json").read_text() == before  # (and where it said)
+    assistants.add(codex, CMD, ARGS, backups)
+    shown = assistants.preview(codex, CMD, ARGS, backups)["added"]
+    assert shown.startswith("[mcp_servers.canvas-sync]") and shown in codex.path.read_text()
+
+    got = assistants.preview(desktop, "/elsewhere/canvas", ARGS, backups)
+    assert got["action"] == "replace" and CMD in got["removed"] and "/elsewhere/canvas" in got["added"]
+    got = assistants.preview(codex, CMD, ARGS, backups, remove=True)
+    assert got["action"] == "remove" and got["removed"] == shown and got["added"] is None
+
+    desktop.path.write_text("// not JSON")
+    with pytest.raises(assistants.AssistantError):
+        assistants.preview(desktop, CMD, ARGS, backups)
+
+
 def test_a_moved_app_is_found_again(tmp_path: Path):
     here = tmp_path / "now" / "canvas"
     here.parent.mkdir()
@@ -77,9 +113,16 @@ def test_api(no_real_ai_apps: Path, root):
         got = {a["id"]: a for a in api.get("/api/assistants").json()}
         assert set(got) == {"claude-desktop", "codex"}
         assert got["codex"]["installed"] and not got["codex"]["added"] and not got["claude-desktop"]["installed"]
+        shown = api.get("/api/assistants/codex/preview").json()
+        assert shown["action"] == "add" and shown["path"] == str(app("codex").path)
+        assert api.get("/api/assistants/cursor/preview").status_code == 404
         got = {a["id"]: a for a in api.post("/api/assistants/codex").json()}
         assert got["codex"]["added"] and got["codex"]["current"]
         assert assistants.entry(app("codex")) == {"command": canvas_command(), "args": mcp_args()}
         got = {a["id"]: a for a in api.delete("/api/assistants/codex").json()}
         assert not got["codex"]["added"]
         assert api.post("/api/assistants/cursor").status_code == 404
+        desktop = app("claude-desktop")
+        desktop.path.parent.mkdir(parents=True)
+        desktop.path.write_text("// not JSON")
+        assert api.get("/api/assistants/claude-desktop/preview").status_code == 400

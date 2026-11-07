@@ -8,6 +8,7 @@ const SAYINGS: [RegExp, string][] = [
   [/already exists/, t("这里已经有同名的文件夹了")],
   [/empty or start with a dot/, t("名称不能为空，也不能以“.”开头")],
   [/wait for the sync|already running/, t("正在同步，等同步完成再试")],
+  [/add it by hand/, t("读不懂这个应用的设置文件，所以没有改动它。可以用下面的“手动添加到其他应用”。")],
   [/can't be renamed/, t("这个文件夹不能重命名")],
   // signing in
   [/token rejected/, t("令牌无效或已经过期。请在 Canvas 上重新生成一个。")],

@@ -428,18 +428,19 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
   const [apps, setApps] = useState<api.Assistant[] | null>(null);
   const [how, setHow] = useState<{ command: string; args: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [asking, setAsking] = useState<{ app: api.Assistant; preview: api.AssistantPreview } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [added, setAdded] = useState<Set<string>>(new Set()); // just now: say when it's seen
   useEffect(() => {
     void api.assistants().then(setApps, () => setApps([]));
     void api.mcpCommand().then(setHow, () => {});
   }, []);
-  const change = async (a: api.Assistant, add: boolean) => {
+  // Says what would change first (a file it can't read: says so on its row, and nothing opens).
+  const ask = async (a: api.Assistant, add: boolean) => {
     setBusy(a.id);
     setErrors(({ [a.id]: _, ...rest }) => rest);
     try {
-      setApps(await (add ? api.addAssistant(a.id) : api.removeAssistant(a.id)));
-      setAdded((s) => (add ? new Set(s).add(a.id) : new Set([...s].filter((x) => x !== a.id))));
+      setAsking({ app: a, preview: await api.assistantPreview(a.id, !add) });
     } catch (e) {
       setErrors((x) => ({ ...x, [a.id]: friendly((e as Error).message) }));
     } finally {
@@ -449,13 +450,12 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
   const installed = (apps ?? []).filter((a) => a.installed || a.added);
   const servers = how && { "canvas-sync": { command: how.command, args: how.args } };
   return (
-    <Dialog title={t("连接到 AI 桌面软件")} onClose={onClose} width="max-w-xl"
+    <>
+    {/* (Escape reaches both dialogs: only the one on top closes.) */}
+    <Dialog title={t("连接到 AI 桌面软件")} onClose={asking ? stay : onClose} width="max-w-xl"
       footer={<Button primary onClick={onClose}>{t("完成")}</Button>}>
-      <p className="mb-4 text-fg-soft">
-        {t("它只读这台电脑上已同步的内容：不连 Canvas 和 Ed，不会替你提交或标成已读，也拿不到你的令牌。")}
-      </p>
       {apps && (
-        <div className="mb-3 divide-y divide-line rounded-lg border border-line">
+        <div className="mb-4 divide-y divide-line rounded-lg border border-line">
           {installed.length === 0 && <p className="px-3 py-2.5 text-muted">{t("这台电脑上没找到支持的 AI 应用。")}</p>}
           {installed.map((a) => {
             const note = errors[a.id]
@@ -467,21 +467,20 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5">
                     {a.name}
-                    {a.added && <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已添加")} />}
+                    {a.added && <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已连接@@assistant")} />}
                   </p>
                   {note && <p className={`mt-0.5 text-xs ${errors[a.id] ? "text-danger" : "text-muted"}`}>{note}</p>}
                 </div>
                 {a.added && a.current
-                  ? <Button disabled={busy !== null} onClick={() => void change(a, false)}>{t("移除")}</Button>
-                  : <Button disabled={busy !== null} onClick={() => void change(a, true)}>
-                      {busy === a.id ? t("正在添加…") : a.added ? t("改用这一份") : t("添加")}
+                  ? <Button disabled={busy !== null} onClick={() => void ask(a, false)}>{t("断开@@assistant")}</Button>
+                  : <Button disabled={busy !== null} onClick={() => void ask(a, true)}>
+                      {a.added ? t("改用这一份") : t("连接@@assistant")}
                     </Button>}
               </div>
             );
           })}
         </div>
       )}
-      <p className="mb-4 text-xs text-muted">{t("ChatGPT 只能在开启了 Work / Codex 模式的对话里连接，普通对话用不了。")}</p>
       {how && servers && (
         <details className="mb-3">
           <summary className="cursor-default text-xs text-muted select-none hover:text-fg">{t("手动添加到其他应用")}</summary>
@@ -492,6 +491,96 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
           </div>
         </details>
       )}
+    </Dialog>
+    {asking && (
+      <AssistantChangeDialog app={asking.app} preview={asking.preview} onClose={() => setAsking(null)}
+        onDone={(now) => {
+          const id = asking.app.id;
+          setApps(now);
+          setAdded((s) => (asking.preview.action !== "remove" ? new Set(s).add(id) : new Set([...s].filter((x) => x !== id))));
+          setAsking(null);
+        }} />
+    )}
+    </>
+  );
+}
+
+const stay = () => {};
+
+/** Before another app's config file is changed: which file, and what in it. */
+function AssistantChangeDialog({ app, preview, onClose, onDone }: {
+  app: api.Assistant;
+  preview: api.AssistantPreview;
+  onClose: () => void;
+  onDone: (apps: api.Assistant[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { action, key } = preview;
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await (action === "remove" ? api.removeAssistant(app.id) : api.addAssistant(app.id)));
+    } catch (e) {
+      setError(friendly((e as Error).message));
+      setBusy(false);
+    }
+  };
+  const lines = (text: string | null, mark: string, color: string) => text?.split("\n").map((line, i) => (
+    <div key={`${mark}${i}`} className={color}>{mark} {line}</div>
+  ));
+  return (
+    <Dialog
+      title={action === "add" ? t("让 {app} 读取你的课程？", { app: app.name })
+        : action === "replace" ? t("让 {app} 改用这一份 Canvas Sync？", { app: app.name })
+        : t("不再让 {app} 读取你的课程？", { app: app.name })}
+      onClose={busy ? stay : onClose}
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>{t("取消")}</Button>
+          <Button primary autoFocus disabled={busy} onClick={() => void go()}>
+            {action === "add" ? t("连接@@assistant") : action === "replace" ? t("改用这一份") : t("断开@@assistant")}
+          </Button>
+        </>
+      }
+    >
+      <div className="mb-3 space-y-2 text-fg-soft">
+        <p>
+          {action === "add" ? t("{app} 将能搜索和阅读你已同步的课程，但不能改动任何内容。", { app: app.name })
+            : action === "replace" ? t("{app} 现在连接的是另一份 Canvas Sync（比如旧版本），之后会改为连接你正在用的这一份。", { app: app.name })
+            : t("{app} 将不能再读取你的课程。你的课程和文件不受影响。", { app: app.name })}
+        </p>
+        <p>
+          {action === "remove" ? t("Canvas Sync 会从 {app} 的设置文件里删掉连接信息。你的其他设置不会变，修改前也会先备份原文件。", { app: app.name })
+            : !preview.exists ? t("为此，Canvas Sync 会为 {app} 新建一个设置文件，里面只有连接所需的信息。", { app: app.name })
+            : action === "replace" ? t("为此，Canvas Sync 会修改 {app} 的设置文件，只更新连接信息。你的其他设置不会变，修改前也会先备份原文件。", { app: app.name })
+            : t("为此，Canvas Sync 会修改 {app} 的设置文件，加上连接所需的信息。你的其他设置不会变，修改前也会先备份原文件。", { app: app.name })}
+        </p>
+      </div>
+      <details className="mb-3">
+        <summary className="cursor-default text-xs text-muted select-none hover:text-fg">{t("查看具体改动")}</summary>
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-medium">{preview.exists ? t("会修改的配置文件：") : t("会新建的配置文件：")}</p>
+          <pre className="mb-3 rounded-md border border-line bg-chip px-3 py-2 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap select-text">
+            {preview.path}
+          </pre>
+          <p className="mb-1.5 text-xs font-medium">
+            {action === "add" ? t("在 {key} 里加入这一项：", { key })
+              : action === "replace" ? t("替换 {key} 里的这一项：", { key })
+              : t("从 {key} 里删去这一项：", { key })}
+          </p>
+          <pre className="mb-3 rounded-md border border-line bg-chip px-3 py-2 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap select-text">
+            {lines(preview.removed, "-", "text-danger")}
+            {lines(preview.added, "+", "text-ok")}
+          </pre>
+          <div className="space-y-1 text-xs text-muted [overflow-wrap:anywhere] select-text">
+            {preview.backup && <p>{t("原文件会备份到 {path}（只保留最近一份）。", { path: preview.backup })}</p>}
+            {action !== "remove" && <p>{t("如果以后 Canvas Sync 换了位置，它会自动更新这一项。")}</p>}
+          </div>
+        </div>
+      </details>
+      {error && <p className="mb-2 text-xs text-danger">{error}</p>}
     </Dialog>
   );
 }

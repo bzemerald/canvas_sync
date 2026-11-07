@@ -78,16 +78,35 @@ def entry(app: App) -> dict[str, Any] | None:
     return dict(found) if isinstance(found, dict) else None
 
 
+def _dumps(app: App, data: dict[str, Any]) -> str:
+    return tomlkit.dumps(data) if app.path.suffix == ".toml" else json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def _backup(app: App, backups: Path) -> Path:
+    """Where the file is kept before a change (the last one only)."""
+    return backups / f"{app.id}{app.path.suffix}"
+
+
 def _write(app: App, data: dict[str, Any], backups: Path) -> None:
     """The file as `data`, whole or not at all; what it was, kept in `backups` first."""
     if app.path.exists():
         backups.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(app.path, backups / f"{app.id}{app.path.suffix}")
+        shutil.copy2(app.path, _backup(app, backups))
     app.path.parent.mkdir(parents=True, exist_ok=True)
-    text = tomlkit.dumps(data) if app.path.suffix == ".toml" else json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     tmp = app.path.with_name(app.path.name + ".canvas-sync.tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(_dumps(app, data), encoding="utf-8")
     os.replace(tmp, app.path)
+
+
+def _snippet(app: App, e: dict[str, Any]) -> str:
+    """Our entry as the file has it: the table, in TOML; in JSON, the key and its value."""
+    if app.path.suffix == ".toml":
+        doc = tomlkit.document()
+        doc[app.key] = tomlkit.table()
+        doc[app.key][NAME] = e
+        return _dumps(app, doc).strip()
+    lines = _dumps(app, {NAME: e}).strip().split("\n")[1:-1]
+    return "\n".join(line[2:] for line in lines)
 
 
 def add(app: App, command: str, args: list[str], backups: Path) -> None:
@@ -107,6 +126,22 @@ def remove(app: App, backups: Path) -> None:
     if not data[app.key]:  # (nothing else there: as before it was added)
         del data[app.key]
     _write(app, data, backups)
+
+
+def preview(app: App, command: str, args: list[str], backups: Path, remove: bool = False) -> dict[str, Any]:
+    """What `add` or `remove` would do to the file; nothing is written. Only our entry is shown:
+    others in the file may hold secrets."""
+    _read(app)  # (one it can't read says so here, as `add` would)
+    old = entry(app)
+    return {
+        "path": str(app.path),
+        "exists": app.path.exists(),
+        "key": app.key,
+        "action": "remove" if remove else "replace" if old is not None else "add",
+        "removed": _snippet(app, old) if old is not None else None,
+        "added": None if remove else _snippet(app, {"command": command, "args": args}),
+        "backup": str(_backup(app, backups)) if app.path.exists() else None,
+    }
 
 
 def state(command: str, home: Path | None = None) -> list[dict[str, Any]]:

@@ -545,7 +545,19 @@ export interface Assistant {
   current: boolean;
   restart: boolean;
 }
+/** What adding or removing would change in the app's config file: our entry, as the file has it. */
+export interface AssistantPreview {
+  path: string;
+  exists: boolean;
+  key: string; // where servers are in the file
+  action: "add" | "replace" | "remove";
+  removed: string | null;
+  added: string | null;
+  backup: string | null; // where the file is kept first
+}
 export const assistants = () => api<Assistant[]>("/assistants");
+export const assistantPreview = (id: string, remove: boolean) =>
+  api<AssistantPreview>(`/assistants/${id}/preview?remove=${remove}`);
 export const addAssistant = (id: string) => api<Assistant[]>(`/assistants/${id}`, { method: "POST" });
 export const removeAssistant = (id: string) => api<Assistant[]>(`/assistants/${id}`, { method: "DELETE" });
 export const meaning = () => api<MeaningState>("/meaning");

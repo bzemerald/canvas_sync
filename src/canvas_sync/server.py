@@ -558,6 +558,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(404, "no such app")
         return app
 
+    @api.get("/assistants/{app_id}/preview")
+    def preview_assistant(app_id: str, remove: bool = False) -> dict[str, Any]:
+        """What adding or removing would change in the app's config file. Nothing is written."""
+        try:
+            return assistants.preview(assistant(app_id), canvas_command(), mcp_args(), prefs_path.parent / "backups", remove)
+        except (assistants.AssistantError, OSError) as err:
+            raise HTTPException(400, str(err))
+
     @api.post("/assistants/{app_id}")
     def add_assistant(app_id: str) -> list[dict[str, Any]]:
         try:
