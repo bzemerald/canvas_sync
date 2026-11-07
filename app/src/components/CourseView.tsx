@@ -267,8 +267,8 @@ export function CourseTabs({
           </button>
         </div>
       )}
-      {loaded && (
-        <button onClick={() => !blank && onNewTab()} aria-label={t("新标签页")} title={`${t("新标签页")} (${shortcut.newTab})`}
+      {loaded && !blank && (
+        <button onClick={onNewTab} aria-label={t("新标签页")} title={`${t("新标签页")} (${shortcut.newTab})`}
           className="ml-0.5 grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
           <Plus className="size-4" />
         </button>
