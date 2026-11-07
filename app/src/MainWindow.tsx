@@ -1092,7 +1092,7 @@ export function MainWindow() {
     );
   };
   const foundHere = (
-    <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu} onCompletion={setCompleting}
+    <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu} onCompletion={setCompleting} hover={!!cv?.blank}
       note={scopeNote && (
         <span className="flex items-center gap-2">
           {scopeNote.text}

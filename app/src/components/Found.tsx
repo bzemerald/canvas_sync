@@ -307,7 +307,7 @@ export function TabKey({ className = "" }: { className?: string }) {
 
 /** What the search box finds where it is (a course, a folder: `scope`): as in the search window, under the box,
  * which stays in the header (`box`: its keys move through the list and open what's chosen). */
-export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note, onCompletion }: {
+export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen, props, note, onCompletion, hover = false }: {
   box: React.RefObject<HTMLInputElement | null>;
   query: string;
   onQuery: (q: string) => void;
@@ -318,6 +318,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   props?: (f: Found) => object;
   note?: React.ReactNode; // where it searched, and the way to search more (or less) widely
   onCompletion?: (completion: string | null) => void; // what ⇥ would make of the query (for the box to show)
+  hover?: boolean; // the pointer only shows where it is; what's chosen is the keys'
 }) {
   const { catalog, vocab, usage, names, courses } = finder;
   const { reading, results, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions, scope);
@@ -347,7 +348,8 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
     return () => input.removeEventListener("keydown", pass);
   }, [box]);
   return (
-    <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
+    <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} disablePointerSelection={hover}
+      className={`flex min-h-0 flex-1 flex-col ${hover ? "[&_[cmdk-item]:hover]:bg-chip" : ""}`}
       onKeyDown={(e) => moreKeys(e, () => listed.get(value), (f, how) => onOpen(f, how, reading), () => done, onQuery, ask)}>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {(note || reading.parts.length > 0) && (
