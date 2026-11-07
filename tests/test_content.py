@@ -232,6 +232,7 @@ def test_whats_new(api, course, root, monkeypatch):
     api.post("/api/open", json={"path": f"{COURSE}/Modules/01 Week 1/lec1.pdf", "reveal": True})  # only showing it
     o = api.get("/api/courses/1/overview").json()
     assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "ed": 0, "total": 3}
+    assert next(c for c in api.get("/api/courses").json() if c["id"] == 1)["new_in"] == o["new"]  # (known outside it too)
     # What can be marked read; a file that isn't new, or isn't there, changes nothing.
     new = api.get("/api/new/files").json()
     assert f"{COURSE}/Modules/01 Week 1/lec1.pdf" in new and f"{COURSE}/Files/lec2.pdf" not in new

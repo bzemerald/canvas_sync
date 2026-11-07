@@ -559,7 +559,7 @@ export function MainWindow() {
     if (x.type === "course") return item(count ?? courseById(x.course)?.new, () => api.markSeen(x.course));
     if (x.type === "view" && countsNew(x.view)) {
       const of = x.view;
-      return item(count ?? (cv?.id === x.course && overview ? overview.new[of] : courseById(x.course)?.new), () => api.markSeen(x.course, of));
+      return item(count ?? courseById(x.course)?.new_in[of], () => api.markSeen(x.course, of));
     }
     if (x.type === "folder") return item(count ?? (newFiles?.some((p) => under(p, x.path)) ? undefined : 0), () => api.markPathsSeen([], [x.path]));
     if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markPathsSeen([x.path]), t("标为已读"));

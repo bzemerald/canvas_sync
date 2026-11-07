@@ -52,6 +52,7 @@ def courses(e: Engine) -> list[dict[str, Any]]:
     out = []
     for c in e.state.courses():
         d, canonical = e.layout.course_dir(c), e.layout.canonical_course_dir(c)
+        new = news_counts(news(e.state, e.root, c.id))
         term_renamed = len(d.parts) > 1 and d.parent.name != canonical.parent.name
         out.append({
             **asdict(c), "dir": d.as_posix(),
@@ -62,7 +63,8 @@ def courses(e: Engine) -> list[dict[str, Any]]:
             "term_label": d.parent.name if term_renamed else c.term,
             # Where what's from each part of Canvas goes (files, modules, attachments).
             "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
-            "new": news_counts(news(e.state, e.root, c.id))["total"],  # things you haven't opened
+            "new": new["total"],                         # things you haven't opened
+            "new_in": new,                               # and in each view
             "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
             "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
             "excluded": c.id in e.settings.exclude,   # not synced
