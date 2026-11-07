@@ -229,9 +229,9 @@ export const en: Record<string, string | [string, string]> = {
   "取消": "Cancel",
   "移到{trash}": "Move to {trash}",
   "正在检查…": "Checking…",
-  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时在文件夹空白处右键，打开“显示改动”，再右键恢复。": [
-    "1 of them is from Canvas: syncing won't download it again. To get it back, right-click an empty spot in the folder, turn on “Show modifications”, then right-click it.",
-    "{n} of them are from Canvas: syncing won't download them again. To get them back, right-click an empty spot in the folder, turn on “Show modifications”, then right-click them.",
+  "其中 {n} 个文件来自 Canvas：之后同步时不会再下载。需要时点右上角的眼睛图标显示改动，再右键恢复。": [
+    "1 of them is from Canvas: syncing won't download it again. To get it back, click the eye icon at the top right to show modifications, then right-click it.",
+    "{n} of them are from Canvas: syncing won't download them again. To get them back, click the eye icon at the top right to show modifications, then right-click them.",
   ],
   "你自己的 {n} 个文件会在{trash}里。": ["1 file of your own goes to the {trash}.", "{n} files of your own go to the {trash}."],
   "这里面没有文件。": "There are no files in here.",

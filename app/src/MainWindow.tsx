@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
+  ChevronLeft, ChevronRight, Eye, EyeOff, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
   Settings as SettingsIcon, Sparkles,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1225,6 +1225,14 @@ export function MainWindow() {
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
                   <ToolButton title={t("列表")} pressed={mode === "list"} onClick={() => setMode("list")}><List className="size-4" /></ToolButton>
                   <ToolButton title={t("图标")} pressed={mode === "grid"} onClick={() => setMode("grid")}><LayoutGrid className="size-4" /></ToolButton>
+                </div>
+              )}
+              {filesTab && !searching && (
+                <div className="flex shrink-0 rounded-md border border-line p-0.5">
+                  <ToolButton
+                    title={shortcut.toggleChanges ? `${t("显示改动")} (${shortcut.toggleChanges})` : t("显示改动")}
+                    onClick={() => setShowChanges(!showChanges)}
+                  >{showChanges ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</ToolButton>
                 </div>
               )}
               {view.kind === "search" && folderEntry && (
