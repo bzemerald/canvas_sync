@@ -33,7 +33,7 @@ export function RenameInput({ initial, onSubmit, onCancel, hint, className = "" 
       title={hint}
       onKeyDown={(e) => {
         e.stopPropagation(); // the list's own keys (arrows, Enter, Space) don't apply while typing
-        if (e.nativeEvent.isComposing) return; // (the input method's: choosing a word)
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return; // (the input method's: choosing a word; WebKit says so only by 229)
         if (e.key === "Enter") finish(true);
         else if (e.key === "Escape") finish(false);
       }}
