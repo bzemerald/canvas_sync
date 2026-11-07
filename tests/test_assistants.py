@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from canvas_sync import assistants
 from canvas_sync.config import Account
-from canvas_sync.server import canvas_command, create_app
+from canvas_sync.server import canvas_command, create_app, mcp_args
 from fake_canvas import BASE
 
 CMD, ARGS = "/Applications/Canvas Sync.app/backend/canvas", ["mcp"]
@@ -79,7 +79,7 @@ def test_api(no_real_ai_apps: Path, root):
         assert got["codex"]["installed"] and not got["codex"]["added"] and not got["claude-desktop"]["installed"]
         got = {a["id"]: a for a in api.post("/api/assistants/codex").json()}
         assert got["codex"]["added"] and got["codex"]["current"]
-        assert assistants.entry(app("codex")) == {"command": canvas_command(), "args": ["mcp"]}
+        assert assistants.entry(app("codex")) == {"command": canvas_command(), "args": mcp_args()}
         got = {a["id"]: a for a in api.delete("/api/assistants/codex").json()}
         assert not got["codex"]["added"]
         assert api.post("/api/assistants/cursor").status_code == 404

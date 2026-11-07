@@ -246,7 +246,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         timer = asyncio.create_task(scheduler()) if background else None
         if background:  # AI apps still pointing at where this app was (moved, reinstalled)
             fix = asyncio.create_task(asyncio.to_thread(
-                assistants.repair, canvas_command(), ["mcp"], prefs_path.parent / "backups"))
+                assistants.repair, canvas_command(), mcp_args(), prefs_path.parent / "backups"))
             tasks.add(fix)
             fix.add_done_callback(tasks.discard)
         yield
@@ -534,7 +534,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.get("/mcp")
     def mcp_command() -> dict[str, Any]:
         """How an AI assistant starts `canvas mcp` (agent.py): this program, packed in the app or not."""
-        return {"command": canvas_command(), "args": ["mcp"]}
+        return {"command": canvas_command(), "args": mcp_args()}
 
     @api.get("/assistants")
     def assistants_state() -> list[dict[str, Any]]:
@@ -549,7 +549,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     @api.post("/assistants/{app_id}")
     def add_assistant(app_id: str) -> list[dict[str, Any]]:
         try:
-            assistants.add(assistant(app_id), canvas_command(), ["mcp"], prefs_path.parent / "backups")
+            assistants.add(assistant(app_id), canvas_command(), mcp_args(), prefs_path.parent / "backups")
         except (assistants.AssistantError, OSError) as err:
             raise HTTPException(400, str(err))
         return assistants.state(canvas_command())
@@ -1208,10 +1208,15 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
 def canvas_command() -> str:
     """The `canvas` program this is: the app's packed backend, or the one beside this Python (.venv)."""
-    if getattr(sys, "frozen", False):  # (PyInstaller)
+    if getattr(sys, "frozen", False) or sys.platform == "win32":  # (PyInstaller; Windows: see mcp_args)
         return sys.executable
-    here = Path(sys.executable).parent
-    return str(next((p for p in (here / "canvas", here / "canvas.exe") if p.exists()), here / "canvas"))
+    return str(Path(sys.executable).parent / "canvas")
+
+
+def mcp_args() -> list[str]:
+    """What to give canvas_command for `canvas mcp`. On Windows, a .venv's canvas.exe is unsigned, and
+    Smart App Control may block it: there it's the signed Python, running the package."""
+    return ["-m", "canvas_sync", "mcp"] if sys.platform == "win32" and not getattr(sys, "frozen", False) else ["mcp"]
 
 
 def _due(last: datetime | None, every: timedelta, now: datetime) -> bool:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import sys
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -227,4 +228,7 @@ def test_what_it_wont_do(root, course, tmp_path):
 def test_the_app_says_how_to_start_it(root):
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:
         got = api.get("/api/mcp").json()
-    assert got["args"] == ["mcp"] and Path(got["command"]).name in ("canvas", "canvas.exe")
+    if sys.platform == "win32":
+        assert got["args"] == ["-m", "canvas_sync", "mcp"] and Path(got["command"]).name == "python.exe"
+    else:
+        assert got["args"] == ["mcp"] and Path(got["command"]).name == "canvas"
