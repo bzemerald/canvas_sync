@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS items (
     stamp TEXT,                 -- everything above + content_stamp; unchanged = skip
     content_stamp TEXT,         -- unchanged = keep the extracted text
     quiet INTEGER NOT NULL DEFAULT 0,  -- what students asked on Ed: found after the rest that matches as well
-    source TEXT NOT NULL DEFAULT 'canvas'  -- where it came from (canvas, ed)
+    source TEXT NOT NULL DEFAULT 'canvas',  -- where it came from (canvas, ed)
+    named INTEGER NOT NULL DEFAULT 1  -- 0: found only by the text inside (see _Item)
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
     title, folder, body, tokenize = 'unicode61 remove_diacritics 2'
@@ -409,10 +410,11 @@ class _Item:
     body: Callable[[], str]
     quiet: bool = False
     source: str = "canvas"
+    named: bool = True  # False: not by its name, nor listed (something else goes by that name)
 
     def stamp(self) -> str:
         return json.dumps([self.title, self.path, self.url, self.date, self.folder, self.content_stamp, self.quiet,
-                           self.source])
+                           self.source, *([] if self.named else ["unnamed"])])
 
 
 def relative_url(url: str | None) -> str | None:
@@ -464,6 +466,8 @@ class Index:
             self.db.execute("ALTER TABLE items ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0")
         if "source" not in columns:
             self.db.execute("ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'canvas'")
+        if "named" not in columns:
+            self.db.execute("ALTER TABLE items ADD COLUMN named INTEGER NOT NULL DEFAULT 1")
 
     def close(self) -> None:
         self.db.commit()
@@ -500,8 +504,6 @@ class Index:
             raw = json.loads(row["raw"] or "{}")
             html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
             cid, kind = row["course_id"], row["kind"]
-            if canvas_copy(kind, raw):
-                continue
             url = doc_url(raw)
             if kind == "syllabus":
                 url = f"/courses/{cid}/assignments/syllabus"
@@ -511,16 +513,22 @@ class Index:
             # On Ed: what staff answered is part of it (the rest of the replies isn't), and its
             # category is where it is ("cs70 homework" finds what's in Homework).
             said = [r["html"] for r in _replies((ed.get("thread") or {}).get("replies", [])) if r["staff"] or r["endorsed"]]
+            # A copy of a Canvas announcement goes by Canvas's; only what was answered on Ed is its own.
+            copy = canvas_copy(kind, raw)
+            if copy and not said:
+                continue
+            texts = said if copy else [html, *said]
             yield _Item(
                 key=f"{kind}:{cid}:{row['id']}", course_id=cid, kind=kind, title=row["title"],
                 path=None, url=url,
                 date=raw.get("due_at") or raw.get("posted_at") or row["updated_at"] or None,
                 folder=" ".join([kind, *([f"due {raw['due_at'][:10]}"] if raw.get("due_at") else []),
                                  ed.get("category", ""), ed.get("subcategory", "")]).strip(),
-                content_stamp=hashlib.sha1("".join([html, *said]).encode()).hexdigest(),
-                body=lambda h=html, more=said: "\n".join(html_to_text(x) for x in [h, *more]),
-                quiet=kind == "post" and (ed.get("on_canvas") or not (ed.get("staff") or ed.get("pinned"))),
+                content_stamp=hashlib.sha1("".join(texts).encode()).hexdigest(),
+                body=lambda texts=texts: "\n".join(html_to_text(x) for x in texts),
+                quiet=kind == "post" and not (ed.get("staff") or ed.get("pinned")),
                 source=row["source"],
+                named=not copy,
             )
 
     def sync(self, state: State, root: Path, on_progress: ProgressHandler | None = None) -> IndexStats:
@@ -545,19 +553,19 @@ class Index:
                 body = _prep(item.body())
                 stats.extracted += item.kind == "file" and bool(item.path)
             values = (item.course_id, item.kind, item.title, item.path, item.url, item.date,
-                      item.stamp(), item.content_stamp, item.quiet, item.source)
+                      item.stamp(), item.content_stamp, item.quiet, item.source, item.named)
             if old:
                 rowid = old[0]
                 self.db.execute(
                     """UPDATE items SET course_id=?, kind=?, title=?, path=?, url=?, date=?, stamp=?,
-                       content_stamp=?, quiet=?, source=? WHERE id=?""", (*values, rowid))
+                       content_stamp=?, quiet=?, source=?, named=? WHERE id=?""", (*values, rowid))
                 self.db.execute("DELETE FROM fts WHERE rowid = ?", (rowid,))
             else:
                 rowid = self.db.execute(
-                    """INSERT INTO items (course_id, kind, title, path, url, date, stamp, content_stamp, quiet, source, key)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*values, item.key)).lastrowid
+                    """INSERT INTO items (course_id, kind, title, path, url, date, stamp, content_stamp, quiet, source, named, key)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*values, item.key)).lastrowid
             self.db.execute("INSERT INTO fts (rowid, title, folder, body) VALUES (?, ?, ?, ?)",
-                            (rowid, _prep(item.title), _prep(item.folder), body))
+                            (rowid, _prep(item.title) if item.named else "", _prep(item.folder) if item.named else "", body))
             stats.indexed += 1
             if done % 25 == 24:
                 self.db.commit()  # an interrupted run keeps what it did
@@ -679,7 +687,7 @@ class Index:
                       LIMIT ?"""
             args = [f"title : ({expr})", names, names if names_only else expr, *args, limit]
         elif where:  # just a course and/or kinds: the most recent items
-            sql = f"""SELECT i.*, NULL AS snip, 1 AS in_name FROM items i WHERE {' AND '.join(where)}
+            sql = f"""SELECT i.*, NULL AS snip, 1 AS in_name FROM items i WHERE i.named AND {' AND '.join(where)}
                       ORDER BY i.date IS NULL, i.date DESC LIMIT ?"""
             args.append(limit)
         else:

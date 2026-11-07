@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from . import content
-from .search import DEFAULT_ABBREVIATIONS, code_keys, course_label, doc_url, normalized, relative_url
+from .search import DEFAULT_ABBREVIATIONS, canvas_copy, code_keys, course_label, doc_url, normalized, relative_url
 from .state import META_DIR
 from .things import Entry, Thing, course_thing, view
 
@@ -81,7 +81,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if kind not in DOC_KINDS:
             continue
         ed = raw.get("ed") or {}
-        if ed.get("on_canvas") or (kind == "post" and not (ed.get("pinned") or ed.get("staff"))):
+        if canvas_copy(kind, raw) or (kind == "post" and not (ed.get("pinned") or ed.get("staff"))):
             continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's; a copy of a Canvas announcement is that)
         fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
         if kind in ("announcement", "post"):

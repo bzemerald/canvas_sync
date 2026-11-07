@@ -20,7 +20,7 @@ import httpx
 from . import __version__
 from .config import set_ed_courses
 from .models import Course, Document
-from .search import code_keys
+from .search import canvas_copy, code_keys
 from .state import META_DIR
 
 if TYPE_CHECKING:
@@ -267,7 +267,7 @@ def news(d: Document) -> bool:
     """Whether it's news when it shows up: announcements, and what staff post or pin (unless
     it's a Canvas announcement too: that one is the news)."""
     ed = d.raw["ed"]
-    return not ed.get("on_canvas") and (d.kind == "announcement" or ed["staff"] or ed["pinned"])
+    return not canvas_copy(d.kind, d.raw) and (d.kind == "announcement" or ed["staff"] or ed["pinned"])
 
 
 SAME_WITHIN = timedelta(days=2)  # an announcement posted on Canvas and Ed both, a little apart

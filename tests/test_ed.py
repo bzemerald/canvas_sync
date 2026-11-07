@@ -366,3 +366,30 @@ def test_ed_posts_are_found_and_go_anywhere_in_their_course(root, tmp_path, link
         api.put("/api/pinned", json={"entries": [{**post, "title": "", "hidden": False}]})
         assert api.get("/api/pinned").json()[0]["name"] == "HW 3 megathread"
     assert Place("tabs", 2, [], []).holds(Thing("doc", course=1, kind="post", id="ed-9001")) is False
+
+
+def test_what_staff_answered_on_a_copy_of_an_announcement_is_found(root, fake, linked):
+    """The copy goes by Canvas's name and text, but only the thread on Ed has its answers."""
+    when = ago(1)
+    fake.announcements.append({"id": 9, "title": "Exam room", "posted_at": when, "message": "<p>Room zebra</p>", "read_state": "read"})
+    pull(root, fake)
+    linked.thread(501, 9001, "Exam room", body="<document><paragraph>Room zebra</paragraph></document>", type="announcement", user=1, created=when)
+    linked.reply(501, 9001, "Bring your calculator")
+    linked.reply(501, 9001, "Can I sit anywhere?", user=2)  # (a student's: not found, as anywhere)
+    linked.thread(501, 9002, "Exam room", user=2, created=when, is_pinned=True)  # (a student's, the same title)
+    ed_sync(root)
+    with Engine(root) as e:
+        e.reindex()
+        found = lambda q: {h.doc_id: h.match for h in e.search(q)}
+        assert found("exam room") == {"9": "name", "ed-9002": "name"}  # (the copy isn't, by its name)
+        assert "ed-9001" not in found("zebra")  # (nor by what Canvas has)
+        assert found("calculator") == {"ed-9001": "content"}
+        assert not found("anywhere")
+        hit = e.search("calculator")[0]
+        assert (hit.title, hit.kind, hit.source) == ("Exam room", "announcement", "ed")
+        listed = {h.doc_id for h in e.search("", course_ids=[1], kinds=["announcement"])}
+        assert listed == {"9"}  # (listing what there is, the copy isn't there twice)
+        names = {x["id"] for x in catalog(e) if x["type"] == "doc" and x.get("id", "").startswith("ed-")}
+        assert names == {"ed-9002"}  # (the pinned one is the student's own, by name too)
+        new = content.news(e.state, e.root, 1)
+        assert "ed-9002" in new["post"] and "ed-9001" not in new["announcement"]

@@ -191,7 +191,7 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
 
 def _still_new(kind: str, raw: dict[str, Any]) -> bool:
     if kind in ("announcement", "post"):  # read on Canvas (or Ed); or a copy of a Canvas announcement
-        return raw.get("read_state") != "read" and not (raw.get("ed") or {}).get("on_canvas")
+        return raw.get("read_state") != "read" and not canvas_copy(kind, raw)
     if kind == "assignment":
         return submission(raw)["status"] not in HANDED_IN
     return True
