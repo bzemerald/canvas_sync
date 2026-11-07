@@ -269,6 +269,18 @@ def test_api_smart_folders_thumbs_and_preview(api, root):
     assert api.post("/api/open", json={"path": ".canvas/config.toml"}).status_code == 400
 
 
+def test_thumbnails_stay_when_the_sync_folder_moves(root, tmp_path, monkeypatch):
+    Image.new("RGB", (80, 60), "red").save(root / "red.png")
+    made = thumbnail(root, "red.png", 64)
+    assert made is not None and made.is_relative_to(root / ".canvas/thumbnails")
+    moved = root.rename(tmp_path / "Moved")
+
+    def draw(*args):
+        raise AssertionError("drawn again")
+    monkeypatch.setattr("canvas_sync.thumbs._render", draw)
+    assert thumbnail(moved, "red.png", 64) == moved / made.relative_to(root)
+
+
 def test_server_exits_when_the_app_goes_away(root, tmp_path):
     """The app holds the server's stdin; if the app dies without cleaning up, the pipe
     closes and the server must not linger."""

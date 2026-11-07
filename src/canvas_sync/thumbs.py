@@ -1,13 +1,14 @@
 """Small preview images for the app's file views: first page of a PDF, or the image itself;
 on macOS, what Quick Look draws for the rest (Office and iWork documents, videos...).
 
-Cached in <root>/.canvas/thumbs, keyed by path, size and mtime, so an edited file gets
-a fresh thumbnail.
+Cached in <root>/.canvas/thumbnails, keyed by the path in the sync folder, size and mtime, so an
+edited file gets a fresh thumbnail and a moved sync folder keeps them.
 """
 
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,12 @@ QUICK_LOOK = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".key", ".pages
 SUPPORTED = IMAGES | {".pdf"} | (QUICK_LOOK if sys.platform == "darwin" else set())
 MAX_PX = 512
 QUICK_LOOK_TIMEOUT = 8  # seconds; it can hang on a broken file (good ones take a fraction of one)
+CACHE = "thumbnails"
+
+
+def forget_old_thumbnails(root: Path) -> None:
+    """.canvas/thumbs: thumbnails keyed by where the sync folder was, from older versions."""
+    shutil.rmtree(root / META_DIR / "thumbs", ignore_errors=True)
 
 
 def thumbnail(root: Path, rel: str, px: int = 256) -> Path | None:
@@ -32,8 +39,10 @@ def thumbnail(root: Path, rel: str, px: int = 256) -> Path | None:
         return None
     px = max(32, min(px, MAX_PX))
     st = src.stat()
-    key = hashlib.sha1(f"{src.resolve()}|{st.st_size}|{st.st_mtime_ns}|{px}".encode()).hexdigest()
-    out = root / META_DIR / "thumbs" / key[:2] / f"{key}.jpg"
+    real = src.resolve()  # (a view's link and its file: one thumbnail)
+    where = real.relative_to(root.resolve()).as_posix() if real.is_relative_to(root.resolve()) else str(real)
+    key = hashlib.sha1(f"{where}|{st.st_size}|{st.st_mtime_ns}|{px}".encode()).hexdigest()
+    out = root / META_DIR / CACHE / key[:2] / f"{key}.jpg"
     if out.exists():
         return out
     failed = out.with_suffix(".none")  # tried before, and couldn't: not again (Quick Look is slow to fail)

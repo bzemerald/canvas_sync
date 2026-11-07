@@ -58,7 +58,7 @@ from .plan import Kind, Scope
 from .search import course_label
 from .state import META_DIR
 from .things import Entry, parse_entry
-from .thumbs import thumbnail
+from .thumbs import forget_old_thumbnails, thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"]
@@ -270,6 +270,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         try:
             if account is not None:
                 migrate_folder_names(account.root)
+                forget_old_thumbnails(account.root)
             if account is not None and needs_migration(cfg := account.root / META_DIR / "config.toml"):
                 with Engine(account.root) as e:
                     migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
