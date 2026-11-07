@@ -197,6 +197,7 @@ export function useChosen(query: string, listed: Map<string, Found>, first: stri
  * complete, asks for the likeliest word (`ask`: the next Tab takes it). It stays in the box. */
 export function moreKeys(e: React.KeyboardEvent, chosen: () => Found | undefined, open: (f: Found | undefined, how: How) => void,
   complete?: () => string | null, setQuery?: (q: string) => void, ask?: () => void): boolean {
+  if (e.nativeEvent.isComposing) return false; // (the input method's: choosing a word)
   if (e.key === "Tab" && !e.shiftKey && complete && setQuery) {
     const done = complete();
     e.preventDefault();
