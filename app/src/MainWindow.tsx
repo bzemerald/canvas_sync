@@ -1252,7 +1252,6 @@ export function MainWindow() {
             sync={sync}
             onSync={() => void startSync({}, t("全部课程"))}
             onAccount={(a) => (setAccount(a), refresh())}
-            onShowFiles={() => go({ kind: "browse", path: "" })}
           />
         ) : page ? (
           page

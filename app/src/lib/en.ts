@@ -600,7 +600,7 @@ export const en: Record<string, string | [string, string]> = {
   "找到 {n} 个": ["1 found", "{n} found"],
   "没有找到": "Nothing found",
 
-  "在应用中查看全部文件": "See all files in the app",
+  "在 {app} 中打开": "Open in {app}",
 
   // -- picking courses
   "去掉": "Remove",

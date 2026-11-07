@@ -8,7 +8,7 @@ import { shortDate } from "../lib/dates";
 import { edSaying, friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
 import { chooseLauncherKeys, keysLabel, keysOf, setKeys, useLauncherKeys } from "../lib/launcherKeys";
-import { isMac } from "../lib/keys";
+import { fileManager, isMac } from "../lib/keys";
 import { termRank } from "../lib/terms";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
@@ -19,11 +19,10 @@ const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
 ];
 
-export function Settings({ sync, onSync, onAccount, onShowFiles }: {
+export function Settings({ sync, onSync, onAccount }: {
   sync: SyncState | null;
   onSync: () => void;
   onAccount: (a: AccountInfo) => void; // signed in or out
-  onShowFiles: () => void; // the sync folder, in the app
 }) {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [check, setCheck] = useState<{ ok: boolean; error?: string } | null>(null);
@@ -122,7 +121,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
               <Row label={t("同步文件夹")} hint={t("课程文件都在这里。")}>
                 <span className="flex min-w-0 items-center gap-2">
                   <code className="min-w-0 truncate text-xs" title={account.root ?? ""}>{account.root}</code>
-                  <button title={t("在应用中查看全部文件")} onClick={onShowFiles}
+                  <button title={t("在 {app} 中打开", { app: fileManager })} onClick={() => void api.openPath("")}
                     className="shrink-0 rounded p-1 text-muted hover:bg-chip hover:text-fg">
                     <FolderOpen className="size-4" />
                   </button>
