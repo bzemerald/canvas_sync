@@ -559,7 +559,6 @@ export const en: Record<string, string | [string, string]> = {
   "或者用一个表情": "Or use an emoji",
 
   // -- a course's tabs
-  "显示“{name}”标签": "Show the “{name}” tab",
   "隐藏“{name}”标签": "Hide the “{name}” tab",
 
   // -- the overview's cards

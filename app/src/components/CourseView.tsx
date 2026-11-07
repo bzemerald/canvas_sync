@@ -192,12 +192,7 @@ export function CourseTabs({
             : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
         ],
     [pinItem(things, e)],
-  );
-  /** The bar, right-clicked where there's no tab: the tabs as a whole. */
-  const barMenu = (): MenuItem[] => sections(
-    entries.filter((x) => x.hidden).map((x) => ({
-      label: t("显示“{name}”标签", { name: name(x) }), onSelect: () => onArrange(changed(entries, x, { hidden: false })),
-    })),
+    // The tabs as a whole.
     [
       { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
       { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
@@ -259,10 +254,7 @@ export function CourseTabs({
         zone.state === "over" ? "bg-accent/10" : zone.state === "ready" ? "outline-1 -outline-offset-2 outline-dashed outline-accent/60" : ""
       }`}
       aria-label={t("课程")}
-      onContextMenu={(e) => {
-        e.preventDefault(); // (a tab has its own menu)
-        things.menu(barMenu(), e.clientX, e.clientY);
-      }}
+      onContextMenu={(e) => e.preventDefault()} // (a tab has its own menu; the bar, none)
     >
       {visible.map((e, i) => button(e, drag.item(i), i))}
       {extra && button(extra, {}, null)}
