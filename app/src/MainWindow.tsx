@@ -1005,7 +1005,11 @@ export function MainWindow() {
   /** What the open course's page shows, as its tab has it. */
   const coursePage = (cv: CourseView, course: Course, tab: Thing) => {
     if (cv.blank) {
-      return <NewTab course={course} overview={overview} entries={tabs} onOpen={(next, x) => arrangeLayout("tabs", next, x)} onShow={(x) => replaceView(toTab(cv, x))} />;
+      return (
+        <NewTab course={course} overview={overview} entries={tabs} typing={searching} found={foundHere}
+          box={<SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} completion={query ? completing : null} autoFocus />}
+          onOpen={(next, x) => arrangeLayout("tabs", next, x)} onShow={(x) => replaceView(toTab(cv, x))} />
+      );
     }
     if (isView(tab, "overview")) {
       return (
@@ -1087,7 +1091,16 @@ export function MainWindow() {
       />
     );
   };
-  const page = cv && course && tab && !searching ? coursePage(cv, course, tab) : null;
+  const foundHere = (
+    <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu} onCompletion={setCompleting}
+      note={scopeNote && (
+        <span className="flex items-center gap-2">
+          {scopeNote.text}
+          <button onClick={scopeNote.onAction} className="text-accent hover:underline">{scopeNote.action}</button>
+        </span>
+      )} />
+  );
+  const page = cv && course && tab && (!searching || cv.blank) ? coursePage(cv, course, tab) : null; // (a new tab searches in itself)
   const markedPlace = cv ? `${cv.id}:${tab ? thingKey(tab) : ""}:${cv.item ?? ""}:${cv.path}` : view.kind === "browse" ? view.path : view.kind === "search" ? thingKey(view.search) : "";
 
   return (
@@ -1231,7 +1244,7 @@ export function MainWindow() {
           </div>
           {view.kind !== "settings" && (
             <>
-              {filesView && (
+              {filesView && !cv?.blank && ( // (a new tab has its own box)
                 <SearchInput inputRef={searchBox} value={query} onChange={setQuery} placeholder={searchPlaceholder} completion={query ? completing : null} compact />
               )}
               {((filesTab && !searching) || !!smart) && (
@@ -1297,13 +1310,7 @@ export function MainWindow() {
             onRenameCancel={() => setRenaming(null)}
           />
         ) : searching ? (
-          <FoundHere box={searchBox} query={query} onQuery={setQuery} scope={scope} finder={finder} actions={actions} onOpen={openFound} props={hitMenu} onCompletion={setCompleting}
-            note={scopeNote && (
-              <span className="flex items-center gap-2">
-                {scopeNote.text}
-                <button onClick={scopeNote.onAction} className="text-accent hover:underline">{scopeNote.action}</button>
-              </span>
-            )} />
+          foundHere
         ) : (
           <Results
             view={view}
@@ -1589,7 +1596,7 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
   autoFocus?: boolean;
 }) {
   return (
-    <div className={`flex items-center gap-2 rounded-lg border border-line bg-panel px-2.5 focus-within:border-accent ${compact ? "w-56 shrink-0" : ""}`}>
+    <div className={`flex items-center border border-line bg-panel ${compact ? "w-56 shrink-0 gap-2 rounded-lg px-2.5 focus-within:border-accent" : "gap-3 rounded-xl px-4"}`}>
       <Search className="size-4 shrink-0 text-muted" aria-hidden />
       <div className="relative min-w-0 flex-1">
         <input
@@ -1609,7 +1616,7 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
           autoCapitalize="off"
           spellCheck={false}
           placeholder={placeholder}
-          className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-10"}`}
+          className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-11"}`}
         />
         <CompletionGhost query={value} completion={completion ?? null} className={compact ? "text-sm" : ""} />
       </div>

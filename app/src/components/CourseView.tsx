@@ -289,13 +289,17 @@ export function CourseTabs({
   );
 }
 
-/** A new tab: where to go next in the course: its views (hidden ones too, to bring them back) and
- * 工具与链接; what else is hidden there. What's picked is shown instead of it; not yet a tab, it's
- * one now, the last. */
-export function NewTab({ course, overview, entries, onOpen, onShow }: {
+/** A new tab: where to go next in the course: a box to search it, and its views (hidden ones too,
+ * to bring them back) and 工具与链接; what else is hidden there. What's picked is shown instead of
+ * it; not yet a tab, it's one now, the last. Nothing typed: the box and the views, in the middle;
+ * typing: the box at the top, what's found below. */
+export function NewTab({ course, overview, entries, box, typing, found, onOpen, onShow }: {
   course: Course;
   overview: Overview | null;
   entries: Shown[]; // the course's tabs, hidden ones too
+  box: React.ReactNode; // the search box
+  typing: boolean; // something's typed in it
+  found: React.ReactNode; // what that finds
   onOpen: (entries: Shown[], tab: Thing) => void; // now a tab, and shown
   onShow: (tab: Thing) => void; // a tab already: go there
 }) {
@@ -312,8 +316,12 @@ export function NewTab({ course, overview, entries, onOpen, onShow }: {
     onOpen(putAt(entries, { ...x, hidden: false }, slotIndex(entries, shown, shown.length)), thingOf(x));
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-center pb-[12vh]">
-      <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 px-6">
+    <div className={`flex min-h-0 flex-1 flex-col ${typing ? "" : "justify-center pb-[12vh]"}`}>
+      <div className={`mx-auto w-full max-w-2xl px-6 ${typing ? "pt-10" : ""}`}>{box}</div>
+      {typing ? (
+        <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-2 pt-2">{found}</div>
+      ) : (
+      <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 px-6 pt-6">
         {views.map((e) => {
           const count = isView(e) ? fresh[e.view] : 0;
           const here = shown.some((x) => same(x, e));
@@ -327,6 +335,7 @@ export function NewTab({ course, overview, entries, onOpen, onShow }: {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
