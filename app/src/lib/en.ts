@@ -108,6 +108,7 @@ export const en: Record<string, string | [string, string]> = {
   "列表": "List",
   "图标": "Icons",
   "显示改动": "Show modifications",
+  "隐藏改动": "Hide modifications",
   "编辑": "Edit",
   "标记失败": "Couldn't mark as read",
   "已移到{trash}：{label}": "Moved to {trash}: {label}",

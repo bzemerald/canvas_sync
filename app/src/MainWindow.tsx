@@ -1230,7 +1230,8 @@ export function MainWindow() {
               {filesTab && !searching && (
                 <div className="flex shrink-0 rounded-md border border-line p-0.5">
                   <ToolButton
-                    title={shortcut.toggleChanges ? `${t("显示改动")} (${shortcut.toggleChanges})` : t("显示改动")}
+                    title={`${showChanges ? t("隐藏改动") : t("显示改动")}${shortcut.toggleChanges ? ` (${shortcut.toggleChanges})` : ""}`}
+                    pressed={showChanges}
                     onClick={() => setShowChanges(!showChanges)}
                   >{showChanges ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</ToolButton>
                 </div>
