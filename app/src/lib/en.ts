@@ -161,7 +161,6 @@ export const en: Record<string, string | [string, string]> = {
   "大纲": "Syllabus",
   "页面": "Pages",
   "课程": "Course",
-  "清除这门课所有的“新”标记": "Clear every “new” mark in this course",
   "全部标为已读": "Mark all as read",
   "通过": "Pass",
   "未通过": "Fail",

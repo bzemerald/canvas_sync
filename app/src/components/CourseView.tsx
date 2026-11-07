@@ -83,7 +83,7 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
  * Views with nothing in them aren't shown; 概览 and 文件 always are, unless you hid them.
  * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end. */
 export function CourseTabs({
-  course, tab, overview, entries: loaded, own, onTab, onArrange, onReset, onMakeDefault, onSay, onMarkAllSeen,
+  course, tab, overview, entries: loaded, own, onTab, onArrange, onReset, onMakeDefault, onSay,
 }: {
   course: Course;
   tab: Thing; // what's showing
@@ -95,7 +95,6 @@ export function CourseTabs({
   onReset: () => void; // back to how every course is
   onMakeDefault: () => void; // every course (not arranged for itself) like this one
   onSay: (message: string, action?: { label: string; run: () => void }) => void;
-  onMarkAllSeen: () => void;
 }) {
   const things = useThings();
   const bar = useRef<HTMLElement>(null);
@@ -254,11 +253,6 @@ export function CourseTabs({
       {!loaded && <span aria-hidden className="invisible py-2 text-sm">&nbsp;</span>}
       {markerLeft !== null && (
         <span aria-hidden className="pointer-events-none absolute top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" style={{ left: markerLeft - 1 }} />
-      )}
-      {!!n?.total && (
-        <button onClick={onMarkAllSeen} className="ml-auto shrink-0 py-2 text-xs text-muted hover:text-fg" title={t("清除这门课所有的“新”标记")}>
-          {t("全部标为已读")}
-        </button>
       )}
     </nav>
   );

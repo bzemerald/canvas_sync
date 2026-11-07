@@ -1252,7 +1252,6 @@ export function MainWindow() {
             onMakeDefault={() => void makeDefaultLayout("tabs")}
             onTab={(x) => go(toTab(cv, x))}
             onSay={say}
-            onMarkAllSeen={() => void api.markSeen(course.id).then(refresh, fail(t("标记失败")))}
           />
         )}
 
