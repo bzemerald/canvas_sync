@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import shutil
 import sys
 import time
 import zipfile
@@ -240,9 +241,13 @@ def test_a_folder_moved_by_the_app_is_found(root, course, tmp_path, monkeypatch)
     new = tmp_path / "Moved"
 
     async def go() -> None:
-        async with Client(create_server(Account(BASE, root))) as c:  # (started before the move)
+        Account(BASE, root).save()
+        async with Client(create_server(Account.load(), again=Account.load)) as c:  # (started before the move)
             assert (await c.call_tool("list_courses", {})).structured_content["sync_root"] == str(root.resolve())
-            root.rename(new)
+            shutil.copytree(root, new, symlinks=True)  # (copied, and the old one not all deleted)
             Account(BASE, new).save()
             assert (await c.call_tool("list_courses", {})).structured_content["sync_root"] == str(new.resolve())
+            Account(BASE, tmp_path / "Never synced").save()
+            got = await c.call_tool("list_courses", {})
+            assert got.is_error and "Nothing has been synced" in got.content[0].text
     asyncio.run(go())

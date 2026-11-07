@@ -265,7 +265,7 @@ def test_the_assistant_starting_goes_back_too(root, fake, monkeypatch):
     pull(root, fake)
     renamed_on_disk(root, {WEEK1: "第一周"})
     monkeypatch.setattr(agent.Account, "load", classmethod(lambda cls: Account(BASE, root)))
-    monkeypatch.setattr(agent, "create_server", lambda account: SimpleNamespace(run=lambda: None))
+    monkeypatch.setattr(agent, "create_server", lambda account, **kw: SimpleNamespace(run=lambda: None))
     agent.serve()
     assert (root / WEEK1 / "lec1.pdf").exists()
 

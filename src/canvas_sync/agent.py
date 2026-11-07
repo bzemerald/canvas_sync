@@ -27,7 +27,6 @@ from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import inside
 from .models import Course
 from .search import Hit, course_label, pick_courses
-from .state import META_DIR
 from .text import extract, html_to_text, slides
 from .things import Thing, of_item
 
@@ -106,9 +105,11 @@ def _replies(replies: list[dict[str, Any]], depth: int = 0) -> Iterator[str]:
         yield from _replies(r.get("replies") or [], depth + 1)
 
 
-def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCPServer:
+def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
+                  again: Callable[[], Account | None] | None = None) -> MCPServer:
     """The MCP server. `account` None: not set up yet (every tool says so). `prefs_path`:
-    app.toml (whether searching by meaning is on)."""
+    app.toml (whether searching by meaning is on). `again`: where the account is read again for
+    each call (the app may move the sync folder, or sign in elsewhere, while this runs)."""
     mcp = MCPServer("canvas-sync", title="Canvas Sync", version=__version__, instructions=INSTRUCTIONS,
                     log_level="WARNING")
 
@@ -123,17 +124,14 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
     def engine() -> Iterator[Engine]:
         # One Engine per call: SQLite connections belong to the thread that made them.
         nonlocal account
+        if again is not None:
+            account = again()
         if account is None:
             raise ToolError("Canvas Sync isn't set up yet: sign in in the Canvas Sync app (or `canvas init`), then sync.")
         try:
             e = Engine(account.root)
         except NotInitialized:
-            # The app may have moved the folder since this started.
-            now = Account.load()
-            if now is None or now.root == account.root or not (now.root / META_DIR).is_dir():
-                raise ToolError(f"Nothing has been synced to {account.root} yet: sync in Canvas Sync first.")
-            account = now
-            e = Engine(account.root)
+            raise ToolError(f"Nothing has been synced to {account.root} yet: sync in Canvas Sync first.")
         with e:
             yield e
 
@@ -523,4 +521,4 @@ def serve() -> None:
             migrate_folder_names(account.root)
         except (NotInitialized, ConfigError):  # (each call says so)
             pass
-    create_server(account).run()
+    create_server(account, again=Account.load).run()
