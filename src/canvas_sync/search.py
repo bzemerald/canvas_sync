@@ -234,7 +234,7 @@ class CourseMatcher:
         for c in courses:
             names = [c.code, c.name, settings.course_names.get(c.id, "")]
             # A course folder you renamed (to "线代", say) answers to that name too.
-            renamed = settings.folder_names.get(Layout(settings).canonical_course_dir(c).as_posix())
+            renamed = settings.folder_titles.get(Layout(settings).course_dir(c).as_posix())
             title = settings.course_titles.get(c.id)
             aliases = [*settings.course_aliases.get(c.id, []), *[n for n in (title, renamed) if n]]
             keys = {_norm(n) for n in [*names, *aliases] if n} | code_keys(c.code)

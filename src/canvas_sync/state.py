@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS files (
     -- the pristine copy in .canvas/originals/<id>
     base_hash TEXT, base_version TEXT, base_size INTEGER,
     -- stat() of `path` when it was last known identical to the base (skips re-hashing)
-    snap_mtime REAL, snap_size INTEGER, snap_inode INTEGER
+    snap_mtime REAL, snap_size INTEGER
 );
 CREATE INDEX IF NOT EXISTS files_course ON files(course_id);
 CREATE TABLE IF NOT EXISTS links (path TEXT PRIMARY KEY, file_id INTEGER NOT NULL);
@@ -84,7 +84,7 @@ KEEP_OPENED = 2000  # rows of `opened` (and of `picks`) kept: the oldest go
 
 LOCAL_COLUMNS = (
     "path", "pinned_path", "ignored", "base_hash", "base_version", "base_size",
-    "snap_mtime", "snap_size", "snap_inode",
+    "snap_mtime", "snap_size",
 )
 
 
@@ -104,7 +104,6 @@ class FileRecord:
     base_size: int | None
     snap_mtime: float | None
     snap_size: int | None
-    snap_inode: int | None
 
 
 _RECORD_COLUMNS = ", ".join(f.name for f in fields(FileRecord))

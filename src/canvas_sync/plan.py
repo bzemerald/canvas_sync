@@ -18,7 +18,7 @@ from typing import Any
 from .config import Settings
 from .discover import CourseSnapshot
 from .layout import Layout, Placement
-from .local import inode_index, is_regular, occupied, sha256_file, sibling
+from .local import is_regular, occupied, sha256_file, sibling
 from .models import RemoteFile
 from .state import FileRecord, State
 
@@ -28,7 +28,6 @@ class Kind(StrEnum):
     UPDATE = "update"  # changed on Canvas, untouched locally
     CONFLICT = "conflict"  # changed on both sides
     MOVE = "move"  # layout now puts it somewhere else
-    PIN = "pin"  # you moved it; remember the new location
     IGNORE = "ignore"  # you deleted it; stop syncing it
     REMOTE_DELETED = "remote_deleted"  # gone from Canvas; local copy kept
     DELETE = "delete"  # gone from Canvas; local copy sent to Trash
@@ -104,8 +103,7 @@ def narrow(actions: list[Action], scope: Scope) -> list[Action]:
 
 @dataclass
 class LocalInfo:
-    path: str | None  # where the file is now; None if it's gone
-    moved: bool = False
+    path: str | None  # its path, if it's still there; None if it's gone (or moved: the same)
     modified: bool = False
 
 
@@ -114,7 +112,6 @@ class Inspector:
 
     def __init__(self, root: Path):
         self.root = root
-        self._inodes: dict[int, str] | None = None
 
     def inspect(self, rec: FileRecord) -> LocalInfo:
         assert rec.path is not None
@@ -126,13 +123,6 @@ class Inspector:
             st = None
         if st is not None and stat.S_ISREG(st.st_mode):
             return LocalInfo(rec.path, modified=self._modified(rec, here, st))
-        # Not where we left it. Moves within the volume keep the inode, so look for it.
-        if rec.snap_inode is not None:
-            if self._inodes is None:
-                self._inodes = inode_index(self.root)
-            moved = self._inodes.get(rec.snap_inode)
-            if moved and moved != rec.path:
-                return LocalInfo(moved, moved=True, modified=self._modified(rec, self.root / moved))
         return LocalInfo(None)
 
     @staticmethod
@@ -158,13 +148,7 @@ class Planner:
         local = {r.id: self.inspector.inspect(r) for r in recs.values() if r.path and not r.ignored}
         out: list[Action] = []
 
-        # Files you moved in Finder: remember where you put them (or move them back).
         pins = {r.id: r.pinned_path for r in recs.values() if r.pinned_path}
-        for rid, info in local.items():
-            if info.moved and s.on_local_move == "follow":
-                pins[rid] = info.path
-                out.append(Action(Kind.PIN, cid, rid, recs[rid].name, path=info.path, src=recs[rid].path))
-
         placements = self.layout.place_course(
             course, snap.files.values(), {k: v for k, v in pins.items() if k in snap.files}
         )
@@ -248,7 +232,7 @@ class Planner:
                 else:
                     out.append(Action(Kind.REMOTE_DELETED, cid, r.id, r.name, path=r.path))
 
-        vacated = {a.src for a in out if a.kind in (Kind.MOVE, Kind.PIN, Kind.UPDATE) and a.src != a.path}
+        vacated = {a.src for a in out if a.kind in (Kind.MOVE, Kind.UPDATE) and a.src != a.path}
         out += self._plan_links(cid, snap, placements, final, vacated)
         return out
 
@@ -263,7 +247,7 @@ class Planner:
         # A link in a folder you stopped syncing stays (it's in what you kept), still
         # pointing at its file: where sync puts it, or where you kept it if it isn't synced.
         for path, fid in self.state.links_for_course(cid).items():
-            if path in want or fid not in snap.files or not self.layout.skipped(PurePosixPath(self.layout.canonical(path))):
+            if path in want or fid not in snap.files or not self.layout.skipped(PurePosixPath(path)):
                 continue
             rec = self.state.get(fid)
             kept = rec.path if rec and rec.ignored and rec.path and is_regular(self.root / rec.path) else None

@@ -140,19 +140,6 @@ def test_untrack_a_folder_stops_new_files_too(root, fake):
     assert ("download", f"{WEEK1}/next.pdf") in kinds(pull(root, fake))
 
 
-def test_deleting_a_moved_file_records_where_it_was(root, fake):
-    pull(root, fake)
-    (root / COURSE / "Mine").mkdir()
-    os.rename(root / MOD, root / COURSE / "Mine/lec1.pdf")
-    with Engine(root) as e:
-        e.delete([f"{COURSE}/Mine/lec1.pdf"])
-    assert listing(root, f"{COURSE}/Mine")["lec1.pdf"]["deleted"]
-    with Engine(root) as e:
-        e.restore_in(Scope([f"{COURSE}/Mine"]))
-    assert (root / COURSE / "Mine/lec1.pdf").read_bytes() == b"v1"
-    assert pull(root, fake).actions == []  # stays where you had it
-
-
 def test_api(root, fake):
     pull(root, fake)
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as c:

@@ -206,7 +206,7 @@ export interface Entry {
   skipped: boolean; // in (dirs: or is) a folder you deleted or stopped syncing; Canvas's new files don't come here
   new: "new" | "updated" | null; // files: arrived (or came in a new version) since you last opened it
   new_inside: number; // dirs: new files below
-  renamed_from: string | null; // dirs: what Canvas calls it, if you renamed it
+  renamed_from: string | null; // dirs: its name on disk, if `name` is one you gave it
 }
 
 export interface FileStatus {
@@ -484,7 +484,9 @@ export const untrack = (paths: string[]) => post<{ files: number }>("/untrack", 
 export const track = (paths: string[]) => post<{ files: number }>("/track", { paths });
 
 /** Rename a folder; syncing keeps putting Canvas's files in it. Returns the new path. */
+/** What the app calls a folder (on disk it keeps its name); "": its own name. */
 export const rename = (path: string, name: string) => post<{ path: string }>("/rename", { path, name });
+export const folderTitles = () => api<Record<string, string>>("/folder-titles");
 
 /** A JPEG preview as an object URL, or null if the file has none. */
 export async function thumb(path: string, size: number): Promise<string | null> {

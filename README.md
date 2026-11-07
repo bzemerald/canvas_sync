@@ -186,9 +186,9 @@ In `.canvas/config.toml`, besides the sync settings:
 |---|---|
 | edit a file | kept. If Canvas also changed it: your copy becomes `name (mine).pdf`, the new version takes its place (`sync.on_conflict`) |
 | delete a file | not downloaded again (`sync.on_local_delete`); `canvas restore` brings it back |
-| move/rename a file in Finder | remembered; future updates go to the new spot (`sync.on_local_move`) |
+| move or rename a file or folder in Finder | counts as deleting what was there: not downloaded again (`sync.on_local_delete`), and what you moved is yours from then on; `canvas restore` puts the original back where it was |
 | rename a course or term in the app | only its name in the app changes (`[course_titles]`, `[term_titles]`); its folder stays as it is |
-| rename a folder in the app | remembered in `[folder_names]`; what Canvas adds to it later still goes there, links into it are updated (renaming in Finder only counts as moving the files) |
+| rename a folder in the app | only its name in the app changes (`[folder_titles]`); on disk it keeps its name, so syncing and links are as they were |
 | delete in the app | to the Trash; files from Canvas aren't downloaded again (restorable). A deleted folder can also stop what Canvas adds to it later (`skip_folders`) |
 | stop syncing in the app | the file or folder stays as your own; Canvas updates no longer touch it, new files in a folder aren't downloaded, and the shortcuts in it stay, until you resume (resuming a folder inside one that isn't synced resumes the way to it) |
 

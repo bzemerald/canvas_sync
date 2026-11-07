@@ -72,7 +72,7 @@ link_other_views = true
 # Where files go that appear in none of `views` (e.g. only linked from a page).
 fallback_view = "attachments"
 # Folders you deleted or stopped syncing in the app: files Canvas adds to them later
-# aren't downloaded. Paths as Canvas names would make them (see [folder_names]).
+# aren't downloaded.
 skip_folders = []
 
 [layout.view_dirs]
@@ -84,7 +84,6 @@ attachments = "Attachments"
 max_file_mb = 300
 on_conflict = "rename_local"    # both changed: rename_local | rename_remote | skip
 on_local_delete = "ignore"      # you deleted a file: ignore (don't re-download) | restore
-on_local_move = "follow"        # you moved a file: follow (remember new spot) | restore
 on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodified (to Trash)
 
 # Placement rules, first match wins. `match` is a case-insensitive glob against
@@ -102,9 +101,9 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # Added to the built-in ones (mt = midterm, hw = homework, sol = solution, ...).
 # exam = ["midterm", "final", "prelim"]
 
-[folder_names]
-# Folders you renamed in the app. Key: the path Canvas names would give the folder;
-# value: what it's called instead. New files from Canvas keep going into it.
+[folder_titles]
+# What the app calls folders you renamed in it. Key: the folder's path; value: its name in the
+# app. On disk the folder keeps its name.
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
 # A course's page in the app, arranged for it: its tabs, the cards on its overview, and what's in
@@ -173,7 +172,6 @@ CHOICES = {
     "select": {"active", "favorites"},
     "on_conflict": {"rename_local", "rename_remote", "skip"},
     "on_local_delete": {"ignore", "restore"},
-    "on_local_move": {"follow", "restore"},
     "on_remote_delete": {"keep", "delete_if_unmodified"},
 }
 
@@ -208,7 +206,6 @@ class Settings:
     max_file_mb: float = 300
     on_conflict: str = "rename_local"
     on_local_delete: str = "ignore"
-    on_local_move: str = "follow"
     on_remote_delete: str = "keep"
     rules: list[Rule] = field(default_factory=list)
     course_aliases: dict[int, list[str]] = field(default_factory=dict)
@@ -216,7 +213,7 @@ class Settings:
     course_layouts: dict[int, CourseLayout] = field(default_factory=dict)  # courses' pages, as arranged
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
     pinned: list[Entry] = field(default_factory=list)  # 置顶
-    folder_names: dict[str, str] = field(default_factory=dict)
+    folder_titles: dict[str, str] = field(default_factory=dict)
     skip_folders: list[str] = field(default_factory=list)
     term_order: list[str] = field(default_factory=list)   # the sidebar, as you arranged it
     course_order: list[int] = field(default_factory=list)
@@ -247,7 +244,6 @@ class Settings:
             max_file_mb=float(sync.get("max_file_mb", d.max_file_mb)),
             on_conflict=sync.get("on_conflict", d.on_conflict),
             on_local_delete=sync.get("on_local_delete", d.on_local_delete),
-            on_local_move=sync.get("on_local_move", d.on_local_move),
             on_remote_delete=sync.get("on_remote_delete", d.on_remote_delete),
             rules=[_rule(r) for r in data.get("rules", [])],
             course_aliases={int(k): _strings(v) for k, v in data.get("course_aliases", {}).items()},
@@ -263,7 +259,7 @@ class Settings:
                 for k, v in data.get("search", {}).get("abbreviations", {}).items()
             },
             pinned=_pinned(data),
-            folder_names={str(k).strip("/"): str(v) for k, v in data.get("folder_names", {}).items()},
+            folder_titles={str(k).strip("/"): str(v) for k, v in data.get("folder_titles", {}).items()},
             skip_folders=[str(x).strip("/") for x in layout.get("skip_folders", [])],
             term_order=[str(x) for x in sidebar.get("term_order", [])],
             course_order=[int(x) for x in sidebar.get("course_order", [])],
@@ -395,19 +391,39 @@ def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str]
 
 
 @_writes
-def record_folder_rename(path: Path, canonical: str, name: str | None, old: str, new: str) -> None:
-    """Remember that the folder Canvas names would put at `canonical` is called `name`
-    (None: its own name again), and point what's anywhere in the app at `old` or below to `new`."""
+def set_folder_title(path: Path, folder: str, title: str | None) -> None:
+    """What the app calls the folder at `folder` (None: its own name)."""
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    names = doc.get("folder_names")
-    if names is None:
-        names = doc["folder_names"] = tomlkit.table()
-    if name is None:
-        names.pop(canonical, None)
+    titles = doc.get("folder_titles")
+    if titles is None:
+        titles = doc["folder_titles"] = tomlkit.table()
+    if title is None:
+        titles.pop(folder, None)
     else:
-        names[canonical] = name
+        titles[folder] = title
     path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-    change_things(path, lambda t: t.moved(old, new))
+
+
+def old_folder_names(path: Path) -> dict[str, str] | None:
+    """[folder_names]: folders renamed on disk, as versions before [folder_titles] did it
+    (the path Canvas names would give a folder -> its name). None: there's none of that."""
+    names = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap().get("folder_names")
+    return None if names is None else {str(k).strip("/"): str(v) for k, v in names.items()}
+
+
+@_writes
+def replace_folder_names(path: Path, titles: dict[str, str]) -> None:
+    """[folder_names] gone, what it called folders in [folder_titles]; `sync.on_local_move` too."""
+    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
+    doc.pop("folder_names", None)
+    if "sync" in doc:
+        doc["sync"].pop("on_local_move", None)
+    table = doc.get("folder_titles")
+    if table is None:
+        table = doc["folder_titles"] = tomlkit.table()
+    for folder, title in titles.items():
+        table[folder] = title
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
 
 def _rule(r: dict[str, Any]) -> Rule:

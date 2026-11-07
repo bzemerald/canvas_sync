@@ -1,6 +1,7 @@
 import { BookOpen, ClipboardList, FileText, Megaphone, MessagesSquare, ScrollText, type LucideIcon } from "lucide-react";
 import type { Hit, Kind } from "../lib/api";
 import { locale, t } from "../lib/i18n";
+import { titlesAlong } from "../lib/things";
 import { SourceTag } from "./Things";
 import { Thumb } from "./Thumb";
 
@@ -32,7 +33,7 @@ export function hitKey(h: Hit): string {
 /** Icon (a file's preview), title, course/kind/date line, and the matching text. Shared by both windows. */
 export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: boolean }) {
   const { icon: Icon, label } = KIND[hit.kind] ?? KIND.file;
-  const folder = hit.path ? hit.path.split("/").slice(2, -1).join(" / ") : "";
+  const folder = hit.path ? titlesAlong(hit.path, 2, -1).join(" / ") : "";
   return (
     <div className="flex min-w-0 gap-3">
       {hit.path ? (

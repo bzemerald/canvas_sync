@@ -264,12 +264,12 @@ def test_pinning_anything(root, tmp_path, fake: FakeCanvas):
             ("folder", "01 Week 1", True, 1), ("course", "MATH 221", True, 1),  # (a course's own folder: the course)
         ]
         assert api.put("/api/pinned", json={"entries": [{"type": "link", "url": "javascript:1"}]}).status_code == 400
-        # Things in a renamed folder follow it, wherever they are.
+        # Renaming a folder changes no path, so things in it stay where they are.
         api.put("/api/courses/1/layout/tabs", json={"entries": [{"type": "folder", "path": week1, "title": "Week"}]})
         api.post("/api/rename", json={"path": week1, "name": "Week One"})
         assert [p["path"] for p in api.get("/api/pinned").json() if p["type"] in ("file", "folder")] == [
-            f"{COURSE}/Modules/Week One/lec1.pdf", f"{COURSE}/Modules/Week One"]
-        assert api.get("/api/courses/1/layout").json()["tabs"][-1]["path"] == f"{COURSE}/Modules/Week One"
+            f"{COURSE}/Modules/01 Week 1/lec1.pdf", week1]
+        assert api.get("/api/courses/1/layout").json()["tabs"][-1]["path"] == week1
         # Hiding the course unpins all that's in it.
         api.post("/api/courses/1/hide", json={"hidden": True})
         assert [p["type"] for p in api.get("/api/pinned").json()] == ["link", "search"]

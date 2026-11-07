@@ -56,11 +56,11 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if cid in has:
             has[cid].add("modules")
     for c in courses:
-        canonical = e.layout.canonical_course_dir(c).as_posix()
-        names = [c.code, c.name, e.settings.course_names.get(c.id), e.settings.folder_names.get(canonical),
+        folder = e.layout.course_dir(c).as_posix()
+        names = [c.code, c.name, e.settings.course_names.get(c.id), e.settings.folder_titles.get(folder),
                  *e.settings.course_aliases.get(c.id, []), *sorted(code_keys(c.code))]
         label = course_label(c, e.settings)
-        yours = [label, c.code, e.settings.course_names.get(c.id), e.settings.folder_names.get(canonical),
+        yours = [label, c.code, e.settings.course_names.get(c.id), e.settings.folder_titles.get(folder),
                  *e.settings.course_aliases.get(c.id, [])]
         keys = {normalized(n) for n in yours if n} | {k for k in code_keys(c.code) if re.search(r"\d", k)}
         add(course_thing(c.id), name=label, term=c.term, canvas_url=f"/courses/{c.id}",
@@ -134,7 +134,9 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                 folders.setdefault(folder, cid)
     for folder, cid in folders.items():
         if (e.root / folder).is_dir():
-            add(Thing("folder", path=folder), course=cid, name=PurePosixPath(folder).name)
+            own = PurePosixPath(folder).name  # (it answers to that too, if you renamed it)
+            title = e.settings.folder_titles.get(folder)
+            add(Thing("folder", path=folder), course=cid, name=title or own, aliases=[own] if title else None)
 
     # What you put in places: 置顶, and each course's tabs, overview and 工具与链接. What's there
     # answers to the names you gave it; links, notes and smart folders are only there.

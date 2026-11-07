@@ -15,7 +15,7 @@ import { matchSorterWithRankInfo, rankings } from "match-sorter";
 import type { CatalogEntry, Hit, Usage } from "./api";
 import { CJK, type KindId, type Part, type PartOf, type Reading, type Source, type Status, type Vocabulary, STOPWORDS, little, seriesIn, seriesNear, singular, spaced } from "./query";
 import { termRank } from "./terms";
-import { type ViewName, isView, thingKey, thingOfHit } from "./things";
+import { type ViewName, isView, thingKey, thingOfHit, titlesAlong } from "./things";
 
 export { spaced } from "./query";
 
@@ -95,7 +95,9 @@ export function prepare(things: CatalogEntry[], describe: Describe, abbreviation
   const series = new Map<string, Set<number>>();
   const entries = things.map((entry): Prepared => {
     const { names, aliases, kind } = describe(entry);
-    const folders = entry.type === "file" || entry.type === "folder" ? entry.path.split("/").slice(-3, -1) : [];
+    const folders = entry.type === "file" || entry.type === "folder"
+      ? [...new Set([...entry.path.split("/").slice(-3, -1), ...titlesAlong(entry.path, -3, -1)])] // (what it's called, on disk and by you)
+      : [];
     const own = [...new Set(names.filter(Boolean).flatMap(variants))];
     const others = [...new Set(aliases.filter(Boolean).flatMap(variants))].filter((a) => !own.includes(a));
     const numbered = [...names, ...aliases].filter(Boolean).flatMap(seriesIn);

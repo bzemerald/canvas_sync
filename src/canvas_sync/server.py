@@ -48,7 +48,7 @@ from .config import (
     save_course_place, save_pinned,
     save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
 )
-from .engine import Engine
+from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
 from .local import open_path
@@ -263,6 +263,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def update_files() -> None:
         """config.toml and app.toml written as an older version did, the way this one does."""
         try:
+            if account is not None:
+                migrate_folder_names(account.root)
             if account is not None and needs_migration(cfg := account.root / META_DIR / "config.toml"):
                 with Engine(account.root) as e:
                     migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
@@ -1019,13 +1021,16 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         inside(req.path)
         with engine() as e:
             try:
-                new = e.rename_folder(req.path, req.name)
-            except (ValueError, FileExistsError) as err:
+                return {"path": e.rename_folder(req.path, req.name)}
+            except ValueError as err:
                 raise HTTPException(400, str(err))
             except LookupError as err:
                 raise HTTPException(404, str(err))
-            e.reindex()  # paths changed; the text is reused, so this is quick
-        return {"path": new}
+
+    @api.get("/folder-titles")
+    def folder_titles() -> dict[str, str]:
+        with engine() as e:
+            return e.settings.folder_titles
 
     @api.get("/status")
     def status() -> list[dict[str, Any]]:

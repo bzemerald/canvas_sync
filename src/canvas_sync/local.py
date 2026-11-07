@@ -90,23 +90,6 @@ def occupied(path: Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
-def inode_index(root: Path) -> dict[int, str]:
-    """inode -> path (relative to root) for every regular file under root."""
-    index: dict[int, str] = {}
-    for dirpath, dirnames, filenames in os.walk(root):
-        if dirpath == str(root) and META_DIR in dirnames:
-            dirnames.remove(META_DIR)
-        for name in filenames:
-            full = os.path.join(dirpath, name)
-            try:
-                st = os.lstat(full)
-            except OSError:
-                continue
-            if os.path.isfile(full) and not os.path.islink(full):
-                index[st.st_ino] = Path(full).relative_to(root).as_posix()
-    return index
-
-
 def sibling(path: str, label: str, root: Path) -> str:
     """'a/b.pdf' -> 'a/b (label).pdf', adding a counter if that is taken too."""
     p = Path(path)

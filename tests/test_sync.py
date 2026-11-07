@@ -62,19 +62,43 @@ def test_restore_discards_edits(root, fake):
     assert (root / MOD).read_bytes() == b"v1"
 
 
-@pytest.mark.links
-def test_moving_a_file_in_finder_is_remembered(root, fake):
+@pytest.mark.parametrize("save", ["unchanged", "in place", "safely"])
+def test_a_file_moved_in_finder_counts_as_deleted(root, fake, save):
+    """However it's saved afterwards: apps that save safely give the file a new inode."""
     pull(root, fake)
     mine = root / COURSE / "My Slides" / "lec1.pdf"
     mine.parent.mkdir()
     os.rename(root / MOD, mine)
+    if save == "in place":
+        mine.write_bytes(b"highlighted")
+    elif save == "safely":
+        tmp = mine.with_name("tmp")
+        tmp.write_bytes(b"highlighted")
+        os.replace(tmp, mine)
+    kept = mine.read_bytes()
+    with Engine(root) as e:
+        assert [(s.path, s.states) for s in e.status()] == [(MOD, ["missing"])]
+
     plan = pull(root, fake)
-    # A file you placed yourself is taken out of the generated views.
-    assert [a.kind for a in plan.actions] == [Kind.PIN, Kind.UNLINK]
-    assert not (root / FILES).exists()
+    assert kinds(plan) == [("ignore", MOD), ("unlink", FILES)]
+    assert not (root / MOD).exists() and not os.path.lexists(root / FILES)
+
+    # Canvas doesn't touch what you moved, or download it again.
     fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
-    assert [a.kind for a in pull(root, fake).actions] == [Kind.UPDATE]
-    assert mine.read_bytes() == b"v2"
+    pull(root, fake)
+    assert mine.read_bytes() == kept and not (root / MOD).exists()
+
+    # Restoring puts the file back where it belongs; what you moved stays yours.
+    with Engine(root) as e:
+        assert e.restore_files([100]) == [MOD]
+    assert (root / MOD).read_bytes() == b"v1" and mine.read_bytes() == kept
+
+
+def test_a_file_renamed_in_finder_counts_as_deleted(root, fake):
+    pull(root, fake)
+    os.rename(root / MOD, (root / MOD).with_name("slides.pdf"))
+    with Engine(root) as e:
+        assert [(s.path, s.states) for s in e.status()] == [(MOD, ["missing"])]
 
 
 def test_reupload_with_new_id_counts_as_update(root, fake):

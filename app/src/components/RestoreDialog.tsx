@@ -6,7 +6,7 @@ import { Button, Dialog } from "./Dialog";
 import { FileIcon } from "./FileIcon";
 import { Pill } from "./Status";
 import { pathTree, type TreeNode } from "../lib/tree";
-import { fileManager, trashName } from "../lib/keys";
+import { trashName } from "../lib/keys";
 import { t } from "../lib/i18n";
 
 const WHY: Record<string, string> = { modified: t("改回原版"), missing: t("重新放回"), ignored: t("重新放回") };
@@ -64,7 +64,6 @@ export function RestoreDialog({ scope, label, onClose, onDone }: {
             {nEdited > 0 && <>{t("你修改过的 {n} 个文件会先移到{trash}，需要时可以从那里找回。", { n: nEdited, trash: trashName })}</>}
           </p>
           <FileTree files={files} />
-          <p className="mt-2 text-xs text-muted">{t("移动过的文件会留在你放的位置（{app}里的整理会被保留）。", { app: fileManager })}</p>
         </>
       )}
     </Dialog>

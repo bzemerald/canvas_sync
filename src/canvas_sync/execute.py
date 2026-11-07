@@ -71,13 +71,12 @@ class Executor:
             return [a for a in plan.actions if a.kind in kinds]
 
         # Clear the way first, download in parallel, then the bookkeeping and links.
-        for a in of(Kind.PIN, Kind.UNLINK, Kind.MOVE):
+        for a in of(Kind.UNLINK, Kind.MOVE):
             await run(a)
         await asyncio.gather(*(run(a) for a in of(Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT)))
         for a in of(Kind.IGNORE, Kind.REMOTE_DELETED, Kind.DELETE, Kind.LINK):
             await run(a)
 
-        self._refresh_inodes([s.course.id for s in plan.snapshots])
         self.state.commit()
         return errors
 
@@ -85,8 +84,6 @@ class Executor:
         root, fid = self.root, a.file_id
         assert fid is not None
         match a.kind:
-            case Kind.PIN:
-                self.state.update(fid, path=a.path, pinned_path=a.path)
             case Kind.UNLINK:
                 p = root / a.path
                 if p.is_symlink():
@@ -159,7 +156,7 @@ class Executor:
         self.state.update(
             f.id, path=rel, ignored=0,
             base_hash=digest, base_version=f.version, base_size=f.size,
-            snap_mtime=st.st_mtime, snap_size=st.st_size, snap_inode=st.st_ino,
+            snap_mtime=st.st_mtime, snap_size=st.st_size,
         )
 
     def _move(self, src: Path, rel: str) -> None:
@@ -182,15 +179,6 @@ class Executor:
     def _adopt(self, old_id: int, new_id: int) -> None:
         self.state.rekey(old_id, new_id)
         (self.originals / str(old_id)).unlink(missing_ok=True)
-
-    def _refresh_inodes(self, course_ids: list[int]) -> None:
-        # Apps that "safe save" swap in a new inode; keep ours current so moves stay detectable.
-        for cid in course_ids:
-            for r in self.state.files_for_course(cid):
-                if r.path and not r.ignored:
-                    p = self.root / r.path
-                    if is_regular(p) and (ino := p.stat().st_ino) != r.snap_inode:
-                        self.state.update(r.id, snap_inode=ino)
 
 
 def _timestamp(iso: str) -> float | None:

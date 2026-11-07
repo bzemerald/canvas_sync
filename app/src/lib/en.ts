@@ -149,7 +149,6 @@ export const en: Record<string, string | [string, string]> = {
   "{n} 个不再同步": ["1 no longer synced", "{n} no longer synced"],
   "{n} 个已从 Canvas 删除": ["1 removed from Canvas", "{n} removed from Canvas"],
   "删除了 {n} 个": ["1 deleted", "{n} deleted"],
-  "记住了 {n} 个新位置": ["1 new location remembered", "{n} new locations remembered"],
   "，": ", ",
   "没有新内容": "Nothing new",
   "Canvas 令牌可能过期了，到设置里更换": "Your Canvas token may have expired; replace it in Settings",
@@ -269,7 +268,6 @@ export const en: Record<string, string | [string, string]> = {
     "The 1 file you edited goes to the {trash} first, in case you want it back.",
     "The {n} files you edited go to the {trash} first, in case you want them back.",
   ],
-  "移动过的文件会留在你放的位置（{app}里的整理会被保留）。": "Files you moved stay where you put them (how you arranged things in {app} is kept).",
 
   // -- the file browser
   "今天 {time}": "Today {time}",
@@ -278,7 +276,7 @@ export const en: Record<string, string | [string, string]> = {
   "修改日期": "Date modified",
   "大小": "Size",
   "这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。": "This course has no files yet. Once it has some on Canvas, they appear here after a sync.",
-  "Canvas 上叫“{name}”": "Called “{name}” on Canvas",
+  "磁盘上叫“{name}”": "Called “{name}” on disk",
   "模块里的文件": "Files in modules",
   "页面、作业、公告附带的文件": "Attached to pages, assignments, announcements",
   "这门课没有同步，所以这里没有文件。": "This course isn't synced, so there are no files here.",
@@ -375,8 +373,6 @@ export const en: Record<string, string | [string, string]> = {
   // -- status badges
   "已修改": "Edited",
   "你改过这个文件；同步不会覆盖你的修改": "You changed this file; syncing won't overwrite your changes",
-  "已移动": "Moved",
-  "你把它从原来的位置移到了这里；下次同步会记住新位置": "You moved it here; the next sync remembers where it is now",
   "已删除": "Deleted",
   "你删除了它；下次同步时不会再下载": "You deleted it; the next sync won't download it again",
   "你删除了它，之后不再同步；可以恢复": "You deleted it, so it isn't synced any more; you can restore it",

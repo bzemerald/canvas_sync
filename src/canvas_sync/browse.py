@@ -18,7 +18,7 @@ from typing import Protocol
 from .layout import Layout
 from .state import META_DIR, FileRecord, State
 
-# Local changes `restore` undoes. ("moved" alone isn't one: your folders are yours to arrange.)
+# Local changes `restore` undoes.
 RESTORABLE = {"modified", "missing", "ignored"}
 GONE = {"missing", "ignored"}
 
@@ -41,7 +41,7 @@ class Entry:
     course_id: int | None = None  # files: their course; dirs: set if this is a course's folder
     url: str | None = None        # the file on Canvas, relative to the Canvas site
     link: str | None = None       # a view link: path of the real file it points at
-    states: list[str] = field(default_factory=list)  # modified moved missing ignored untracked remote_deleted
+    states: list[str] = field(default_factory=list)  # modified missing ignored untracked remote_deleted
     deleted: bool = False         # not on disk any more because you deleted it
     changes: int = 0              # dirs: files below with changes `restore` can undo
     modified_inside: int = 0      # dirs: files below you changed
@@ -49,7 +49,7 @@ class Entry:
     skipped: bool = False         # in (or, dirs: is) a folder you deleted or stopped syncing; Canvas's new files don't come here
     new: str | None = None        # files: "new" (arrived since you last opened it) or "updated" (a new version)
     new_inside: int = 0           # dirs: files below that are new to you
-    renamed_from: str | None = None  # dirs: what Canvas calls it, if you renamed it
+    renamed_from: str | None = None  # dirs: its name on disk, if `name` is one you gave it
 
 
 def _natural(name: str) -> list[object]:
@@ -82,8 +82,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     statuses = list(statuses)
     by_id = {s.file_id: s for s in statuses}
     at = {s.path: s for s in statuses if s.path and not GONE & set(s.states)}  # where files are now
-    moved = {s.file_id for s in statuses if "moved" in s.states}  # their old path may hold something else now
-    tracked = {r.path: r for r in (state.all_files() if records is None else records) if r.path and not r.ignored and r.id not in moved}
+    tracked = {r.path: r for r in (state.all_files() if records is None else records) if r.path and not r.ignored}
     links = {row[0]: row[1] for row in state.db.execute("SELECT path, file_id FROM links")}
     course_dirs = {layout.course_dir(c).as_posix(): c.id for c in state.courses()}
     changed = [s.path for s in statuses if s.path and RESTORABLE & set(s.states)]
@@ -94,14 +93,9 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     new_at |= {p: fid for p, fid in links.items() if fid in unseen}
 
     def skipped(path: str) -> bool:
-        return layout.skipped(PurePosixPath(layout.canonical(path)))
+        return layout.skipped(PurePosixPath(path))
 
-    # Folders you renamed, where they are now -> what Canvas calls them.
-    was_named = {layout.renamed(PurePosixPath(k)).as_posix(): posixpath.basename(k) for k in layout.live_names()}
-
-    def renamed_from(path: str) -> str | None:
-        was = was_named.get(path)
-        return was if was != posixpath.basename(path) else None
+    titles = layout.s.folder_titles
 
     def canvas(fid: int, cid: int, path: str) -> dict[str, object]:
         s = by_id.get(fid)
@@ -125,11 +119,11 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
                                  link=real, **canvas(rec.id, rec.course_id, path)))  # type: ignore[arg-type]
             elif st is not None and d.is_dir():
                 prefix = path + "/"
-                out.append(Entry(d.name, path, "dir", _dir_size(d.path), st.st_mtime, course_id=course_dirs.get(path),
+                out.append(Entry(titles.get(path, d.name), path, "dir", _dir_size(d.path), st.st_mtime, course_id=course_dirs.get(path),
                                  changes=sum(p.startswith(prefix) for p in changed),
                                  modified_inside=sum(p.startswith(prefix) for p in modified),
                                  deleted_inside=sum(p.startswith(prefix) for p in gone),
-                                 skipped=skipped(path), renamed_from=renamed_from(path),
+                                 skipped=skipped(path), renamed_from=d.name if path in titles else None,
                                  new_inside=len({fid for p, fid in new_at.items() if p.startswith(prefix)})))
             elif st is not None:
                 s, rec = at.get(path), tracked.get(path)
@@ -151,7 +145,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
         elif not os.path.lexists(root / (prefix + child)):
             gone_dirs[prefix + child] = gone_dirs.get(prefix + child, 0) + 1
     for path, n in gone_dirs.items():
-        out.append(Entry(posixpath.basename(path), path, "dir", deleted=True, changes=n, deleted_inside=n,
+        out.append(Entry(titles.get(path, posixpath.basename(path)), path, "dir", deleted=True, changes=n, deleted_inside=n,
                          skipped=skipped(path)))
 
     out.sort(key=lambda e: (e.type != "dir", _natural(e.name)))

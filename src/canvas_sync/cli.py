@@ -17,7 +17,7 @@ from rich.table import Table
 
 from .api import CanvasClient, CanvasError
 from .config import PREFS_FILE, Account, ConfigError, set_course_listed
-from .engine import Engine, NotInitialized
+from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import open_path
 from .models import Course
 from .plan import Kind, Plan, Scope
@@ -36,7 +36,6 @@ STYLE = {
     Kind.UPDATE: ("↻", "cyan"),
     Kind.CONFLICT: ("!", "yellow"),
     Kind.MOVE: ("→", "blue"),
-    Kind.PIN: ("@", "blue"),
     Kind.IGNORE: ("-", "magenta"),
     Kind.REMOTE_DELETED: ("x", "red"),
     Kind.DELETE: ("x", "red"),
@@ -72,6 +71,7 @@ def with_engine(online: bool, body: Callable[[Engine], Awaitable[T]]) -> T:
                 raise fail("no access token found; run `canvas init`")
             client = CanvasClient(acc.base_url, token)
         try:
+            migrate_folder_names(acc.root)
             with Engine(acc.root, client) as engine:
                 return await body(engine)
         finally:
@@ -167,7 +167,7 @@ def render_plan(plan: Plan, verbose: bool) -> None:
         for a in shown:
             sym, color = STYLE[a.kind]
             line = a.path or a.name
-            if a.kind in (Kind.MOVE, Kind.PIN):
+            if a.kind == Kind.MOVE:
                 line = f"{a.src} → {a.path}"
             if a.kind == Kind.CONFLICT:
                 line += {
@@ -338,7 +338,6 @@ def status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
         return
     labels = {
         "modified": ("M", "yellow", "edited by you"),
-        "moved": ("R", "blue", "moved by you (recorded on next pull)"),
         "missing": ("D", "magenta", "deleted by you (won't be re-downloaded)"),
         "ignored": ("I", "dim", "ignored"),
         "remote_deleted": ("X", "red", "removed from Canvas"),

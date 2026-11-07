@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { CloudOff, FolderInput, Pencil, RefreshCwOff, Trash2 } from "lucide-react";
+import { CloudOff, Pencil, RefreshCwOff, Trash2 } from "lucide-react";
 import type { Entry } from "../lib/api";
 import { t } from "../lib/i18n";
 
 const LABEL: Record<string, { text: string; className: string; hint: string }> = {
   modified: { text: t("已修改"), className: "bg-warn-soft text-warn", hint: t("你改过这个文件；同步不会覆盖你的修改") },
-  moved: { text: t("已移动"), className: "bg-info-soft text-info", hint: t("你把它从原来的位置移到了这里；下次同步会记住新位置") },
   missing: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它；下次同步时不会再下载") },
   ignored: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它，之后不再同步；可以恢复") },
   remote_deleted: { text: t("Canvas 已删除"), className: "bg-danger-soft text-danger", hint: t("老师已经从 Canvas 删除了它；本地副本保留着") },
@@ -100,7 +99,6 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
       {s.includes("remote_deleted") && <Pill icon={<CloudOff />} label={LABEL.remote_deleted.hint} className="bg-danger text-on-accent" />}
       {(mine("missing") || mine("ignored")) && <Pill icon={<Trash2 />} label={LABEL.ignored.hint} className="bg-danger text-on-accent" />}
       {mine("modified") && <Pill icon={<Pencil />} label={LABEL.modified.hint} className="bg-warn text-on-accent" />}
-      {mine("moved") && <Pill icon={<FolderInput />} label={LABEL.moved.hint} className="bg-info text-on-accent" />}
       {s.includes("untracked") ? <NotSynced label={LABEL.untracked.hint} /> : quietlySkipped(entry) && <NotSynced label={skippedHint(entry)} />}
     </>
   );

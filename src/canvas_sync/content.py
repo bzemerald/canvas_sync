@@ -70,16 +70,16 @@ def courses(e: Engine) -> list[dict[str, Any]]:
     and how much is new in it."""
     out = []
     for c in e.state.courses():
-        canonical = e.layout.canonical_course_dir(c)
+        folder = e.layout.course_dir(c)
         new = news_counts(news(e.state, e.root, c.id))
         out.append({
-            **asdict(c), "dir": e.layout.course_dir(c).as_posix(),
+            **asdict(c), "dir": folder.as_posix(),
             "display_code": e.settings.course_names.get(c.id) or c.code,
             "label": course_label(c, e.settings),       # what the app calls it
             "renamed": c.id in e.settings.course_titles,  # you gave it a name
             "term_label": term_label(c, e.settings),
             # Where what's from each part of Canvas goes (files, modules, attachments).
-            "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
+            "source_dirs": {k: (folder / v).as_posix() for k, v in e.settings.view_dirs.items()},
             "new": new["total"],                         # things you haven't opened
             "new_in": new,                               # and in each view
             "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
@@ -470,8 +470,8 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
                 "done": bool((it.get("completion_requirement") or {}).get("completed")), "new": fresh, **t,
             })
         name = m.get("name") or "Module"
-        folder = layout.renamed(
-            layout.canonical_course_dir(course) / layout.s.view_dirs.get("modules", "modules")
+        folder = (
+            layout.course_dir(course) / layout.s.view_dirs.get("modules", "modules")
             / sanitize(f"{m.get('position', 0):02d} {name}")
         )
         out.append({

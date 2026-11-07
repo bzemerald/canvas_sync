@@ -45,7 +45,7 @@ import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
 import { termRank } from "./lib/terms";
 import {
-  type Shown, type Thing, type ThingOf, type ViewName, changed, fromEd, isView, opensElsewhere, putAt, same, thingKey, thingOf, thingOfHit,
+  type Shown, type Thing, type ThingOf, type ViewName, changed, folderTitle, fromEd, isView, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
 import { ownFrame, useTrafficLights } from "./lib/window";
@@ -197,6 +197,13 @@ export function MainWindow() {
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
+  const [, setTitled] = useState(0); // (folder titles came: show them)
+  useEffect(() => {
+    void api.folderTitles().then((titles) => {
+      setFolderTitles(titles);
+      setTitled((n) => n + 1);
+    }, () => {});
+  }, [version]);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
   useEffect(() => {
@@ -405,7 +412,7 @@ export function MainWindow() {
   const folderScope = !wide && ((cv && filesTab) || view.kind === "browse") ? browsing : null;
   const courseWide = !!cv && !filesTab && (!!cv.blank || !(isView(tab) && FILTERS_ITSELF.includes(tab.view)));
   const tabName = tabEntry ? thingName(tabEntry, courseList, "tab") : "";
-  const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path === "" ? t("全部文件") : path.split("/").pop() ?? path);
+  const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path === "" ? t("全部文件") : folderTitle(path));
   useEffect(() => {
     if (!query.trim()) setWide(false);
   }, [query]);
@@ -633,27 +640,11 @@ export function MainWindow() {
     void saveTitle(api.setTermTitle(key, title));
   };
 
-  /** Rename a folder, then follow it: any open view inside it moves to the new path. */
+  /** What the app calls a folder ("": its own name). */
   const renameFolder = async (path: string, name: string) => {
     setRenaming(null);
     try {
-      const { path: renamed } = await api.rename(path, name);
-      const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
-      const moveThing = (x: Thing): Thing => (x.type === "folder" || x.type === "file" ? { ...x, path: move(x.path) } : x);
-      const moveCourse = (v: CourseView): CourseView => ({ ...v, tab: moveThing(v.tab), path: move(v.path), select: v.select && move(v.select) });
-      setHist((h) => ({
-        ...h,
-        stack: h.stack.map((v) => (v.kind === "browse" ? { ...v, path: move(v.path), select: v.select && move(v.select) }
-          : v.kind === "course" ? moveCourse(v) : v)),
-      }));
-      for (const [id, v] of lastIn.current) lastIn.current.set(id, moveCourse(v));
-      setHist((h) => {
-        const cur = h.stack[h.i];
-        if ((cur.kind !== "browse" && cur.kind !== "course") || cur.path !== parentOf(renamed)) return h;
-        const stack = [...h.stack];
-        stack[h.i] = { ...cur, select: renamed }; // keep the renamed folder selected
-        return { ...h, stack };
-      });
+      await api.rename(path, name);
       refresh();
     } catch (e) {
       fail(t("重命名失败"))(e);
@@ -701,6 +692,7 @@ export function MainWindow() {
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
         { label: t("重命名"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
+        ...(e.renamed_from ? [{ label: t("恢复原名（{name}）", { name: e.renamed_from }), disabled: syncBusy, onSelect: () => void renameFolder(e.path, "") }] : []),
         "separator",
         { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
         { label: t("恢复此文件夹的原版…"), disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
@@ -737,7 +729,7 @@ export function MainWindow() {
   /** Right-clicking a selection of several. */
   /** The folder showing, right-clicked where nothing is: what's shown, and what to do with it. */
   const folderMenu = (here: string): MenuItem[] => {
-    const label = course && here === course.dir ? course.label : here ? here.split("/").pop()! : t("全部文件");
+    const label = course && here === course.dir ? course.label : here ? folderTitle(here) : t("全部文件");
     return sections(
       [{ label: t("显示改动"), checked: showChanges, hint: shortcut.toggleChanges || undefined, onSelect: () => setShowChanges(!showChanges) }],
       [
@@ -894,7 +886,7 @@ export function MainWindow() {
   const addMenu = (): MenuItem[] => [
     { label: t("新建智能文件夹…"), onSelect: () => setEditing({ folder: null }) },
     ...(shownThing && !isPinned(shownThing)
-      ? [{ label: t("置顶“{name}”", { name: shownThing.type === "folder" ? shownThing.path.split("/").pop()! : nameOf(shownThing) }), onSelect: () => pinThing(shownThing) }]
+      ? [{ label: t("置顶“{name}”", { name: shownThing.type === "folder" ? folderTitle(shownThing.path) : nameOf(shownThing) }), onSelect: () => pinThing(shownThing) }]
       : []),
   ];
 
@@ -1609,7 +1601,7 @@ function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inlin
 }) {
   const rest = path.slice(root.path.length).replace(/^\//, "");
   const prefix = root.path ? root.path + "/" : "";
-  const parts = (rest ? rest.split("/") : []).map((name, i, all) => ({ name, path: prefix + all.slice(0, i + 1).join("/") }))
+  const parts = (rest ? rest.split("/") : []).map((_, i, all) => prefix + all.slice(0, i + 1).join("/")).map((p) => ({ name: folderTitle(p), path: p }))
     .filter((p) => p.path !== inline);
   return (
     <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
@@ -1802,7 +1794,6 @@ const CHANGE: Record<string, (n: number) => string> = {
   ignore: (n) => t("{n} 个不再同步", { n }),
   remote_deleted: (n) => t("{n} 个已从 Canvas 删除", { n }),
   delete: (n) => t("删除了 {n} 个", { n }),
-  pin: (n) => t("记住了 {n} 个新位置", { n }),
 };
 
 function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: string; onFix: () => void }) {

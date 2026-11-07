@@ -5,6 +5,17 @@
 // whether it's hidden there. Anything can go anywhere; each place shows it its own way.
 import type { DocKind, Hit, Kind, ModuleItem } from "./api";
 
+// What you call folders you renamed (the name on disk stays): `GET /folder-titles`, kept here since
+// anything may show a folder's name.
+let folderTitles: Record<string, string> = {};
+export const setFolderTitles = (titles: Record<string, string>) => {
+  folderTitles = titles;
+};
+export const folderTitle = (path: string) => folderTitles[path] ?? path.split("/").pop() ?? path;
+/** The names along a path, as `slice(start, end)` picks them. */
+export const titlesAlong = (path: string, start?: number, end?: number) =>
+  path.split("/").map((name, i, all) => folderTitles[all.slice(0, i + 1).join("/")] ?? name).slice(start, end);
+
 export type ViewName =
   | "overview" | "modules" | "announcements" | "ed" | "assignments" | "grades" | "files" | "syllabus" | "pages"
   | "tools" | "canvas"; // (ed: what it has on Ed)

@@ -10,7 +10,7 @@ import type { Course } from "../lib/api";
 import { CourseIcon } from "../lib/courseIcons";
 import { t } from "../lib/i18n";
 import { dragToPlace } from "../lib/dropZones";
-import { type Shown, type Thing, type ViewName, isView, opensElsewhere } from "../lib/things";
+import { type Shown, type Thing, type ViewName, folderTitle, isView, opensElsewhere } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 
@@ -116,7 +116,8 @@ export function thingName(e: Shown, courses: Course[], where: Where = "row"): st
 export function ownName(e: Shown, courses: Course[], where: Where = "row"): string {
   switch (e.type) {
     case "course": return courses.find((c) => c.id === e.course)?.label ?? e.name ?? t("课程 #{id}", { id: e.course });
-    case "folder": case "file": return e.path.split("/").pop() ?? e.path;
+    case "folder": return folderTitle(e.path);
+    case "file": return e.path.split("/").pop() ?? e.path;
     case "doc": return e.name || DOC_LABEL[e.kind];
     case "module": return e.name || t("模块@@card");
     case "tool": return e.name || t("外部工具");

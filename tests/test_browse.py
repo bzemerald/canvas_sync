@@ -95,7 +95,7 @@ def test_restore_only_what_is_in_scope(root, fake):
     assert (root / MOD1).read_bytes() == b"v1" and (root / MOD2).read_bytes() == b"mine 2"
 
 
-def test_restore_folder_brings_back_deleted_and_fixes_moved_in_place(root, fake):
+def test_restore_folder_brings_back_deleted_and_what_you_moved(root, fake):
     add_week2(fake)
     pull(root, fake)
     (root / MOD1).unlink()
@@ -105,10 +105,9 @@ def test_restore_folder_brings_back_deleted_and_fixes_moved_in_place(root, fake)
     os.rename(root / MOD2, mine)
     mine.write_bytes(b"edited after moving")
     with Engine(root) as e:
-        assert sorted(e.restore(root / COURSE)) == sorted([MOD1, f"{COURSE}/Mine/lec2.pdf"])
-    assert (root / MOD1).read_bytes() == b"v1"
-    assert mine.read_bytes() == b"w2" and not (root / MOD2).exists()  # stays where you put it
-    assert pull(root, fake).actions[0].kind == "pin"
+        assert sorted(e.restore(root / COURSE)) == sorted([MOD1, MOD2])
+    assert (root / MOD1).read_bytes() == b"v1" and (root / MOD2).read_bytes() == b"w2"
+    assert mine.read_bytes() == b"edited after moving"  # yours
 
 
 # -- folder listing ---------------------------------------------------------------

@@ -144,8 +144,10 @@ without the Canvas website or Finder.
     - `[[pinned]]`: 置顶, entries of any thing.
     - `[course_layouts.<id>]`: `tabs`, `overview`, `links`, each a list of entries (the
       course's own things leave out `course`).
-    - `[course_titles]` (by course id), `[term_titles]` (by the term's name on Canvas): what the app
-      calls them; their folders keep their names (`[folder_names]` is for renaming folders).
+    - `[course_titles]` (by course id), `[term_titles]` (by the term's name on Canvas),
+      `[folder_titles]` (by the folder's path): what the app calls them; on disk they keep their
+      names. Paths come only from Canvas and the layout: a file moved or renamed in Finder counts
+      as deleted. (`migrate_folder_names`: folders older versions renamed on disk go back.)
     - `[course_icons]`, `[sidebar]` order, hidden courses.
     - `[ed.courses]`: each course's Ed course (0: none, as chosen).
   - Notes typed on an overview: `<sync folder>/.canvas/notes/<course>/<id>.md`.

@@ -10,9 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from canvas_sync import Engine
-from canvas_sync.config import Account, Settings, needs_titles, save_pinned
+from canvas_sync.config import Account, Settings, change_things, needs_titles, old_folder_names, save_pinned
+from canvas_sync.engine import migrate_folder_names
 from canvas_sync.things import Entry, Thing
-from canvas_sync.plan import Scope
+from canvas_sync.catalog import catalog
 from canvas_sync.server import create_app
 from fake_canvas import BASE, COURSE, FakeCanvas, kinds, pull
 
@@ -27,111 +28,171 @@ def rename(root: Path, rel: str, name: str) -> str:
 
 
 def names(root: Path) -> dict[str, str]:
-    return Settings.load(root / ".canvas/config.toml").folder_names
+    return Settings.load(root / ".canvas/config.toml").folder_titles
+
+
+def tree(root: Path) -> list[str]:
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if ".canvas" not in p.parts)
 
 
 @pytest.mark.links
-def test_renamed_folder_syncs_like_before(root, fake: FakeCanvas):
+def test_renaming_a_folder_changes_only_what_the_app_calls_it(root, fake: FakeCanvas):
     pull(root, fake)
-    assert rename(root, WEEK1, "Week 1 - Vectors") == f"{MOD}/Week 1 - Vectors"
+    before = tree(root)
+    assert rename(root, WEEK1, " Week 1 - Vectors ") == WEEK1
     assert names(root) == {WEEK1: "Week 1 - Vectors"}
-    assert (root / MOD / "Week 1 - Vectors/lec1.pdf").read_bytes() == b"v1"
-    assert (root / LINK).read_bytes() == b"v1"  # the link from Files/ into it was repointed
+    assert tree(root) == before
     with Engine(root) as e:
-        assert e.status() == []  # not "moved": nothing changed as far as syncing goes
+        assert e.status() == []
+        [week] = e.list_dir(MOD)
+    assert (week.name, week.path, week.renamed_from) == ("Week 1 - Vectors", WEEK1, "01 Week 1")
     assert pull(root, fake).actions == []
 
-    # What Canvas adds to that module later goes into the renamed folder; updates too.
+    # What Canvas adds to it later goes into it; updates too.
     fake.put(101, "lec2.pdf", b"w")
     fake.modules[0]["items"].append({"type": "File", "content_id": 101})
     fake.put(100, "lec1.pdf", b"v2", version="2026-09-02T00:00:00Z")
     assert kinds(pull(root, fake)) == [
-        ("download", f"{MOD}/Week 1 - Vectors/lec2.pdf"),
+        ("download", f"{WEEK1}/lec2.pdf"),
         ("link", f"{COURSE}/Files/Lectures/lec2.pdf"),
-        ("update", f"{MOD}/Week 1 - Vectors/lec1.pdf"),
+        ("update", f"{WEEK1}/lec1.pdf"),
     ]
-    assert not (root / WEEK1).exists()
+
+
+def test_a_folder_gets_its_own_name_back(root, fake):
+    pull(root, fake)
+    for back_to in ("", "  ", "01 Week 1"):
+        rename(root, WEEK1, "W1")
+        assert names(root) == {WEEK1: "W1"}
+        rename(root, WEEK1, back_to)
+        assert names(root) == {}
+    with Engine(root) as e:
+        [week] = e.list_dir(MOD)
+    assert (week.name, week.renamed_from) == ("01 Week 1", None)
+
+
+def test_folders_inside_one_another_and_your_own_can_be_renamed(root, fake):
+    pull(root, fake)
+    (root / COURSE / "Mine").mkdir()
+    rename(root, MOD, "课件")
+    rename(root, WEEK1, "第一周")
+    rename(root, f"{COURSE}/Mine", "我的")
+    with Engine(root) as e:
+        assert {x.path: x.name for x in e.list_dir(COURSE)}[MOD] == "课件"
+        assert {x.path: x.name for x in e.list_dir(COURSE)}[f"{COURSE}/Mine"] == "我的"
+        assert [x.name for x in e.list_dir(MOD)] == ["第一周"]
+    assert pull(root, fake).actions == []
+
+
+def test_rename_refuses_what_is_not_a_folder(root, fake):
+    pull(root, fake)
+    for rel, error in (("", ValueError), (".canvas", ValueError), ("nope", LookupError), (f"{WEEK1}/lec1.pdf", LookupError)):
+        with pytest.raises(error):
+            rename(root, rel, "x")
+
+
+def test_syncing_and_restoring_in_a_renamed_folder(root, fake):
+    pull(root, fake)
+    rename(root, WEEK1, "W1")
+    (root / WEEK1 / "lec1.pdf").write_bytes(b"edited")
+    with Engine(root) as e:
+        assert [(s.path, s.states) for s in e.status()] == [(f"{WEEK1}/lec1.pdf", ["modified"])]
+        assert e.restore(root / WEEK1) == [f"{WEEK1}/lec1.pdf"]
+    assert (root / WEEK1 / "lec1.pdf").read_bytes() == b"v1"
+
+
+# -- folders renamed on disk by older versions -------------------------------------
+
+
+def renamed_on_disk(root: Path, folders: dict[str, str]) -> None:
+    """As older versions left things: the folders renamed, [folder_names], `on_local_move`.
+    `folders`: the path Canvas names would give each -> its name, shallowest first."""
+    cfg = root / ".canvas/config.toml"
+    with Engine(root) as e:
+        for key, name in folders.items():
+            parts = key.split("/")
+            now = "/".join(folders.get("/".join(parts[: i + 1]), p) for i, p in enumerate(parts[:-1]))
+            old = f"{now}/{parts[-1]}" if now else parts[-1]
+            new = f"{now}/{name}" if now else name
+            os.rename(root / old, root / new)
+            e._repath(old, new)
+            change_things(cfg, lambda t: t.moved(old, new))
+        e._relink()
+        e.state.commit()
+    text = cfg.read_text(encoding="utf-8").replace("[sync]\n", '[sync]\non_local_move = "follow"\n')
+    table = "\n".join(f'"{k}" = "{v}"' for k, v in folders.items())
+    cfg.write_text(f"{text}\n[folder_names]\n{table}\n", encoding="utf-8")
 
 
 @pytest.mark.links
-def test_rename_the_folder_links_point_into_and_its_parents(root, fake):
+def test_folders_renamed_on_disk_go_back_and_keep_their_names_in_the_app(root, fake):
     pull(root, fake)
-    rename(root, MOD, "课件")
-    rename(root, f"{COURSE}/课件/01 Week 1", "第一周")
-    rename(root, COURSE, "线性代数")
-    rename(root, "Fall 2026", "2026 秋")
-    real = root / "2026 秋/线性代数/课件/第一周/lec1.pdf"
-    link = root / "2026 秋/线性代数/Files/Lectures/lec1.pdf"
-    assert real.read_bytes() == b"v1" and link.is_symlink() and link.read_bytes() == b"v1"
-    assert names(root) == {MOD: "课件", WEEK1: "第一周", COURSE: "线性代数", "Fall 2026": "2026 秋"}
-    assert pull(root, fake).actions == []
+    before = tree(root)
+    cfg = root / ".canvas/config.toml"
+    save_pinned(cfg, [Entry(Thing("folder", path=WEEK1)), Entry(Thing("file", path=f"{WEEK1}/lec1.pdf"))])
     with Engine(root) as e:
-        # Listed, each says what Canvas calls it; what you didn't rename doesn't.
-        was = {x.name: x.renamed_from for x in e.list_dir("2026 秋/线性代数")}
-        assert was["课件"] == "Modules" and was["Files"] is None
-        assert [x.renamed_from for x in e.list_dir("2026 秋")] == [COURSE.split("/")[-1]]
-        assert [c.id for c in e.courses_in(Scope(["2026 秋"]))] == [1]
         e.reindex()
-        assert [h.title for h in e.search("线性代数 lec1")] == ["lec1.pdf"]  # the new name is a course alias
+    renamed_on_disk(root, {MOD: "课件", WEEK1: "第一周"})
+    assert (root / COURSE / "课件/第一周/lec1.pdf").exists() and not (root / WEEK1).exists()
+
+    migrate_folder_names(root)
+
+    assert tree(root) == before
+    assert (root / LINK).read_bytes() == b"v1" and not (root / COURSE / "课件").exists()
+    assert names(root) == {MOD: "课件", WEEK1: "第一周"}
+    assert old_folder_names(cfg) is None and "on_local_move" not in cfg.read_text(encoding="utf-8")
+    assert [e.thing.path for e in Settings.load(cfg).pinned] == [WEEK1, f"{WEEK1}/lec1.pdf"]
+    with Engine(root) as e:
+        assert e.status() == []
+        assert [h.path for h in e.search("lec1")] == [f"{WEEK1}/lec1.pdf"]
+    assert pull(root, fake).actions == []
+
+    migrate_folder_names(root)  # (once)
+    assert tree(root) == before and names(root) == {MOD: "课件", WEEK1: "第一周"}
 
 
-def test_a_rename_no_course_goes_through_changes_nothing(root, fake):
-    # (Left over: a term folder renamed "fa26" from a name no course has, then back.)
+def test_a_folder_that_cannot_go_back_is_moved_by_the_next_sync(root, fake):
+    pull(root, fake)
+    renamed_on_disk(root, {WEEK1: "第一周"})
+    (root / WEEK1).mkdir()
+    (root / WEEK1 / "in the way.txt").write_text("mine")
+
+    migrate_folder_names(root)
+
+    assert (root / MOD / "第一周/lec1.pdf").exists()
+    with Engine(root) as e:  # not lost, and not taken for deleted
+        assert [s for s in e.status() if "missing" in s.states] == []
+    pull(root, fake)
+    assert (root / WEEK1 / "lec1.pdf").read_bytes() == b"v1"
+    assert (root / WEEK1 / "in the way.txt").read_text() == "mine"
+    with Engine(root) as e:
+        assert e.status() == []
+
+
+def test_going_back_after_an_interruption(root, fake):
+    pull(root, fake)
+    before = tree(root)
+    renamed_on_disk(root, {MOD: "课件", WEEK1: "第一周"})
+    # It stopped after the deepest went back: [folder_names] is still there.
+    with Engine(root) as e:
+        os.rename(root / COURSE / "课件/第一周", root / COURSE / "课件/01 Week 1")
+        e._repath(f"{COURSE}/课件/第一周", f"{COURSE}/课件/01 Week 1")
+        e._relink()
+        e.state.commit()
+
+    migrate_folder_names(root)
+
+    assert tree(root) == before and names(root) == {MOD: "课件", WEEK1: "第一周"}
+    with Engine(root) as e:
+        assert e.status() == []
+
+
+def test_an_old_name_for_a_folder_that_is_gone_is_dropped(root, fake):
     pull(root, fake)
     cfg = root / ".canvas/config.toml"
-    cfg.write_text(cfg.read_text(encoding="utf-8").replace("[folder_names]\n", '[folder_names]\nfa26 = "Fall 2026"\n'), encoding="utf-8")
-    assert rename(root, MOD, "课件") == f"{COURSE}/课件"
-    assert names(root) == {"fa26": "Fall 2026", MOD: "课件"}  # (not under "fa26/")
-    with Engine(root) as e:
-        assert {x.name: x.renamed_from for x in e.list_dir(COURSE)}["课件"] == "Modules"
-    assert pull(root, fake).actions == []
-
-
-def test_renaming_back_what_you_renamed_in_finder_records_nothing(root, fake):
-    pull(root, fake)
-    os.rename(root / "Fall 2026", root / "fa26")
-    assert rename(root, "fa26", "Fall 2026") == "Fall 2026"
-    assert names(root) == {}
-    assert pull(root, fake).actions == []
-
-
-def test_renaming_back_forgets_the_rename(root, fake):
-    pull(root, fake)
-    rename(root, WEEK1, "W1")
-    rename(root, f"{MOD}/W1", "01 Week 1")
-    assert names(root) == {}
-    assert pull(root, fake).actions == []
-
-
-def test_rename_refuses_bad_names_and_clashes(root, fake):
-    pull(root, fake)
-    (root / MOD / "Mine").mkdir()
-    with Engine(root) as e:
-        with pytest.raises(FileExistsError):
-            e.rename_folder(WEEK1, "Mine")
-        for bad in ["", "  ", ".hidden"]:
-            with pytest.raises(ValueError):
-                e.rename_folder(WEEK1, bad)
-        with pytest.raises(ValueError):
-            e.rename_folder(".canvas", "x")
-        with pytest.raises(LookupError):
-            e.rename_folder(LINK, "x")  # a file
-        assert e.rename_folder(WEEK1, "a/b") == f"{MOD}/a_b"  # one folder, not two
-        assert e.rename_folder(f"{MOD}/a_b", "A_B") == f"{MOD}/A_B"  # case-only rename works
-    assert pull(root, fake).actions == []
-
-
-def test_rename_keeps_your_own_moves_and_edits(root, fake):
-    pull(root, fake)
-    mine = root / COURSE / "Mine"
-    mine.mkdir()
-    os.rename(root / WEEK1 / "lec1.pdf", mine / "lec1.pdf")
-    (mine / "lec1.pdf").write_bytes(b"edited")
-    pull(root, fake)  # the move is remembered (pinned)
-    rename(root, f"{COURSE}/Mine", "My stuff")
-    with Engine(root) as e:
-        assert [(s.path, s.states) for s in e.status()] == [(f"{COURSE}/My stuff/lec1.pdf", ["modified"])]
-    assert pull(root, fake).actions == []
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '\n[folder_names]\n"Old/Folder" = "x"\n', encoding="utf-8")
+    migrate_folder_names(root)
+    assert names(root) == {} and old_folder_names(cfg) is None
 
 
 @pytest.fixture
@@ -184,13 +245,13 @@ def test_renaming_a_course_folder_leaves_what_the_app_calls_it(root, fake, api):
     pull(root, fake)
     assert api.post("/api/rename", json={"path": COURSE, "name": "Folder"}).status_code == 200
     assert names_in_app(api) == (COURSE.split("/")[-1], "Fall 2026", False)
-    assert api.get("/api/courses").json()[0]["dir"] == "Fall 2026/Folder"
+    assert api.get("/api/courses").json()[0]["dir"] == COURSE
+    assert api.get("/api/folder-titles").json() == {COURSE: "Folder"}
 
 
 def test_names_from_folders_become_titles_once(root, fake):
     pull(root, fake)
-    rename(root, COURSE, "线性代数")
-    rename(root, "Fall 2026", "2026 秋")
+    renamed_on_disk(root, {"Fall 2026": "2026 秋", COURSE: "线性代数"})
     cfg = root / ".canvas/config.toml"
     text = cfg.read_text(encoding="utf-8")
     start, end = text.index("[course_titles]"), text.index("[course_aliases]")
@@ -200,8 +261,8 @@ def test_names_from_folders_become_titles_once(root, fake):
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as client:
         assert not needs_titles(cfg)
         assert names_in_app(client) == ("线性代数", "2026 秋", True)
-        assert (root / "2026 秋/线性代数").is_dir()
-        assert names(root) == {COURSE: "线性代数", "Fall 2026": "2026 秋"}  # (the folders keep their names)
+        assert (root / COURSE).is_dir() and not (root / "2026 秋").exists()
+        assert names(root) == {COURSE: "线性代数", "Fall 2026": "2026 秋"}
 
         # Once: going back to its own name doesn't bring it back.
         client.put("/api/courses/1/title", json={"title": ""})
@@ -213,21 +274,17 @@ def test_api_rename_and_pin(api, root):
     assert api.put("/api/pinned", json={"entries": [{"type": "folder", "path": WEEK1}]}).json() == [
         {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1}
     ]
-    r = api.post("/api/rename", json={"path": WEEK1, "name": "Week One"})
-    assert r.json() == {"path": f"{MOD}/Week One"}
-    assert api.get("/api/pinned").json()[0]["path"] == f"{MOD}/Week One"  # the pin followed
-    assert [h["path"] for h in api.get("/api/search", params={"q": "lec1"}).json()] == [f"{MOD}/Week One/lec1.pdf"]
-    assert api.post("/api/rename", json={"path": f"{MOD}/Week One", "name": ""}).status_code == 400
+    assert api.post("/api/rename", json={"path": WEEK1, "name": "Week One"}).json() == {"path": WEEK1}
+    assert api.get("/api/pinned").json()[0]["path"] == WEEK1
+    assert api.get("/api/folder-titles").json() == {WEEK1: "Week One"}
+    assert api.post("/api/rename", json={"path": ".canvas", "name": "y"}).status_code == 400
     assert api.post("/api/rename", json={"path": "../x", "name": "y"}).status_code == 400
+    assert api.post("/api/rename", json={"path": "nope", "name": "y"}).status_code == 404
 
-    api.post("/api/rename", json={"path": COURSE, "name": "Linear Algebra"})
-    [course] = api.get("/api/courses").json()
-    assert course["dir"] == "Fall 2026/Linear Algebra" and course["label"] == "MATH 221" and not course["renamed"]
-    assert course["term_label"] == "Fall 2026"
-    assert course["source_dirs"]["modules"] == "Fall 2026/Linear Algebra/Modules"
-    assert api.get("/api/pinned").json()[0]["path"] == "Fall 2026/Linear Algebra/Modules/Week One"
-    # Search results call the course by its new name too.
-    assert {h["course"] for h in api.get("/api/search", params={"q": "lec1"}).json()} == {"MATH 221"}
+    # Search finds it by both its names.
+    with Engine(root) as e:
+        found = {x["path"]: x for x in catalog(e) if x["type"] == "folder"}[WEEK1]
+    assert found["name"] == "Week One" and "01 Week 1" in found["aliases"]
 
 
 def test_pinned_courses(api, root):

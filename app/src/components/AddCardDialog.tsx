@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, Entry, ItemSummary, Module } from "../lib/api";
 import { t } from "../lib/i18n";
-import type { Shown, ViewName } from "../lib/things";
+import { type Shown, type ViewName, folderTitle } from "../lib/things";
 import { Button, Dialog } from "./Dialog";
 import { FileIcon } from "./FileIcon";
 import { Loading } from "./Status";
@@ -277,11 +277,11 @@ function PathPicker({ root, files, onPick }: { root: string; files: boolean; onP
   return (
     <div className="pb-2">
       <nav className="mb-2 flex flex-wrap items-center gap-0.5 text-xs text-muted">
-        <button onClick={() => setPath(root)} className="rounded px-1 hover:bg-chip hover:text-fg">{root.split("/").pop()}</button>
-        {parts.map((p, i) => (
+        <button onClick={() => setPath(root)} className="rounded px-1 hover:bg-chip hover:text-fg">{folderTitle(root)}</button>
+        {parts.map((_, i) => (
           <span key={i} className="flex items-center gap-0.5">
             <ChevronRight className="size-3" />
-            <button onClick={() => setPath([root, ...parts.slice(0, i + 1)].join("/"))} className="rounded px-1 hover:bg-chip hover:text-fg">{p}</button>
+            <button onClick={() => setPath([root, ...parts.slice(0, i + 1)].join("/"))} className="rounded px-1 hover:bg-chip hover:text-fg">{folderTitle([root, ...parts.slice(0, i + 1)].join("/"))}</button>
           </span>
         ))}
       </nav>
@@ -303,7 +303,7 @@ function PathPicker({ root, files, onPick }: { root: string; files: boolean; onP
       </ul>
       {!files && (
         <div className="mt-2 flex justify-end">
-          <Button primary onClick={() => onPick(path)}>{t("用“{name}”", { name: path.split("/").pop() ?? path })}</Button>
+          <Button primary onClick={() => onPick(path)}>{t("用“{name}”", { name: folderTitle(path) })}</Button>
         </div>
       )}
     </div>

@@ -373,9 +373,9 @@ function MarkedIcon({ e, marked, className }: { e: Entry; marked: Props["marked"
   return Icon ? <Icon className={`${className} shrink-0 text-type-folder`} /> : <FileIcon name={e.name} dir={e.type === "dir"} className={className} />;
 }
 
-/** What Canvas calls a folder you renamed, struck through. */
+/** A folder's name on disk, if you renamed it in the app, struck through. */
 function WasNamed({ name, className }: { name: string; className: string }) {
-  return <s title={t("Canvas 上叫“{name}”", { name })} className={`text-muted ${className}`}>{name}</s>;
+  return <s title={t("磁盘上叫“{name}”", { name })} className={`text-muted ${className}`}>{name}</s>;
 }
 
 function SortHeader({ label, k, sort, setSort, right }: {

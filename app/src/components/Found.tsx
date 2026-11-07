@@ -16,7 +16,7 @@ import { type Action, type Catalog, type Describe, type Found, type GroupId, typ
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular } from "../lib/query";
-import type { Thing, ViewName } from "../lib/things";
+import { type Thing, type ViewName, titlesAlong } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
 import { KIND, ResultBody, Snippet, baseName, formatDate } from "./Result";
@@ -621,7 +621,7 @@ function describeKind(e: CatalogEntry): string {
     case "link": return e.url.replace(/^https?:\/\/(www\.)?/, "");
     case "note": return e.text || t("备忘录");
     case "search": return t("智能文件夹");
-    case "file": case "folder": return e.path.split("/").slice(2, -1).join(" / ");
+    case "file": case "folder": return titlesAlong(e.path, 2, -1).join(" / ");
     default: return "";
   }
 }

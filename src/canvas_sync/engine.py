@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import posixpath
 from dataclasses import dataclass, replace
@@ -12,10 +13,12 @@ from send2trash import send2trash
 
 from .api import CanvasClient
 from .browse import RESTORABLE, Entry, list_dir
-from .config import SETTINGS_TEMPLATE, Settings, record_folder_rename, update_skip_folders
+from .config import (
+    SETTINGS_TEMPLATE, Settings, change_things, old_folder_names, replace_folder_names, set_folder_title, update_skip_folders,
+)
 from .discover import discover_course
 from .execute import EventHandler, Executor
-from .layout import Layout, sanitize
+from .layout import Layout
 from .local import can_symlink, clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
@@ -23,16 +26,28 @@ from .search import Hit, Index, IndexStats, ProgressHandler
 from .state import META_DIR, FileRecord, State
 
 
+log = logging.getLogger(__name__)
+
+
 class NotInitialized(Exception):
     pass
 
 
+def migrate_folder_names(root: Path) -> None:
+    """A sync folder from when renaming a folder renamed it on disk, as it is now. (Not when an
+    Engine opens: `canvas mcp` only reads.)"""
+    cfg = root.expanduser() / META_DIR / "config.toml"
+    if cfg.exists() and (names := old_folder_names(cfg)) is not None:
+        with Engine(root) as e:
+            e.undo_folder_names(names)
+
+
 @dataclass
 class FileStatus:
-    path: str | None  # where the file is now (or was, if you deleted it)
+    path: str | None  # where the file is (or was, if you deleted it)
     file_id: int
     course_id: int
-    states: list[str]  # modified | missing | moved | ignored | remote_deleted
+    states: list[str]  # modified | missing | ignored | remote_deleted
 
 
 class Engine:
@@ -43,7 +58,7 @@ class Engine:
             raise NotInitialized(f"{self.root} is not set up yet (run `canvas init`)")
         self.settings = self._settings()
         self.state = State(self.meta / "state.db")
-        self.layout = Layout(self.settings, self.state.courses())
+        self.layout = Layout(self.settings)
         self.client = client
         self._index: Index | None = None
 
@@ -148,8 +163,7 @@ class Engine:
                 if info.path is None:
                     states.append("missing")
                 else:
-                    path = info.path
-                    states += ["moved"] * info.moved + ["modified"] * info.modified
+                    states += ["modified"] * info.modified
             if r.remote_deleted and r.path:
                 states.append("remote_deleted")
             if states:
@@ -241,9 +255,8 @@ class Engine:
         return rel
 
     def _where(self) -> dict[int, str]:
-        """Where each synced file is now, following moves you haven't pulled yet."""
-        moved = {s.file_id: s.path for s in self.status() if "moved" in s.states and s.path}
-        return {r.id: moved.get(r.id, r.path) for r in self.state.all_files() if r.path and not r.ignored}
+        """Where each synced file is."""
+        return {r.id: r.path for r in self.state.all_files() if r.path and not r.ignored}
 
     def _affected(self, rels: list[str]) -> tuple[dict[int, str], list[str]]:
         """Synced files at or under these paths (a view link stands for its file), with
@@ -270,18 +283,15 @@ class Engine:
     def _stop_syncing(self, files: dict[int, str], keep_links_in: list[str] = ()) -> None:  # type: ignore[assignment]
         """Mark files as not synced. Their view links go: sync won't put them there any more.
         But not those in folders you keep without syncing (`keep_links_in`, and folders
-        already not synced): they stay, pointing at the file. A file you moved is recorded
-        where it is now."""
-        for fid, now in files.items():
+        already not synced): they stay, pointing at the file."""
+        for fid in files:
             for path, linked in list(self.state.db.execute("SELECT path, file_id FROM links")):
                 kept = any(_under(path, k) for k in keep_links_in)
-                if linked == fid and not kept and not self.layout.skipped(PurePosixPath(self.layout.canonical(path))):
+                if linked == fid and not kept and not self.layout.skipped(PurePosixPath(path)):
                     if (self.root / path).is_symlink():
                         (self.root / path).unlink()
                     self.state.remove_link(path)
-            rec = self.state.get(fid)
-            moved = rec is not None and rec.path != now
-            self.state.update(fid, ignored=1, **({"path": now, "pinned_path": now} if moved else {}))
+            self.state.update(fid, ignored=1)
 
     def delete_preview(self, rels: list[str]) -> dict[str, object]:
         """What `delete` would do, for the confirmation."""
@@ -314,7 +324,7 @@ class Engine:
         downloaded either."""
         rels = [self._checked(r) for r in rels]
         files, folders = self._affected(rels)
-        skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)] if stop_syncing_folders else []
+        skip = [f for f in folders if self._has_canvas_content(f)] if stop_syncing_folders else []
         for path, _ in list(self.state.db.execute("SELECT path, file_id FROM links")):
             if any(_under(path, f) for f in folders):
                 self.state.remove_link(path)  # goes to the Trash with its folder
@@ -339,7 +349,7 @@ class Engine:
         rels = [self._checked(r, gone_ok=True) for r in rels]
         files, folders = self._affected(rels)
         folders += [r for r in rels if not os.path.lexists(self.root / r)]
-        skip = [self.layout.canonical(f) for f in folders if self._has_canvas_content(f)]
+        skip = [f for f in folders if self._has_canvas_content(f)]
         self._stop_syncing(files, keep_links_in=folders)
         self.state.commit()
         if skip:
@@ -371,7 +381,7 @@ class Engine:
         """Sync these paths' folders again: what's at or under them, and the folders above
         them that weren't synced (else nothing in them could be). The other folders in
         those stay as they were: not synced."""
-        canon = [self.layout.canonical(r) for r in rels]
+        canon = rels
         above = [s for s in self.settings.skip_folders if any(c.startswith(s + "/") for c in canon)]
         keep: list[str] = []
         for s in above:
@@ -384,17 +394,15 @@ class Engine:
         update_skip_folders(self.meta / "config.toml", remove_under=canon, remove=above, add=keep)
         self._reload()
 
-    def _subfolders(self, canonical: str) -> list[str]:
-        """The folders in a folder (Canvas-derived paths): on disk, and those you deleted
-        that files from Canvas were in."""
-        rel = self.layout.renamed(PurePosixPath(canonical)).as_posix()
+    def _subfolders(self, rel: str) -> list[str]:
+        """The folders in a folder: on disk, and those you deleted that files from Canvas were in."""
         names = set()
         if (self.root / rel).is_dir():
             names |= {d.name for d in os.scandir(self.root / rel) if d.is_dir(follow_symlinks=False)}
         paths = [r.path for r in self.state.all_files() if r.path]
         paths += [row[0] for row in self.state.db.execute("SELECT path FROM links")]
         names |= {p[len(rel) + 1:].split("/")[0] for p in paths if p.startswith(rel + "/") and "/" in p[len(rel) + 1:]}
-        return sorted(self.layout.canonical(f"{rel}/{n}") for n in names)
+        return sorted(f"{rel}/{n}" for n in names)
 
     def _settings(self) -> Settings:
         s = Settings.load(self.meta / "config.toml")
@@ -404,7 +412,7 @@ class Engine:
 
     def _reload(self) -> None:
         self.settings = self._settings()
-        self.layout = Layout(self.settings, self.state.courses())
+        self.layout = Layout(self.settings)
 
     def restorable(self, scope: Scope) -> list[FileStatus]:
         """Files in `scope` that `restore_files` would put back: edited or deleted by you."""
@@ -420,9 +428,6 @@ class Engine:
         if (self.root / rel).is_dir() and not (self.root / rel).is_symlink():
             return self.restore_in(Scope([rel]))
         rec = self.state.by_path(rel)
-        if rec is None:  # maybe a file you moved here
-            moved = {s.path: s.file_id for s in self.status() if "moved" in s.states}
-            rec = self.state.get(moved[rel]) if rel in moved else None
         if rec is None and not os.path.lexists(self.root / rel) and self.restorable(Scope([rel])):
             return self.restore_in(Scope([rel]))  # a folder you deleted
         if rec is None or rec.path is None:
@@ -430,9 +435,8 @@ class Engine:
         return self.restore_files([rec.id])
 
     def restore_files(self, file_ids: list[int]) -> list[str]:
-        """Restore each file where it is now (a file you moved stays moved, but gets its
-        original content back) or, if you deleted it, where it was."""
-        inspector = Inspector(self.root)
+        """Put each file back where it belongs. (One you moved is, here, one you deleted: the
+        copy you moved stays yours.)"""
         done = []
         for fid in file_ids:
             rec = self.state.get(fid)
@@ -442,15 +446,13 @@ class Engine:
             if not original.exists():
                 raise LookupError(f"no original kept for {rec.path}; run `canvas pull`")
             rel = rec.path
-            if not rec.ignored:
-                rel = inspector.inspect(rec).path or rec.path
             dest = self.root / rel
             if is_regular(dest) and sha256_file(dest) != rec.base_hash:
                 send2trash(dest)
             dest.parent.mkdir(parents=True, exist_ok=True)
             clone_file(original, dest)
             st = dest.stat()
-            self.state.update(rec.id, ignored=0, snap_mtime=st.st_mtime, snap_size=st.st_size, snap_inode=st.st_ino)
+            self.state.update(rec.id, ignored=0, snap_mtime=st.st_mtime, snap_size=st.st_size)
             self.state.commit()
             done.append(rel)
         if done:  # synced again: so are the folders they're in
@@ -458,43 +460,58 @@ class Engine:
         return done
 
     def rename_folder(self, rel: str, name: str) -> str:
-        """Rename a folder without changing what syncing does: files Canvas adds to it
-        later still land in it, links into it keep working, nothing is re-downloaded.
-        Returns the new path."""
+        """What the app calls a folder: on disk it keeps its name, so syncing, links and Finder
+        are as they were. An empty name, or its own: back to its own name. Returns its path."""
         rel = rel.strip("/")
-        src = self.root / rel
         if not rel or rel.split("/")[0] == META_DIR:
             raise ValueError("that folder can't be renamed")
+        src = self.root / rel
         if not src.is_dir() or src.is_symlink():
             raise LookupError(f"{rel} is not a folder")
-        new_name = sanitize(name.strip())
-        if not name.strip() or new_name.startswith("."):
-            raise ValueError("folder names can't be empty or start with a dot")
-        parent = posixpath.dirname(rel)
-        new = posixpath.join(parent, new_name) if parent else new_name
-        if new == rel:
-            return rel
-        dest = self.root / new
-        if os.path.lexists(dest) and not dest.samefile(src):  # (a case-only rename is the same folder)
-            raise FileExistsError(f"{new} already exists")
-
-        canonical = self.layout.canonical(rel)
-        own_name = posixpath.basename(canonical)
-        os.rename(src, dest)
-        try:
-            self._repath(rel, new)
-            # (A folder no course has, as Canvas names go, is yours, or one you renamed in Finder:
-            # renaming it renames nothing of Canvas's.)
-            kept = new_name if new_name != own_name and self.layout.of_courses(canonical) else None
-            record_folder_rename(self.meta / "config.toml", canonical, kept, rel, new)
-            self.state.commit()
-        except BaseException:
-            self.state.db.rollback()
-            os.rename(dest, src)
-            raise
+        title = name.strip()
+        set_folder_title(self.meta / "config.toml", rel, title if title and title != src.name else None)
         self._reload()
-        self._relink()
-        return new
+        return rel
+
+    def undo_folder_names(self, names: dict[str, str]) -> None:
+        """Folders renamed on disk by older versions (see `migrate_folder_names`) get their own
+        names back, deepest first; what you called them becomes their titles. Each is committed
+        by itself, so an interrupted run can run again. One that can't go back stays where it
+        is, and the next sync moves its files (their layout changed)."""
+        cfg = self.meta / "config.toml"
+
+        def on_disk(key: str) -> str:
+            parts = key.split("/")
+            return "/".join(names.get("/".join(parts[: i + 1]), part) for i, part in enumerate(parts))
+
+        changed = False
+        for key in sorted(names, key=lambda k: -k.count("/")):
+            now = on_disk(key)
+            home = posixpath.join(posixpath.dirname(now), posixpath.basename(key))
+            src, dest = self.root / now, self.root / home
+            if now == home or not src.is_dir():
+                continue
+            try:
+                if dest.is_dir() and not dest.samefile(src) and not any(dest.iterdir()):
+                    dest.rmdir()  # (empty, so nothing's in the way)
+                if os.path.lexists(dest) and not dest.samefile(src):
+                    log.warning("couldn't rename %s back to %s: it's there already", now, home)
+                    continue
+                os.rename(src, dest)
+            except OSError as err:
+                log.warning("couldn't rename %s back to %s: %s", now, home, err)
+                continue
+            self._repath(now, home)
+            self.state.commit()
+            change_things(cfg, lambda t: t.moved(now, home))
+            changed = True
+        replace_folder_names(cfg, {k: v for k, v in names.items()
+                                   if v != posixpath.basename(k) and (self.root / k).is_dir()})
+        self._reload()
+        if changed:
+            self._relink()
+            self.state.commit()
+            self.reindex()
 
     def _repath(self, old: str, new: str) -> None:
         """Every path we've recorded at or under `old` now starts with `new`."""
