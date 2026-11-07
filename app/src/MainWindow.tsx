@@ -508,13 +508,25 @@ export function MainWindow() {
     }
     open(thingOf(f.entry), query, found);
   };
-  const startSync = async (scope: Scope, label: string) => {
-    if (signedOut) return go({ kind: "settings" }); // sign in first
-    setSyncLabel(label);
+  /** Whether it started: not if signed out, or if one is already running (that one is shown). */
+  const startSync = async (scope: Scope, label: string): Promise<boolean> => {
+    if (signedOut) {
+      go({ kind: "settings" }); // sign in first
+      return false;
+    }
     try {
-      setSync(await api.startSync(scope));
+      const started = await api.startSync(scope);
+      setSyncLabel(label);
+      setSync(started);
+      return true;
     } catch (e) {
+      if (e instanceof api.ApiError && e.status === 409) { // (one started since the menu opened)
+        void api.syncState().then(setSync, () => {});
+        return false;
+      }
+      setSyncLabel(label);
       setSync({ phase: "failed", scope: [], running: false, errors: [String((e as Error).message)], warnings: [], total: 0, done: 0, current: "", changes: {}, finished_at: null, ed_error: null });
+      return false;
     }
   };
   const syncBusy = !!sync?.running;
@@ -809,10 +821,10 @@ export function MainWindow() {
     f.type === "hit" ? { onContextMenu: (ev: React.MouseEvent) => (ev.preventDefault(), openMenu(hitsMenu([f.hit]), ev.clientX, ev.clientY)) } : {};
 
   const unhide = (c: Course) =>
-    api.hideCourse(c.id, false, c.excluded ? true : undefined).then(() => {
-      say(c.excluded && syncBusy ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
+    api.hideCourse(c.id, false, c.excluded ? true : undefined).then(async () => {
       refresh();
-      if (c.excluded && !syncBusy) void startSync({ paths: [c.dir] }, c.label);
+      const synced = c.excluded && (await startSync({ paths: [c.dir] }, c.label));
+      say(c.excluded && !synced ? t("“{name}”回来了，下次同步时会更新", { name: c.label }) : t("“{name}”回来了", { name: c.label }));
     }, fail(t("操作失败")));
   /** A hidden term back, synced again: its courses each as they were before hiding. */
   const unhideTerm = (term: string, list: Course[]) =>
@@ -820,7 +832,7 @@ export function MainWindow() {
       say(t("“{name}”回来了", { name: term }));
       refresh();
       const excluded = list.filter((c) => c.excluded);
-      if (excluded.length && !syncBusy) void startSync({ paths: excluded.map((c) => c.dir) }, term);
+      if (excluded.length) void startSync({ paths: excluded.map((c) => c.dir) }, term);
     }, fail(t("操作失败")));
   const hiddenCourseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
