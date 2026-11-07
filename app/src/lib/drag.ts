@@ -48,7 +48,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     window.removeEventListener("pointercancel", cancel);
-    window.removeEventListener("keydown", key);
+    window.removeEventListener("keydown", key, true);
     window.removeEventListener("blur", cancel);
     window.removeEventListener("wheel", wheel);
     scroller?.stop();
@@ -110,13 +110,14 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   const key = (ev: KeyboardEvent) => {
     if (ev.key === "Escape" && ghost) {
       ev.preventDefault();
+      ev.stopPropagation(); // (it's only the drag's, not what else Esc would close)
       cancel();
     }
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", cancel);
-  window.addEventListener("keydown", key);
+  window.addEventListener("keydown", key, true);
   window.addEventListener("blur", cancel);
 }
 
