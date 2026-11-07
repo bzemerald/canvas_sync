@@ -10,7 +10,7 @@ import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 
 /** How to make a Canvas token, when signing in and when replacing one. */
-export const tokenSteps = () => t("在 Canvas 里依次点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，然后把生成的令牌复制到这里。过了它的过期日期，就要再生成一个新令牌。令牌只保存在这台电脑上。");
+export const tokenSteps = () => t("在 Canvas 里点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，把令牌粘贴到这里。过期后需要重新生成。");
 
 /** "bcourses.berkeley.edu" -> "https://bcourses.berkeley.edu" (for the link to the token page). */
 function siteOf(url: string): string | null {
