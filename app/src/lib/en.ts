@@ -321,13 +321,16 @@ export const en: Record<string, string | [string, string]> = {
   "已连接@@assistant": "Linked",
   "连接@@assistant": "Link",
   "断开@@assistant": "Unlink",
+  "连接…@@assistant": "Link…",
+  "断开…@@assistant": "Unlink…",
+  "改用这一份…": "Use This One…",
   "让 {app} 读取你的课程？": "Let {app} read your courses?",
   "让 {app} 改用这一份 Canvas Sync？": "Switch {app} to this copy of Canvas Sync?",
   "不再让 {app} 读取你的课程？": "Stop {app} from reading your courses?",
   "{app} 将能搜索和阅读你已同步的课程，但不能改动任何内容。":
     "{app} will be able to search and read your synced courses, but not change anything.",
-  "{app} 现在连接的是另一份 Canvas Sync（比如旧版本），之后会改为连接你正在用的这一份。":
-    "{app} is connected to another copy of Canvas Sync (an older version, for example). It will connect to the one you're using now.",
+  "{app} 现在连接的是另一份 Canvas Sync（比如旧版本），之后会断开它，改为连接你正在用的这一份。":
+    "{app} is connected to another copy of Canvas Sync (an older version, for example). It will disconnect from the other Canvas Sync and connect to the one you're using now.",
   "{app} 将不能再读取你的课程。你的课程和文件不受影响。":
     "{app} won't be able to read your courses anymore. Your courses and files aren't affected.",
   "Canvas Sync 会从 {app} 的设置文件里删掉连接信息。你的其他设置不会变，修改前也会先备份原文件。":

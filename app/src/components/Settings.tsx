@@ -1,7 +1,7 @@
 // 设置: the account, syncing, language. Preferences are this computer's (app.toml, via the
 // backend); which courses sync is the sync folder's (its config.toml), shared with the CLI.
 import { open } from "@tauri-apps/plugin-dialog";
-import { Check, CheckCircle2, CircleAlert, Copy, FolderOpen, RefreshCw } from "lucide-react";
+import { Check, CheckCircle2, CircleAlert, CircleQuestionMark, Copy, FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo, Prefs, SyncState } from "../lib/api";
@@ -531,14 +531,16 @@ function AssistantsDialog({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5">
                     {a.name}
-                    {a.added && <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已连接@@assistant")} />}
+                    {a.added && (a.current
+                      ? <CheckCircle2 className="size-3.5 text-ok" aria-label={t("已连接@@assistant")} />
+                      : <CircleQuestionMark className="size-3.5 text-warn" aria-label={t("用的是另一份 Canvas Sync。")} />)}
                   </p>
                   {note && <p className={`mt-0.5 text-xs ${errors[a.id] ? "text-danger" : "text-muted"}`}>{note}</p>}
                 </div>
                 {a.added && a.current
-                  ? <Button disabled={busy !== null} onClick={() => void ask(a, false)}>{t("断开@@assistant")}</Button>
+                  ? <Button disabled={busy !== null} onClick={() => void ask(a, false)}>{t("断开…@@assistant")}</Button>
                   : <Button disabled={busy !== null} onClick={() => void ask(a, true)}>
-                      {a.added ? t("改用这一份") : t("连接@@assistant")}
+                      {a.added ? t("改用这一份…") : t("连接…@@assistant")}
                     </Button>}
               </div>
             );
@@ -612,7 +614,7 @@ function AssistantChangeDialog({ app, preview, onClose, onDone }: {
       <div className="mb-3 space-y-2 text-fg-soft">
         <p>
           {action === "add" ? t("{app} 将能搜索和阅读你已同步的课程，但不能改动任何内容。", { app: app.name })
-            : action === "replace" ? t("{app} 现在连接的是另一份 Canvas Sync（比如旧版本），之后会改为连接你正在用的这一份。", { app: app.name })
+            : action === "replace" ? t("{app} 现在连接的是另一份 Canvas Sync（比如旧版本），之后会断开它，改为连接你正在用的这一份。", { app: app.name })
             : t("{app} 将不能再读取你的课程。你的课程和文件不受影响。", { app: app.name })}
         </p>
         <p>
