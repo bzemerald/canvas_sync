@@ -64,7 +64,7 @@ def _read(app: App) -> dict[str, Any]:
         data = tomlkit.parse(text) if app.path.suffix == ".toml" else json.loads(text or "{}")
     except Exception:  # (not ours to rewrite)
         raise AssistantError(f"can't read {app.path}: add it by hand")
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or not isinstance(data.get(app.key) or {}, dict):  # (servers: a table)
         raise AssistantError(f"can't read {app.path}: add it by hand")
     return data
 
@@ -112,7 +112,7 @@ def _snippet(app: App, e: dict[str, Any]) -> str:
 def add(app: App, command: str, args: list[str], backups: Path) -> None:
     data = _read(app)
     servers = data.get(app.key)
-    if not isinstance(servers, dict):
+    if not servers:  # (none, or an empty list: nothing to keep)
         servers = data[app.key] = tomlkit.table() if app.path.suffix == ".toml" else {}
     servers[NAME] = {"command": command, "args": args}
     _write(app, data, backups)

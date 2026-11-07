@@ -55,6 +55,13 @@ def test_a_file_it_cant_read_is_left_alone(tmp_path: Path):
         assistants.add(desktop, CMD, ARGS, tmp_path / "backups")
     assert "// my servers" in desktop.path.read_text()
 
+    for servers in ('"no"', '["mine"]'):  # (where servers go holds something else)
+        desktop.path.write_text(f'{{"mcpServers": {servers}}}')
+        for change in (assistants.add, assistants.preview):
+            with pytest.raises(assistants.AssistantError):
+                change(desktop, CMD, ARGS, tmp_path / "backups")
+        assert assistants.entry(desktop) is None and json.loads(desktop.path.read_text())["mcpServers"] != {}
+
 
 def test_preview_says_what_would_change_and_changes_nothing(tmp_path: Path):
     backups = tmp_path / "backups"
