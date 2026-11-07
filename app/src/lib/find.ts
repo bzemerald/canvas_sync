@@ -287,7 +287,7 @@ function ranks<T>(items: T[], word: string, values: (item: T) => string[], other
 
 /** What else a word stands for: what it's an abbreviation of, what's an abbreviation of it
  * ("midterm": mt), and itself without its plural. */
-function alternatives(word: string, abbr: Record<string, string[]>): string[] {
+export function alternatives(word: string, abbr: Record<string, string[]>): string[] {
   const out = new Set<string>([...(abbr[word] ?? [])]);
   for (const [k, v] of Object.entries(abbr)) if (!CJK.test(k) && v.includes(word)) out.add(k);
   if (singular(word) !== word) out.add(singular(word));

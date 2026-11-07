@@ -67,6 +67,8 @@ without the Canvas website or Finder.
     (run it after changing a weight);
     `src/components/Found.tsx`: how it's shown (the query's parts as chips), in the search
     window and under a page's search box.
+  - `src/lib/marks.ts`: what a query's words look like in text; `src/components/Marked.tsx`: marks
+    them on the page search opened, whatever the page (`found` on the view, so going back has them).
   - `src/lib/api.ts`: every backend call and its types.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).

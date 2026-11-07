@@ -16,6 +16,7 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
 
   return (
     <div
+      role="dialog"
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-6"
       onMouseDown={onClose}
       onContextMenu={(e) => {

@@ -17,6 +17,7 @@
   --accent: #2f6fde;
   --on-accent: #ffffff;
   --highlight: #fde68a;
+  --highlight-current: #fdba74;
   --danger: #c2410c;
   --danger-soft: #fdebe2;
   --warn: #a16207;
@@ -49,6 +50,7 @@
     --accent: #5b8def;
     --on-accent: #0b0b0d;
     --highlight: #6b5a1e;
+    --highlight-current: #b4621a;
     --danger: #fb923c;
     --danger-soft: #3d2418;
     --warn: #fbbf24;
@@ -191,4 +193,14 @@ textarea {
 /* Lists and grids handle their own keyboard focus; show it without the browser's ring. */
 .focus-quiet:focus {
   outline: none;
+}
+
+/* What search found, on the page it opened (components/Marked.tsx). */
+mark[data-found] {
+  border-radius: 2px;
+  background-color: var(--highlight);
+  color: var(--fg);
+}
+mark[data-found][data-current] {
+  background-color: var(--highlight-current);
 }

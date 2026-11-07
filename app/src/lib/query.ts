@@ -120,7 +120,7 @@ export function seriesIn(name: string): { name: string; n: number }[] {
   return out;
 }
 // "Midterm II", "Topics IV" ("V" and "X" alone are too often something else: RISC-V).
-const ROMAN: Record<string, number> = { ii: 2, iii: 3, iv: 4, vi: 6, vii: 7, viii: 8, ix: 9 };
+export const ROMAN: Record<string, number> = { ii: 2, iii: 3, iv: 4, vi: 6, vii: 7, viii: 8, ix: 9 };
 
 /** Whether a series as typed (`a`) is one a name has (`b`): the same word ("lab", "labs"), the
  * start of it ("lec", "lecture"), its initials ("ps", "problem set"), one of its abbreviations,

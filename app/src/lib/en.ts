@@ -715,4 +715,7 @@ export const en: Record<string, string | [string, string]> = {
   "按 Tab 补全": "Press Tab to complete",
   "清空并离开搜索框": "Clear and leave the search box",
   "好": "OK",
+  "上一处": "Previous match",
+  "下一处": "Next match",
+  "清除高亮 (Esc)": "Clear highlights (Esc)",
 };

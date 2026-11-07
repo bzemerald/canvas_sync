@@ -10,6 +10,7 @@ import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/Fi
 import {
   CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog,
 } from "./components/Found";
+import { Marked } from "./components/Marked";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_LISTS, useOverview,
 } from "./components/CourseView";
@@ -34,6 +35,8 @@ import { quickLook } from "./lib/quicklook";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
+import { markPattern } from "./lib/marks";
+import { type Reading, read } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { keysLabel, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
@@ -56,12 +59,13 @@ import { useLoaded } from "./lib/useLoaded";
 // `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
 // `path` is the folder 文件 (or a folder tab) is in; `item` the announcement / assignment / page
 // being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
-type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean };
+// `found`: what's marked there, having come from search (lib/marks.ts).
+type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean; found?: string };
 type View =
   | CourseView // first: opened on its first tab
-  | { kind: "browse"; path: string; select?: string }
-  | { kind: "search"; search: ThingOf<"search"> }
-  | { kind: "settings" };
+  | { kind: "browse"; path: string; select?: string; found?: string }
+  | { kind: "search"; search: ThingOf<"search">; found?: string }
+  | { kind: "settings"; found?: undefined };
 
 /** The open course's page: its places, each with all they hold (as last loaded, or as just changed). */
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
@@ -265,7 +269,7 @@ export function MainWindow() {
     const c = courseById(v.id);
     // A folder tab is at its folder; 文件 starts at the course's, and so does clicking it again.
     const fresh = v.tab.type === "folder" || x.type === "folder" || same(v.tab, x);
-    return { ...v, tab: x, item: undefined, select: undefined, first: false, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
+    return { ...v, tab: x, item: undefined, select: undefined, first: false, found: undefined, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
   };
   // The first tab that shows something here (not one that opens a file, a tool or a link).
   const firstTab = (list: Shown[], id: number): Thing => thingOf(list.find((e) => !e.hidden && !opensElsewhere(e)) ?? viewOf(id, "overview"));
@@ -274,7 +278,7 @@ export function MainWindow() {
    * it, 文件 or a folder tab at it), if that's one of its tabs. Else it shows on a tab for now. */
   const settle = (v: CourseView): CourseView => {
     if (!courseLayout || layout?.id !== v.id) return v;
-    if (v.first) return toTab(v, firstTab(tabs, v.id));
+    if (v.first) return { ...toTab(v, firstTab(tabs, v.id)), found: v.found };
     const x = v.tab;
     if (listed(tabs, x)) return v;
     if (x.type === "doc" && x.course === v.id && listed(tabs, viewOf(v.id, KIND_VIEW[x.kind]))) {
@@ -312,21 +316,21 @@ export function MainWindow() {
 
   /** Go to a folder: inside a course, that's the course's page (in 文件, or a folder tab that has
    * it); elsewhere, a plain folder. */
-  const goPath = (path: string, select?: string) => {
+  const goPath = (path: string, select?: string, found?: string) => {
     const c = courseAt(path);
-    if (!c) return go({ kind: "browse", path, select });
+    if (!c) return go({ kind: "browse", path, select, found });
     // (In 文件, or a folder tab that has it: it stays there.)
     const stay = cv && cv.id === c.id && tab && (isView(tab, "files") || (tab.type === "folder" && under(path, tab.path)));
     if (stay && path === inlineOf(c, tab)) path = c.dir; // (it's shown as the course's own)
-    go({ kind: "course", id: c.id, tab: stay ? tab : { type: "folder", path }, path, select });
+    go({ kind: "course", id: c.id, tab: stay ? tab : { type: "folder", path }, path, select, found });
   };
   /** Go into a folder from the one showing: 全部文件 stays 全部文件, even in a course's folder. */
   const goFolder = (path: string) => (view.kind === "browse" ? go({ kind: "browse", path }) : goPath(path));
   /** A course opens where you last were in it; the first time, or from inside it, on its first
    * tab (概览, unless that course's 概览 is hidden). */
-  const openCourse = (c: Course) => {
+  const openCourse = (c: Course, found?: string) => {
     const last = cv?.id === c.id ? null : lastIn.current.get(c.id);
-    go(last ? { ...last, select: undefined } : { kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true });
+    go(last ? { ...last, select: undefined, found } : { kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true, found });
   };
   const launchTool = (x: ThingOf<"tool">) => {
     const key = thingKey(x);
@@ -337,31 +341,34 @@ export function MainWindow() {
   };
   /** Anything, wherever it opens: a file in its app; a tool, a link, the course on Canvas in the
    * browser; a search as a smart folder; the rest in its course's page. Noted, with what had been
-   * typed in search (`query`): what you open most and lately comes first there. */
-  const open = (x: Thing, query = "") => {
+   * typed in search (`query`): what you open most and lately comes first there. `found`: what to
+   * mark where it shows. */
+  const open = (x: Thing, query = "", found?: string) => {
     api.noteOpened(thingKey(x), query);
     if (x.type === "course") {
       const c = courseById(x.course);
-      if (c) openCourse(c);
-    } else if (x.type === "folder") goPath(x.path);
+      if (c) openCourse(c, found);
+    } else if (x.type === "folder") goPath(x.path, undefined, found);
     else if (x.type === "file") void api.openPath(x.path).then(seenChanged, fail(t("打开失败")));
     else if (x.type === "link") void api.openExternal(x.url);
     else if (x.type === "tool") launchTool(x);
-    else if (x.type === "search") go({ kind: "search", search: x });
+    else if (x.type === "search") go({ kind: "search", search: x, found });
     else if (isView(x, "canvas")) void api.openUrl(`/courses/${x.course}`);
     else if (cv && cv.id === x.course) {
       // (On Ed's list, what's from Ed is there: it needn't go to its kind's.)
-      go(x.type === "doc" && fromEd(x) && isView(cv.tab, "ed") ? { ...toTab(cv, viewOf(x.course, "ed")), item: x.id } : toTab(cv, x));
-    } else if (courseById(x.course)) go({ kind: "course", id: x.course, tab: x, path: courseById(x.course)!.dir });
+      go({ ...(x.type === "doc" && fromEd(x) && isView(cv.tab, "ed") ? { ...toTab(cv, viewOf(x.course, "ed")), item: x.id } : toTab(cv, x)), found });
+    } else if (courseById(x.course)) go({ kind: "course", id: x.course, tab: x, path: courseById(x.course)!.dir, found });
   };
   const openIn = (x: Thing, list: ViewName) => {
     if (x.type !== "doc" || cv?.id !== x.course) return open(x);
     api.noteOpened(thingKey(x));
     go({ ...toTab(cv, viewOf(x.course, list)), item: x.id });
   };
+  /** What's marked on what's opened from a list of results: the words that found it. */
+  const foundBy = (h?: Hit) => markPattern(read(smart?.query ?? query, vocab), vocab, h?.snippet);
   const openHere = (h: Hit) => {
     const x = thingOfHit(h);
-    return x ? open(x) : void api.openHit(h);
+    return x ? open(x, "", foundBy(h)) : void api.openHit(h);
   };
   const overview = useOverview(cv ? cv.id : null, version, seenTick);
 
@@ -374,8 +381,8 @@ export function MainWindow() {
   const runLater = useRef<(id: string) => void>(() => {});
   useEffect(() => {
     const offs = [
-      listen<{ thing: Thing; query: string }>("open-thing", ({ payload }) => openLater.current(payload.thing, payload.query)),
-      listen<{ path: string }>("show-path", ({ payload }) => goPathLater.current(parentOf(payload.path), payload.path)),
+      listen<{ thing: Thing; query: string; found?: string }>("open-thing", ({ payload }) => openLater.current(payload.thing, payload.query, payload.found)),
+      listen<{ path: string; found?: string }>("show-path", ({ payload }) => goPathLater.current(parentOf(payload.path), payload.path, payload.found)),
       listen<{ id: string }>("run-action", ({ payload }) => runLater.current(payload.id)),
     ];
     return () => offs.forEach((off) => void off.then((f) => f()));
@@ -424,10 +431,18 @@ export function MainWindow() {
     if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : folderScope && scopeCourses.length ? { courses: scopeCourses } : {}) };
     return cv ? { courses: [cv.id], ...shownOn(tab) } : {};
   }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "");
+  const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "" || !!smart);
   const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
   const actions = useMemo(() => actionsFor(names), [names]);
   const box = useMemo(() => ({ query: filtering ? query : "", onQuery: setQuery, onWiden: () => setWide(true) }), [filtering, query]);
+  // What's marked on the page: what its box narrows it to, as you type; else what search opened it for.
+  const narrowed = useMemo(() => (filtering && query.trim() ? markPattern(read(query, vocab), vocab) ?? null : null), [filtering, query, vocab]);
+  const marking = narrowed ?? (searching ? null : view.found ?? null);
+  const clearMarks = useCallback(() => setHist((h) => {
+    const stack = [...h.stack];
+    stack[h.i] = { ...stack[h.i], found: undefined } as View;
+    return { ...h, stack };
+  }), []);
   /** Above the results: what was searched, and the way to search more (or less) widely. */
   const scopeNote = (() => {
     if (!query.trim()) return null;
@@ -462,7 +477,7 @@ export function MainWindow() {
   };
   runLater.current = runAction;
   /** Something search found: opened (↵), shown in its folder (⌘↵), or on Canvas (⌘⇧↵). */
-  const openFound = (f: Found | undefined, how: How) => {
+  const openFound = (f: Found | undefined, how: How, reading: Reading) => {
     if (!f) return;
     searchBox.current?.blur(); // what opens takes the keys (a folder's list)
     if (f.type === "action") {
@@ -470,18 +485,19 @@ export function MainWindow() {
       return runAction(f.action.id);
     }
     const path = f.type === "hit" ? f.hit.path : f.entry.type === "file" ? f.entry.path : null;
-    if (how === "reveal" && path) return goPath(parentOf(path), path);
+    const found = markPattern(reading, vocab, f.hit?.snippet);
+    if (how === "reveal" && path) return goPath(parentOf(path), path, found);
     if (f.type === "hit") {
       if (how === "canvas") return void api.openCanvas(f.hit);
       const x = thingOfHit(f.hit);
-      return x ? open(x, query) : void api.openHit(f.hit);
+      return x ? open(x, query, found) : void api.openHit(f.hit);
     }
     if (how === "canvas") {
       const url = canvasUrl(f.entry);
       if (url) void api.openUrl(url).then(() => api.noteOpened(f.key, query));
       return;
     }
-    open(thingOf(f.entry), query);
+    open(thingOf(f.entry), query, found);
   };
   const startSync = async (scope: Scope, label: string) => {
     if (signedOut) return go({ kind: "settings" }); // sign in first
@@ -574,7 +590,7 @@ export function MainWindow() {
   /** What can be done with a thing, besides putting it places (they add that). */
   const ways = (x: Thing): MenuItem[] => [...waysOf(x), ...markRead(x)];
   const waysOf = (x: Thing): MenuItem[] => {
-    const openIt: MenuItem = { label: t("打开"), onSelect: () => open(x) };
+    const openIt: MenuItem = { label: t("打开"), onSelect: () => open(x, "", searching ? foundBy() : undefined) };
     switch (x.type) {
       case "course":
         return courseById(x.course) ? [
@@ -785,7 +801,7 @@ export function MainWindow() {
       ...(h.path && isMac ? [{ label: t("快速预览"), hint: shortcut.preview, onSelect: () => void quickLook([h.path!], 0, "open") }] : []),
       ...(h.path
         ? [
-            { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(h.path!), h.path!) },
+            { label: t("在文件夹中显示"), onSelect: () => goPath(parentOf(h.path!), h.path!, foundBy(h)) },
             { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(h.path!) },
           ]
         : []),
@@ -1014,7 +1030,7 @@ export function MainWindow() {
           of={VIEW_LISTS[tab.view]!}
           selected={cv.item ?? null}
           version={version}
-          onSelect={(id) => replaceView({ ...cv, item: id })}
+          onSelect={(id) => replaceView({ ...cv, item: id, found: undefined })}
           onSeen={seenChanged}
           box={box}
         />
@@ -1050,6 +1066,7 @@ export function MainWindow() {
     );
   };
   const page = cv && course && tab && !searching ? coursePage(cv, course, tab) : null;
+  const markedPlace = cv ? `${cv.id}:${tab ? thingKey(tab) : ""}:${cv.item ?? ""}:${cv.path}` : view.kind === "browse" ? view.path : view.kind === "search" ? thingKey(view.search) : "";
 
   return (
     <ThingsContext.Provider value={things}>
@@ -1221,6 +1238,7 @@ export function MainWindow() {
           />
         )}
 
+        <Marked pattern={marking} place={markedPlace} tools={!narrowed} onClear={clearMarks}>
         {view.kind === "settings" ? (
           <Settings
             sync={sync}
@@ -1269,11 +1287,12 @@ export function MainWindow() {
             scope={scopeNote}
             showCourse={!course}
             onOpen={openHere}
-            onReveal={(h) => h.path && goPath(parentOf(h.path), h.path)}
+            onReveal={(h) => h.path && goPath(parentOf(h.path), h.path, foundBy(h))}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
             onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
         )}
+        </Marked>
       </main>
 
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />

@@ -18,6 +18,7 @@ import { useLoaded } from "./lib/useLoaded";
 import { friendly } from "./lib/errors";
 import { lang, t } from "./lib/i18n";
 import { type Example, examples, seeded } from "./lib/examples";
+import { markPattern } from "./lib/marks";
 import { termRank } from "./lib/terms";
 import { type Thing, isView, thingKey, thingOf, thingOfHit } from "./lib/things";
 
@@ -87,10 +88,12 @@ export function Launcher() {
 
   const hide = () => invoke("hide_launcher");
   /** In the main window, which comes forward (it notes it was opened). */
-  const there = async (thing: Thing) => {
-    await emitTo("main", "open-thing", { thing, query });
+  const there = async (thing: Thing, found?: string) => {
+    await emitTo("main", "open-thing", { thing, query, found });
     await invoke("show_main");
   };
+  /** What's marked on the page it opens: the words, and what the result said matched. */
+  const foundIn = (hit?: Hit) => markPattern(reading, vocab, hit?.snippet);
   const done = async (key: string) => {
     api.noteOpened(key, query);
     await hide();
@@ -100,10 +103,10 @@ export function Launcher() {
     const thing = thingOfHit(hit);
     if (how === "canvas") return void (await api.openCanvas(hit), await done(thing ? thingKey(thing) : ""));
     if (how === "reveal" && hit.path) {
-      await emitTo("main", "show-path", { path: hit.path }); // its folder, in the app (not Finder)
+      await emitTo("main", "show-path", { path: hit.path, found: foundIn(hit) }); // its folder, in the app (not Finder)
       return void (await invoke("show_main"));
     }
-    if (thing && thing.type !== "file") return there(thing); // read it in the app, not on Canvas
+    if (thing && thing.type !== "file") return there(thing, foundIn(hit)); // read it in the app, not on Canvas
     await api.openHit(hit);
     await done(thing ? thingKey(thing) : "");
   };
@@ -123,14 +126,14 @@ export function Launcher() {
       return void (url && (await api.openUrl(url), await done(f.key)));
     }
     if (how === "reveal" && e.type === "file") {
-      await emitTo("main", "show-path", { path: e.path });
+      await emitTo("main", "show-path", { path: e.path, found: foundIn(f.hit) });
       return void (await invoke("show_main"));
     }
     if (e.type === "file") await api.openPath(e.path);
     else if (e.type === "link") await api.openExternal(e.url);
     else if (e.type === "tool") await api.launch(e.course, { tool_id: e.tool });
     else if (isView(e, "canvas")) await api.openUrl(`/courses/${e.course}`);
-    else return there(thingOf(e));
+    else return there(thingOf(e), foundIn(f.hit));
     await done(f.key);
   };
 

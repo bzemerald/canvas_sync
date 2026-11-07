@@ -314,7 +314,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   scope: Scope;
   finder: Finder;
   actions: Action[];
-  onOpen: (f: Found | undefined, how: How) => void;
+  onOpen: (f: Found | undefined, how: How, reading: Reading) => void; // (what's marked there: the words as they were read)
   props?: (f: Found) => object;
   note?: React.ReactNode; // where it searched, and the way to search more (or less) widely
   onCompletion?: (completion: string | null) => void; // what ⇥ would make of the query (for the box to show)
@@ -348,7 +348,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
   }, [box]);
   return (
     <Command ref={root} shouldFilter={false} loop value={value} onValueChange={choose} className="flex min-h-0 flex-1 flex-col"
-      onKeyDown={(e) => moreKeys(e, () => listed.get(value), onOpen, () => done, onQuery, ask)}>
+      onKeyDown={(e) => moreKeys(e, () => listed.get(value), (f, how) => onOpen(f, how, reading), () => done, onQuery, ask)}>
       <Command.List ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {(note || reading.parts.length > 0) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 pt-1 pb-1 text-xs text-muted">
@@ -358,7 +358,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
         )}
         {error && <p className="px-2 py-6 text-sm whitespace-pre-wrap text-danger">{error}</p>}
         {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
-        <FoundList results={results} recent={[]} due={[]} courses={courses} names={others} onOpen={(f) => onOpen(f, "open")} props={props} />
+        <FoundList results={results} recent={[]} due={[]} courses={courses} names={others} onOpen={(f) => onOpen(f, "open", reading)} props={props} />
       </Command.List>
     </Command>
   );
@@ -461,7 +461,7 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
   const fixed = reading.parts.filter((p): p is PartOf<"word" | "series"> => (p.role === "word" || p.role === "series") && !!p.was);
   if (!shown.length && !fixed.length) return null;
   return (
-    <div className={`flex flex-wrap items-center gap-1.5 text-xs ${className}`} data-no-drag>
+    <div className={`flex flex-wrap items-center gap-1.5 text-xs ${className}`} data-no-drag data-no-mark>
       {shown.map((p) => (
         <span key={`${p.role}:${p.spans[0][0]}`} className="inline-flex max-w-64 items-center rounded-md bg-chip text-fg-soft">
           <span className="flex min-w-0 items-center gap-1 py-0.5 pr-1 pl-1.5">
