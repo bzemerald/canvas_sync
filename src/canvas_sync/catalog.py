@@ -81,7 +81,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if kind not in DOC_KINDS:
             continue
         ed = raw.get("ed") or {}
-        if kind == "post" and (ed.get("on_canvas") or not (ed.get("pinned") or ed.get("staff"))):
+        if ed.get("on_canvas") or (kind == "post" and not (ed.get("pinned") or ed.get("staff"))):
             continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's; a copy of a Canvas announcement is that)
         fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
         if kind in ("announcement", "post"):

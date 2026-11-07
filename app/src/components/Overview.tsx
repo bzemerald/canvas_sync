@@ -350,7 +350,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
                 <div className="flex items-center gap-2">
                   {p.new && <NewDot />}
                   {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
-                  {p.ed?.type === "announcement" && <EdAnnouncementMark />}
+                  {p.kind === "announcement" && <EdAnnouncementMark />}
                   <span className={`truncate ${p.new ? "font-medium" : ""}`}>{p.title}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
                 </div>

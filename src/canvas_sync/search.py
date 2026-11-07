@@ -422,6 +422,12 @@ def relative_url(url: str | None) -> str | None:
     return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
+def canvas_copy(kind: str, raw: dict[str, Any]) -> bool:
+    """An announcement on Ed that's one of the course's Canvas announcements too: on Ed it's listed
+    as itself; as an announcement, and in search, it's Canvas's."""
+    return kind == "announcement" and bool((raw.get("ed") or {}).get("on_canvas"))
+
+
 DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body",
             "post": "message"}
 
@@ -492,6 +498,8 @@ class Index:
             raw = json.loads(row["raw"] or "{}")
             html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
             cid, kind = row["course_id"], row["kind"]
+            if canvas_copy(kind, raw):
+                continue
             url = doc_url(raw)
             if kind == "syllabus":
                 url = f"/courses/{cid}/assignments/syllabus"

@@ -349,8 +349,10 @@ export function MainWindow() {
     else if (x.type === "tool") launchTool(x);
     else if (x.type === "search") go({ kind: "search", search: x });
     else if (isView(x, "canvas")) void api.openUrl(`/courses/${x.course}`);
-    else if (cv && cv.id === x.course) go(toTab(cv, x));
-    else if (courseById(x.course)) go({ kind: "course", id: x.course, tab: x, path: courseById(x.course)!.dir });
+    else if (cv && cv.id === x.course) {
+      // (On Ed's list, what's from Ed is there: it needn't go to its kind's.)
+      go(x.type === "doc" && fromEd(x) && isView(cv.tab, "ed") ? { ...toTab(cv, viewOf(x.course, "ed")), item: x.id } : toTab(cv, x));
+    } else if (courseById(x.course)) go({ kind: "course", id: x.course, tab: x, path: courseById(x.course)!.dir });
   };
   const openIn = (x: Thing, list: ViewName) => {
     if (x.type !== "doc" || cv?.id !== x.course) return open(x);

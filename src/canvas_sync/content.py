@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
-from .search import DOC_BODY, course_label, doc_url, relative_url
+from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url
 from .state import NEWS_KINDS, State
 from .text import html_to_text
 
@@ -228,7 +228,7 @@ def mark_seen(state: State, course_id: int, views: Iterable[str] | None = None) 
 def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
     """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
     new = news(state, root, course_id).get(kind, {})
-    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind)]
+    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind) if not canvas_copy(k, raw)]
     if kind == "assignment":
         # Upcoming soonest first, then past ones most recent first, then undated.
         now = now or datetime.now(timezone.utc)
@@ -299,7 +299,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
     with `layout`, this week's modules too (the 当前模块 card)."""
     now = now or datetime.now(timezone.utc)
     docs = _docs(state, course_id)
-    count = {k: sum(d[0] == k for d in docs) for k in KINDS}
+    count = {k: sum(d[0] == k and not canvas_copy(k, d[3]) for d in docs) for k in KINDS}
     syllabus = next((raw for k, _, _, raw in docs if k == "syllabus"), None)
     new = news(state, root, course_id)
 
@@ -309,7 +309,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         key=lambda a: a["due_at"],
     )
     announcements = sorted(
-        (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement"),
+        (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement" and not canvas_copy(k, raw)),
         key=lambda a: a.get("date") or "", reverse=True,
     )
     on_ed_now = _on_ed(course_id, docs, new)
@@ -334,7 +334,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         "upcoming": upcoming[:8],
         "announcements": announcements[:5],
         # Of what's on Ed: what's pinned, announcements and what staff posted, not every question.
-        "ed": [p for p in on_ed_now if p["ed"]["pinned"] or p["ed"]["staff"] or p["ed"]["type"] == "announcement"][:5],
+        "ed": [p for p in on_ed_now if p["ed"]["pinned"] or p["ed"]["staff"] or p["kind"] == "announcement"][:5],
         "new_files": shown,
         "grades": {"total": total, "recent": graded[:3]},
         "tools": tools(state, course_id),

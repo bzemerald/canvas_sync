@@ -660,7 +660,6 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
 // -- Ed ----------------------------------------------------------------------------------
 
 /** (By what it is on Ed: a copy of a Canvas announcement is kept as a post, and is one there.) */
-const isEdAnnouncement = (p: ItemSummary) => p.ed?.type === "announcement";
 export const EdAnnouncementMark = () => <Megaphone className="size-3 shrink-0 text-muted" aria-label={t("公告")} />;
 
 type EdFilter = "all" | "announcements" | "pinned" | "staff" | "new" | "watched";
@@ -668,7 +667,7 @@ const ED_FILTERS: [EdFilter, string][] = [
   ["all", t("全部")], ["announcements", t("公告")], ["pinned", t("置顶@@heading")], ["staff", t("教师")], ["new", t("未读")], ["watched", t("关注")],
 ];
 const keeps: Record<EdFilter, (p: ItemSummary) => boolean> = {
-  all: () => true, announcements: isEdAnnouncement, pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
+  all: () => true, announcements: (p) => p.kind === "announcement", pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
   watched: (p) => !!(p.ed?.watched || p.ed?.starred),
 };
 
@@ -705,7 +704,7 @@ function EdList({ course, list, current, onSelect }: { course: number; list: Ite
             <div className="flex items-center gap-2">
               {p.new && <NewDot />}
               {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
-              {isEdAnnouncement(p) && <EdAnnouncementMark />}
+              {p.kind === "announcement" && <EdAnnouncementMark />}
               <span className={`truncate text-sm ${p.new ? "font-medium" : ""}`}>{p.title}</span>
               <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
             </div>
