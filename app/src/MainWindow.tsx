@@ -1726,21 +1726,28 @@ function SectionHeader({ title, editor, action, onMenu, collapsed, onToggle, gra
           )}
         </button>}
       </h2>
-      {/* What's new in a folded section; on hover, its actions take the place. */}
-      {count > 0 && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
-      {action && !editor && (
-        <button
-          title={action.label}
-          aria-label={action.label}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            action.onClick(r.left, r.bottom + 2);
-          }}
-          className={`rounded p-0.5 text-muted hover:bg-chip hover:text-fg ${count > 0 ? "hidden group-hover:block" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
-        >
-          {action.icon}
-        </button>
-      )}
+      {/* What's new in a folded section; on hover, its actions take the place. They share one cell,
+          so the row's height never changes: under the pointer that would make it flicker. */}
+      <div className="grid items-center justify-items-end empty:hidden">
+        {action && !editor && (
+          <button
+            title={action.label}
+            aria-label={action.label}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              action.onClick(r.left, r.bottom + 2);
+            }}
+            className="peer col-start-1 row-start-1 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus-visible:opacity-100"
+          >
+            {action.icon}
+          </button>
+        )}
+        {count > 0 && (
+          <span className="col-start-1 row-start-1 flex group-hover:invisible peer-focus-visible:invisible">
+            <Count n={count} label={t("{n} 个新的", { n: count })} />
+          </span>
+        )}
+      </div>
     </div>
   );
 }
