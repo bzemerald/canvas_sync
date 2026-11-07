@@ -212,10 +212,9 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
       )}
       {switching && account && (
         <Dialog title={t("切换账号或学校")} onClose={() => setSwitching(false)}>
-          <p className="mb-4 text-xs text-muted">{t("换成另一所学校时，请选一个新的同步文件夹：两所学校的课程不能放在同一个文件夹里。现在这个文件夹里的文件会原样保留。")}</p>
           <div className="pb-3">
             <SignInForm
-              initial={{ url: account.base_url, root: account.root }}
+              another
               submitLabel={t("切换")}
               onCancel={() => setSwitching(false)}
               onDone={() => location.reload()} // everything is someone else's now

@@ -26,21 +26,21 @@ function siteOf(url: string): string | null {
 
 export const inputClass = "w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent";
 
-export function SignInForm({ initial, submitLabel, onDone, onCancel }: {
-  initial?: { url?: string | null; root?: string | null };
+export function SignInForm({ another, submitLabel, onDone, onCancel }: {
+  another?: boolean; // switching from the account there is: address and folder start empty
   submitLabel?: string;
   onDone: (account: AccountInfo) => void;
   onCancel?: () => void;
 }) {
-  const [url, setUrl] = useState(initial?.url?.replace(/^https:\/\//, "") ?? "");
+  const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
-  const [root, setRoot] = useState(initial?.root ?? "~/Canvas");
+  const [root, setRoot] = useState(another ? "" : "~/Canvas");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const site = siteOf(url);
 
   const choose = async () => {
-    const picked = await open({ directory: true, title: t("选择同步文件夹"), defaultPath: root.startsWith("~") ? undefined : root });
+    const picked = await open({ directory: true, title: t("选择同步文件夹"), defaultPath: !root || root.startsWith("~") ? undefined : root });
     if (typeof picked === "string") setRoot(picked);
   };
   const submit = async (e: React.FormEvent) => {
@@ -59,7 +59,7 @@ export function SignInForm({ initial, submitLabel, onDone, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-4 text-sm">
       <label className="block">
-        <span className="mb-1 block font-medium">{t("学校的 Canvas 网址")}</span>
+        <span className="mb-1 block font-medium">{another ? t("另一所学校的 Canvas 网址") : t("学校的 Canvas 网址")}</span>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("例如 bcourses.berkeley.edu")} autoFocus
           spellCheck={false} autoCapitalize="off" className={inputClass} />
       </label>
@@ -79,15 +79,21 @@ export function SignInForm({ initial, submitLabel, onDone, onCancel }: {
       <div>
         <span className="mb-1 block font-medium">{t("同步文件夹")}</span>
         <div className="flex gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5" title={root}>{root}</code>
+          <code className={`min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5 ${root ? "" : "font-sans text-muted"}`} title={root}>
+            {root || t("还没选")}
+          </code>
           <Button type="button" onClick={() => void choose()}>{t("选择…")}</Button>
         </div>
-        <span className="mt-1.5 block text-xs text-muted">{t("课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。")}</span>
+        <span className="mt-1.5 block text-xs text-muted">
+          {another
+            ? t("换成另一所学校时，请选一个新的同步文件夹：两所学校的课程不能放在同一个文件夹里。现在这个文件夹里的文件会原样保留。")
+            : t("课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。")}
+        </span>
       </div>
       {error && <p className="text-danger">{error}</p>}
       <div className="flex justify-end gap-2 pt-1">
         {onCancel && <Button type="button" onClick={onCancel}>{t("取消")}</Button>}
-        <Button primary type="submit" disabled={busy || !url.trim() || !token.trim()}>
+        <Button primary type="submit" disabled={busy || !url.trim() || !token.trim() || !root}>
           {busy ? t("正在登录…") : submitLabel ?? t("登录")}
         </Button>
       </div>
