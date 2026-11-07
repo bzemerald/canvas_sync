@@ -693,7 +693,7 @@ export function MainWindow() {
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
         { label: t("重命名"), hint: shortcut.rename, onSelect: () => setRenaming(e.path) },
-        ...(e.renamed_from ? [{ label: t("恢复原名（{name}）", { name: e.renamed_from }), onSelect: () => void renameFolder(e.path, "") }] : []),
+        ...(e.renamed_from ? [{ label: t("恢复原名"), onSelect: () => void renameFolder(e.path, "") }] : []),
         "separator",
         ...(e.skipped ? [] : [{ label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ paths: [e.path] }, e.name) }]),
         ...(e.changes ? [{ label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) }] : []),
