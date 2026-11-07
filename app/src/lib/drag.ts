@@ -392,7 +392,9 @@ class Ghost {
       this.el.style.visibility = "";
       this.follower.hide();
     }
-    await new Promise(requestAnimationFrame); // (the page has its new order by now)
+    // (Not forever: the window hidden, nothing draws, so nothing would get there.)
+    const tooLong = new Promise<void>((done) => setTimeout(done, LAND * 2));
+    await Promise.race([new Promise(requestAnimationFrame), tooLong]); // (the page has its new order by now)
     const r = to?.isConnected ? settledRect(to) : null;
     this.el.style.transition = `box-shadow ${LAND}ms`;
     if (r) {
@@ -401,10 +403,9 @@ class Ghost {
     } else {
       this.springs.set({ scale: 0.92, opacity: 0 });
     }
-    // (Not forever: the window hidden, nothing draws, so nothing would get there.)
     await new Promise<void>((done) => {
       this.atRest.push(done);
-      setTimeout(done, LAND * 2);
+      void tooLong.then(done);
       this.glide();
       if (this.springs.settled) done();
     });
