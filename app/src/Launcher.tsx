@@ -20,7 +20,7 @@ import { lang, t } from "./lib/i18n";
 import { type Example, examples, seeded } from "./lib/examples";
 import { markPattern } from "./lib/marks";
 import { termRank } from "./lib/terms";
-import { type Thing, isView, setFolderTitles, thingKey, thingOf, thingOfHit } from "./lib/things";
+import { type Thing, isView, thingKey, thingOf, thingOfHit } from "./lib/things";
 
 const mod = isMac ? "⌘" : "Ctrl";
 const NO_COURSES: api.Course[] = [];
@@ -30,7 +30,6 @@ export function Launcher() {
   const [shown, setShown] = useState(0); // times it came forward: what it knows is loaded again
   const input = useRef<HTMLInputElement>(null);
   const courses = useLoaded("courses", api.courses, [shown]).value ?? NO_COURSES; // (their icons)
-  useEffect(() => void api.folderTitles().then(setFolderTitles, () => {}), [shown]); // (a window of its own)
   const { catalog, vocab, usage, names } = useCatalog([shown], courses);
   const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
   const { reading, results, lately, due, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions);

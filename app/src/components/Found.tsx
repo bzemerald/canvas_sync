@@ -16,7 +16,7 @@ import { type Action, type Catalog, type Describe, type Found, type GroupId, typ
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular } from "../lib/query";
-import { type Thing, type ViewName, titlesAlong } from "../lib/things";
+import { type Thing, type ViewName, setFolderTitles, titlesAlong } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
 import { useAnswer } from "../lib/useSearch";
 import { KIND, ResultBody, Snippet, baseName, formatDate } from "./Result";
@@ -99,7 +99,11 @@ const NOTHING: Usage = { opened: {}, picks: [] };
  * loaded again when `again` changes (and only while `on`: what was loaded last stays). */
 export function useCatalog(again: unknown[], courses: Course[] = [], on = true) {
   const data = useLoaded(on ? "catalog" : null, api.catalog, again).value;
-  const catalog = useMemo(() => (data ? prepare(data.things, describeEntry(courses), data.abbreviations) : null), [data, courses]);
+  const catalog = useMemo(() => {
+    if (!data) return null;
+    setFolderTitles(data.folder_titles); // (what comes next is named and found by them)
+    return prepare(data.things, describeEntry(courses), data.abbreviations);
+  }, [data, courses]);
   const vocab = useMemo(() => (catalog ? vocabulary(catalog, KINDS) : NO_VOCABULARY), [catalog]);
   const names = useMemo(
     () => new Map((data?.things ?? []).flatMap((e) => (e.type === "course" ? [[e.course, e.name ?? ""] as const] : []))),
