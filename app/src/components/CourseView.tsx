@@ -26,7 +26,7 @@ import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
 import { SourceTag, ThingIcon, onTheWeb, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
-import { tabCommand } from "../lib/keys";
+import { shortcut, tabCommand } from "../lib/keys";
 
 /** Where each kind of document is listed. */
 export const KIND_VIEW: Record<DocKind, ViewName> = {
@@ -124,6 +124,11 @@ export function CourseTabs({
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const command = tabCommand(ev);
+      if (command === "new") {
+        ev.preventDefault();
+        if (!blank) onNewTab();
+        return;
+      }
       if (command === null || !visible.length) return;
       let next: Shown | undefined;
       if (typeof command === "number") next = command === 9 ? visible.at(-1) : visible[command - 1];
@@ -271,7 +276,7 @@ export function CourseTabs({
         </div>
       )}
       {loaded && (
-        <button onClick={() => !blank && onNewTab()} aria-label={t("新标签页")} title={t("新标签页")}
+        <button onClick={() => !blank && onNewTab()} aria-label={t("新标签页")} title={`${t("新标签页")} (${shortcut.newTab})`}
           className="ml-0.5 grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
           <Plus className="size-4" />
         </button>

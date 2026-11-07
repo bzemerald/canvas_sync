@@ -68,10 +68,11 @@ export function appCommand(e: Key, typing: boolean): AppCommand | null {
   return null;
 }
 
-/** A course's tabs, as a browser's: 1-9 (9: the last), or the next / previous one. */
-export type TabCommand = number | "next" | "prev";
+/** A course's tabs, as a browser's: 1-9 (9: the last), the next / previous one, a new one. */
+export type TabCommand = number | "next" | "prev" | "new";
 
 export function tabCommand(e: Key): TabCommand | null {
+  if (e.code === "KeyT" && primary(e) && !e.shiftKey && !e.altKey) return "new";
   const digit = e.code?.match(/^Digit([1-9])$/);
   if (digit && primary(e) && !e.shiftKey && !e.altKey) return Number(digit[1]);
   if (e.key === "Tab" && e.ctrlKey && !e.metaKey && !e.altKey) return e.shiftKey ? "prev" : "next";
@@ -85,12 +86,12 @@ export const shortcut = isMac
   ? {
       open: "⌘O", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
       toggleChanges: "⌘⇧.", settings: "⌘,", sync: "⌘R", prevCourse: "⌥⌘↑", nextCourse: "⌥⌘↓", shortcuts: "⌘/",
-      tab: "⌘1…9", nextTab: "⌃⇥ / ⌘⇧]", prevTab: "⌃⇧⇥ / ⌘⇧[", up: "↑", down: "↓",
+      tab: "⌘1…9", newTab: "⌘T", nextTab: "⌃⇥ / ⌘⇧]", prevTab: "⌃⇧⇥ / ⌘⇧[", up: "↑", down: "↓",
     }
   : {
       open: "Enter", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
       toggleChanges: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", sync: "Ctrl+R", prevCourse: "Ctrl+Shift+↑",
-      nextCourse: "Ctrl+Shift+↓", shortcuts: "Ctrl+/", tab: "Ctrl+1…9", nextTab: "Ctrl+Tab", prevTab: "Ctrl+Shift+Tab", up: "↑", down: "↓",
+      nextCourse: "Ctrl+Shift+↓", shortcuts: "Ctrl+/", tab: "Ctrl+1…9", newTab: "Ctrl+T", nextTab: "Ctrl+Tab", prevTab: "Ctrl+Shift+Tab", up: "↑", down: "↓",
     };
 
 export const trashName = isMac ? t("废纸篓") : t("回收站");

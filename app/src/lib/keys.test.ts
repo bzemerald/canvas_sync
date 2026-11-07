@@ -20,6 +20,10 @@ describe.skipIf(isMac)("tabCommand", () => {
     expect(tabCommand(key("PageUp", { ctrlKey: true }))).toBe("prev");
     expect(tabCommand(key("Tab"))).toBeNull();
   });
+  it("opens a new tab with Ctrl+T", () => {
+    expect(tabCommand(key("t", { code: "KeyT", ctrlKey: true }))).toBe("new");
+    expect(tabCommand(key("T", { code: "KeyT", ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
 });
 
 describe.skipIf(isMac)("appCommand", () => {

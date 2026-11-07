@@ -18,6 +18,7 @@ export function KeysDialog({ onClose }: { onClose: () => void }) {
     ]],
     [t("课程里"), [
       [t("第 1 到 9 个标签（9：最后一个）"), shortcut.tab],
+      [t("新标签页"), shortcut.newTab],
       [t("下一个标签"), shortcut.nextTab],
       [t("上一个标签"), shortcut.prevTab],
       [t("公告、作业、Ed、页面：上一条 / 下一条"), `${shortcut.up} / ${shortcut.down}`],
