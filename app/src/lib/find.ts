@@ -44,11 +44,12 @@ export interface Results {
 }
 
 /** Where search is, besides what's typed: in a course (what's typed can name another), in a folder
- * (only the files and folders in it), on a tab showing a kind of thing (that kind a little first). */
+ * (only the files and folders in it), on a tab showing a kind of thing or what's from a source (that a little first). */
 export interface Scope {
   courses?: number[];
   under?: string;
   kind?: KindId;
+  source?: Source;
 }
 
 /** What a thing is called (`names`: as it's shown; `aliases`: what else it answers to, in any
@@ -252,7 +253,7 @@ const W = {
   view: 0.2, // one of a course's views
   term: 1, // this term's
   here: 0.4, // of the course you were last in
-  shown: 0.4, // of the kind the tab you searched from shows
+  shown: 0.4, // what the tab you searched from shows
   dueSoon: 0.3, // due within the week, and not handed in
   fresh: 0.2, // new in the last two weeks (less as it ages)
   post: 1, // a post on Ed: what's said about a thing, after the thing itself
@@ -343,8 +344,8 @@ function isStatus(e: CatalogEntry, s: Status, now: number): boolean {
 }
 
 /** What makes one thing likelier than another that matches as well to be what you're after. */
-interface Context { catalog: Catalog; usage: Usage; picks: Map<string, number>; now: number; here: number | null; kind?: KindId }
-function bonus(p: Prepared, { catalog, usage, picks, now, here, kind }: Context): number {
+interface Context { catalog: Catalog; usage: Usage; picks: Map<string, number>; now: number; here: number | null; kind?: KindId; source?: Source }
+function bonus(p: Prepared, { catalog, usage, picks, now, here, kind, source }: Context): number {
   const e = p.entry;
   let b = W.opened * Math.min(frecency(usage.opened[p.key], now), 4);
   const pick = picks.get(p.key) ?? 0;
@@ -354,7 +355,7 @@ function bonus(p: Prepared, { catalog, usage, picks, now, here, kind }: Context)
   else if (e.type === "doc" && e.kind === "post") b -= W.post;
   if (p.term && p.term === catalog.latestTerm) b += W.term; // (what was last term's is seldom what you're after)
   if (here !== null && p.course === here) b += W.here;
-  if (kind && p.kind === kind) b += W.shown;
+  if ((kind && p.kind === kind) || (source && p.entry.source === source)) b += W.shown;
   const due = e.due ? Date.parse(e.due) - now : NaN;
   if (due > 0 && due < 7 * DAY && !handedIn(e.status)) b += W.dueSoon;
   const age = e.date ? (now - Date.parse(e.date)) / DAY : NaN;
@@ -439,7 +440,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
   }
   const onlyCourse = !parts.some(isTerm) && !narrowed && courseParts.length > 0;
   const picks = picked(query, usage, now);
-  const ctx: Context = { catalog, usage, picks, now, here, kind: scope.kind };
+  const ctx: Context = { catalog, usage, picks, now, here, kind: scope.kind, source: scope.source };
   const found = new Map<string, Found>();
 
   /** Whether it's in what the reading narrows things down to. (What the index found is in the
@@ -502,7 +503,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
   for (const p of entries) {
     if (!terms.length) {
       // Narrowed down only (a time, a status, a source): all of it, nearest in time first; a view
-      // that's left is the list of it ("ee64 ed": its 讨论), first.
+      // that's left is the list of it ("ee64 ed": its Ed), first.
       const date = p.entry.due ?? p.entry.date;
       const days = date ? Math.abs(Date.parse(date) - now) / DAY : 30;
       const score = p.entry.type === "view" ? W.listed + 1 : W.listed - Math.min(days, 30) / 15;
@@ -540,7 +541,7 @@ function scored(reading: Reading, catalog: Catalog, usage: Usage, hits: Hit[], a
     const p = thing ? catalog.byKey.get(thingKey(thing)) : undefined;
     if (p ? !inScope(p, true) : statuses.length > 0) return;
     const key = p ? p.key : hitKeyOf(h);
-    const shown = !p && scope.kind && h.kind === scope.kind ? W.shown : 0;
+    const shown = !p && ((scope.kind && h.kind === scope.kind) || (scope.source && h.source === scope.source)) ? W.shown : 0;
     if (h.match !== "name") {
       const score = W.inside - Math.min(i, 40) * 0.02 + (p ? bonus(p, ctx) : shown);
       const to = h.match === "meaning" ? related : inside;

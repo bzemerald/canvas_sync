@@ -48,8 +48,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
     has: dict[int, set[str]] = {c.id: {"overview", "files", "tools", "canvas"} for c in courses}
     for cid, kind, n in e.state.db.execute("SELECT course_id, kind, count(*) FROM documents GROUP BY course_id, kind"):
         if cid in has and n:
-            has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages",
-                          "post": "ed"}.get(kind, ""))
+            has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages"}.get(kind, ""))
     for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM documents WHERE source = 'ed'"):
         if cid in has:
             has[cid].add("ed")

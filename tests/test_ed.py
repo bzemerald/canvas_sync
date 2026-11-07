@@ -179,7 +179,10 @@ def test_marking_ed_read_takes_its_announcements_too(root, tmp_path, fake, linke
         with Engine(root) as e:
             return set(content.news(e.state, e.root, 1)["announcement"])
     assert "ed-9001" in new()
-    client(root, tmp_path).post("/api/courses/1/seen", json={"kinds": ["post"]})
+    with Engine(root) as e:
+        n = content.news_counts(content.news(e.state, e.root, 1))
+    assert n["ed"] == 1 and n["announcements"] == n["total"]  # (counted by Ed, and once in all)
+    assert client(root, tmp_path).post("/api/courses/1/seen", json={"views": ["ed"]}).json()["ed"] == 0
     assert new() == {"9"}  # (Canvas's stays new)
 
 
@@ -208,10 +211,11 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
         assert it["html"] == ('<p>HW 3 is due <strong>Friday</strong>; see '
                               '<a href="https://x.edu/hw3">the spec</a>.</p>')
         # Ed lists it all, each the kind it is; what's a copy of the Canvas announcement isn't news.
-        on_ed = {p["id"]: p["kind"] for p in content.items(e.state, e.root, 1, "post")}
+        on_ed = {p["id"]: p["kind"] for p in content.ed_items(e.state, e.root, 1)}
         assert on_ed == {"ed-9001": "announcement", "ed-9002": "post", "ed-9003": "post", "ed-9004": "announcement", "ed-9005": "post"}
         assert next(iter(on_ed)) == "ed-9005"  # (pinned first)
-        assert content.overview(e.state, e.root, 1)["counts"]["posts"] == 5
+        assert {p["id"] for p in content.items(e.state, e.root, 1, "post")} == {"ed-9002", "ed-9003", "ed-9005"}  # (a kind is that kind)
+        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 5
         assert not {"ed-9003", "ed-9005"} & set(content.news(e.state, e.root, 1)["post"])
         titles = [x.get("name") for x in catalog(e) if x["type"] == "doc" and x.get("kind") == "post"]
         assert "welcome!" not in titles  # (by name, the Canvas announcement)
@@ -263,7 +267,7 @@ def test_to_html():
     assert ed.to_html("not <xml") == "<p>not &lt;xml</p>"
 
 
-def test_ed_posts_are_the_courses_discussion(root, tmp_path, linked, web):
+def test_ed_posts_are_listed_with_what_else_is_on_ed(root, tmp_path, linked, web):
     linked.thread(501, 9001, "HW 3 megathread", user=1, created=ago(5), is_pinned=True, is_megathread=True, category="Homework")
     linked.thread(501, 9002, "Office hours moved", user=1, created=ago(3))
     linked.thread(501, 9003, "Is lecture recorded?", created=ago(2), category="Lectures")
@@ -278,8 +282,8 @@ def test_ed_posts_are_the_courses_discussion(root, tmp_path, linked, web):
         assert [p["title"] for p in posts] == ["HW 3 megathread", "Is lecture recorded?", "Office hours moved"]  # pinned first
         assert posts[0]["ed"]["category"] == "Homework" and posts[0]["ed"]["staff"] and posts[0]["ed"]["replies"] == 1
         o = content.overview(e.state, e.root, 1)
-        assert [p["title"] for p in o["posts"]] == ["HW 3 megathread", "Office hours moved"]  # pinned, then staff's
-        assert o["counts"]["posts"] == 3
+        assert [p["title"] for p in o["ed"]] == ["HW 3 megathread", "Office hours moved"]  # pinned, then staff's
+        assert o["counts"]["ed"] == 3
         # What's new: staff's and what's pinned, not every question.
         assert set(content.news(e.state, e.root, 1)["post"]) == {"ed-9001", "ed-9002"}
         it = content.item(e.state, e.root, 1, "post", "ed-9001")

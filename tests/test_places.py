@@ -32,6 +32,7 @@ def test_things_are_written_one_way():
     # A default arrangement's views are every course's.
     assert parse({"type": "view", "view": "files"}) is None
     assert parse({"type": "view", "view": "files"}, template=True) == view(None, "files")
+    assert parse({"type": "view", "course": 1, "view": "discussion"}) == view(1, "ed")  # (what it was called)
     bad = [{"type": "doc", "course": 1, "kind": "movie", "id": "x"}, {"type": "link", "url": "javascript:alert(1)"},
            {"type": "folder", "path": "../x"}, {"type": "note", "course": 1, "id": "../x"}, {"type": "search", "kinds": ["video"]},
            {"type": "view", "course": 1, "view": "movies"}, {"type": "course", "course": True}, {"path": "x"}, "files"]
@@ -170,7 +171,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
                 for e in r[place] if not e["hidden"]]
     assert shown("tabs") == [("view", "overview", ""), ("folder", f"{COURSE}/Modules", "files"), ("view", "files", ""),
                              ("view", "assignments", ""), ("view", "announcements", ""), ("view", "ed", ""),
-                             ("view", "syllabus", ""), ("view", "pages", "")]  # (讨论, new since: after 公告, as by default)
+                             ("view", "syllabus", ""), ("view", "pages", "")]  # (Ed, new since: after 公告, as by default)
     assert shown("overview") == [("view", "files", ""), ("note", "n1", ""), ("doc", "course-policies", "Course Policies"),
                                  ("search", None, ""), ("view", "tools", ""), ("view", "ed", "")]
     assert [e["courses"] for e in r["overview"] if e["type"] == "search"] == [[1]]  # (it searched this course)

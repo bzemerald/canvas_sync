@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import asdict
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
@@ -61,7 +62,7 @@ def courses(e: Engine) -> list[dict[str, Any]]:
             "term_label": d.parent.name if term_renamed else c.term,
             # Where what's from each part of Canvas goes (files, modules, attachments).
             "source_dirs": {k: e.layout.renamed(canonical / v).as_posix() for k, v in e.settings.view_dirs.items()},
-            "new": sum(news_counts(news(e.state, e.root, c.id)).values()),  # things you haven't opened
+            "new": news_counts(news(e.state, e.root, c.id))["total"],  # things you haven't opened
             "icon": e.settings.course_icons.get(c.id),  # chosen; None: the app picks one
             "hidden": c.id in e.settings.hidden,      # not shown in the sidebar or search
             "excluded": c.id in e.settings.exclude,   # not synced
@@ -105,14 +106,19 @@ def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[s
     return [(r["kind"], r["id"], r["title"], json.loads(r["raw"] or "{}")) for r in rows]
 
 
-def on_ed(kind: str, raw: dict[str, Any]) -> bool:
-    """Whether it's listed under the course's Ed: its posts, and its announcements from there."""
-    return kind == "post" or (kind == "announcement" and raw.get("source") == "ed")
+def on_ed(doc_id: str) -> bool:
+    """Whether a document is from Ed (see ed.document), whatever its kind: what the `ed` view has."""
+    return doc_id.startswith("ed-")
 
 
-def ed_announcements(state: State, course_id: int) -> list[tuple[str, str]]:
-    """The course's announcements from Ed, as (kind, id)."""
-    return [(k, i) for k, i, _, raw in _docs(state, course_id, "announcement") if on_ed(k, raw)]
+# The views that count what's new in them: whether (kind, id) is in each.
+NEWS_VIEWS: dict[str, Callable[[str, str], bool]] = {
+    "announcements": lambda kind, _: kind == "announcement",
+    "assignments": lambda kind, _: kind == "assignment",
+    "pages": lambda kind, _: kind == "page",
+    "files": lambda kind, _: kind == "file",
+    "ed": lambda _, doc_id: on_ed(doc_id),
+}
 
 
 def submission(assignment: dict[str, Any]) -> dict[str, Any]:
@@ -206,18 +212,23 @@ def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]
 
 
 def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:
-    return {"announcements": len(n["announcement"]), "assignments": len(n["assignment"]),
-            "pages": len(n["page"]), "files": len(n["file"]), "posts": len(n["post"])}
+    """How many new things each view has, and `total` (an announcement on Ed is in two views: once)."""
+    new = [(kind, i) for kind, ids in n.items() for i in ids]
+    return {view: sum(has(k, i) for k, i in new) for view, has in NEWS_VIEWS.items()} | {"total": len(new)}
+
+
+def mark_seen(state: State, course_id: int, views: Iterable[str] | None = None) -> None:
+    """Mark everything new in a course opened, or everything new in some of its views."""
+    if views is None:
+        return state.mark_seen(course_id)
+    has = [NEWS_VIEWS[v] for v in views]
+    state.mark_seen(course_id, [(k, i) for _, k, i in state.unseen(course_id) if any(h(k, i) for h in has)])
 
 
 def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
     """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
-    new = news(state, root, course_id)
-    if kind == "post":  # (Ed's: its announcements too, each still the kind it is)
-        rows = [d for d in _docs(state, course_id) if on_ed(d[0], d[3])]
-    else:
-        rows = _docs(state, course_id, kind)
-    out = [_summary(course_id, k, i, t, raw, i in new.get(k, {})) for k, i, t, raw in rows]
+    new = news(state, root, course_id).get(kind, {})
+    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind)]
     if kind == "assignment":
         # Upcoming soonest first, then past ones most recent first, then undated.
         now = now or datetime.now(timezone.utc)
@@ -230,10 +241,24 @@ def items(state: State, root: Path, course_id: int, kind: str, now: datetime | N
     elif kind == "page":
         out.sort(key=lambda p: (not p["front_page"], p["title"].casefold()))
     elif kind == "post":
-        out.sort(key=lambda p: (not p["ed"]["pinned"], _desc(p.get("date"))))
+        out.sort(key=_ed_order)
     else:
         out.sort(key=lambda a: a.get("date") or "", reverse=True)
     return out
+
+
+def _ed_order(p: dict[str, Any]) -> tuple[bool, float]:
+    """As Ed lists things: pinned first, then newest."""
+    return (not p["ed"]["pinned"], _desc(p.get("date")))
+
+
+def _on_ed(course_id: int, docs: list[tuple[str, str, str, dict[str, Any]]], new: dict[str, dict[str, bool]]) -> list[dict[str, Any]]:
+    return sorted((_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(i)), key=_ed_order)
+
+
+def ed_items(state: State, root: Path, course_id: int) -> list[dict[str, Any]]:
+    """Everything a course has on Ed, as Ed lists it, each the kind it is."""
+    return _on_ed(course_id, _docs(state, course_id), news(state, root, course_id))
 
 
 def _local_files(state: State, root: Path, ids: list[int]) -> dict[str, dict[str, str]]:
@@ -287,10 +312,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
         (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement"),
         key=lambda a: a.get("date") or "", reverse=True,
     )
-    # Of the posts on Ed: what's pinned, then what staff posted, newest first.
-    posts = [_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(k, raw)]
-    staff_posts = sorted((p for p in posts if p["ed"]["pinned"] or p["ed"]["staff"]),
-                         key=lambda p: (not p["ed"]["pinned"], _desc(p.get("date"))))
+    on_ed_now = _on_ed(course_id, docs, new)
     total = _total(state, course_id)
     graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
 
@@ -311,7 +333,8 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
     out = {
         "upcoming": upcoming[:8],
         "announcements": announcements[:5],
-        "posts": staff_posts[:5],
+        # Of what's on Ed: what's pinned, announcements and what staff posted, not every question.
+        "ed": [p for p in on_ed_now if p["ed"]["pinned"] or p["ed"]["staff"] or p["ed"]["type"] == "announcement"][:5],
         "new_files": shown,
         "grades": {"total": total, "recent": graded[:3]},
         "tools": tools(state, course_id),
@@ -321,7 +344,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
             "announcements": count["announcement"],
             "assignments": count["assignment"],
             "pages": count["page"],
-            "posts": len(posts),
+            "ed": len(on_ed_now),
             "files": len(files),
             "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
             "grades": total is not None or bool(graded),

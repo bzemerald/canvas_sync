@@ -315,9 +315,8 @@ class State:
             sql, args = sql + " AND kind = ?", [*args, kind]
         return {(r[0], r[1], r[2]): bool(r[3]) for r in self.db.execute(sql, args)}
 
-    def mark_seen(self, course_id: int, items: Iterable[tuple[str, str]] | None = None,
-                  kinds: Iterable[str] | None = None) -> None:
-        """Mark items opened; with no items, everything new in the course (of `kinds`)."""
+    def mark_seen(self, course_id: int, items: Iterable[tuple[str, str]] | None = None) -> None:
+        """Mark items opened; with no items, everything new in the course."""
         now = _now()
         if items is not None:
             self.db.executemany(
@@ -325,11 +324,7 @@ class State:
                 [(now, course_id, k, i) for k, i in items],
             )
             return
-        kinds = list(kinds or [])
-        only = f" AND kind IN ({', '.join('?' * len(kinds))})" if kinds else ""
-        self.db.execute(
-            f"UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND seen_at IS NULL{only}", (now, course_id, *kinds)
-        )
+        self.db.execute("UPDATE arrivals SET seen_at = ? WHERE course_id = ? AND seen_at IS NULL", (now, course_id))
 
     def unseen_files(self) -> dict[str, tuple[int, int]]:
         """Where each file not opened yet is (its links too) -> its course and id."""
@@ -338,16 +333,17 @@ class State:
         paths += [(p, fid) for p, fid in self.db.execute("SELECT path, file_id FROM links") if fid in unseen]
         return {p: (unseen[fid], fid) for p, fid in paths}
 
-    def mark_seen_under(self, rel: str) -> None:
-        """Mark the new files in a folder of the sync folder ("": all of it) opened, and their links."""
-        prefix = rel.strip("/") + "/" if rel.strip("/") else ""
-        for course, fid in {f for p, f in self.unseen_files().items() if p.startswith(prefix)}:
-            self.mark_seen(course, [("file", str(fid))])
-
-    def mark_file_seen(self, rel: str) -> None:
-        """Mark a file of the sync folder opened (at any of its paths), if it's new."""
-        if found := self.unseen_files().get(rel.strip("/")):
-            self.mark_seen(found[0], [("file", str(found[1]))])
+    def mark_paths_seen(self, files: Iterable[str] = (), folders: Iterable[str] = ()) -> None:
+        """Mark new files of the sync folder opened: these (at any of their paths), and those in
+        these folders ("": all of it), and their links."""
+        wanted = {f.strip("/") for f in files}
+        prefixes = tuple(f.strip("/") + "/" if f.strip("/") else "" for f in folders)
+        courses: dict[int, set[tuple[str, str]]] = {}
+        for path, (course, fid) in self.unseen_files().items():
+            if path in wanted or path.startswith(prefixes):
+                courses.setdefault(course, set()).add(("file", str(fid)))
+        for course, items in courses.items():
+            self.mark_seen(course, items)
 
     # -- what you open ------------------------------------------------------------------
 

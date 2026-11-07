@@ -153,7 +153,7 @@ def parse(d: Any, home: int | None = None, *, template: bool = False) -> Thing |
     if t == "note":
         i = d.get("id")
         return Thing(t, course=course, id=i) if isinstance(i, str) and NOTE_ID.fullmatch(i) else None
-    name = d.get("view")
+    name = "ed" if d.get("view") == "discussion" else d.get("view")  # (what `ed` was called)
     return view(course, name) if name in VIEWS else None
 
 

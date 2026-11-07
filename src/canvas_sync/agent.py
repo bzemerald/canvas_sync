@@ -337,7 +337,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
     @tool
     def course_overview(course: str) -> dict[str, Any]:
         """A course at a glance, as its overview in the app: what's due soon, the latest
-        announcements and Ed posts by staff, new files, this week's modules, the grade so far,
+        what's on Ed (pinned, announcements, staff's posts), new files, this week's modules, the grade so far,
         how many of each thing it has and how many are new."""
         with engine() as e:
             c = course_of(e, course)
@@ -346,7 +346,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
                 "course": course_label(c, e.settings), "name": c.name,
                 "due_soon": [brief(e, c, s) for s in o["upcoming"]],
                 "announcements": [brief(e, c, s) for s in o["announcements"]],
-                "ed_posts": [brief(e, c, s) for s in o["posts"]],
+                "ed": [brief(e, c, s) for s in o["ed"]],
                 "new_files": [file(e, f["path"], name=f["name"], date=f["date"],
                                    **({"new": "updated" if f["updated"] else "new"} if f["new"] else {}))
                               for f in o["new_files"]],

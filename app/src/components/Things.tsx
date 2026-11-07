@@ -18,6 +18,8 @@ export interface Things {
   courses: Course[];
   /** Wherever it opens: here (a page, a folder, a course's view), in its app, in the browser. */
   open: (thing: Thing) => void;
+  /** A document in a list that has it, staying there (one from Ed is in Ed, and may be in another). */
+  openIn: (doc: Thing, list: ViewName) => void;
   showInFolder: (path: string) => void; // a file, selected in its folder (in the app)
   opening: string | null; // what's on its way (a tool: Canvas is making a link), by thingKey
   /** What can be done with it, besides placing it: 打开, 在文件夹中显示, 在 Canvas 中打开... */

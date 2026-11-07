@@ -4,10 +4,11 @@
 import {
   Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessageCircle, MessagesSquare, Paperclip, Pin,
   AppWindow, BookOpen, ClipboardList,
+  Megaphone,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { CatalogEntry, Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, NewCounts, Overview, Reply, Total } from "../lib/api";
+import type { CatalogEntry, Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, Overview, Reply, Total } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
 import { useLoaded } from "../lib/useLoaded";
@@ -31,8 +32,9 @@ import { tabCommand } from "../lib/keys";
 export const KIND_VIEW: Record<DocKind, ViewName> = {
   announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus", post: "ed",
 };
-export const VIEW_KIND: Partial<Record<ViewName, DocKind>> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", ed: "post",
+/** What each view that's a reader lists: a kind of document, or everything from Ed, whatever its kind. */
+export const VIEW_LISTS: Partial<Record<ViewName, DocKind | "ed">> = {
+  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", ed: "ed",
 };
 
 /** The overview, loaded once per course and version (it also says which tabs to show).
@@ -64,13 +66,11 @@ export function useItemOpener(course: number) {
   return { activate, pending };
 }
 
-export const totalNew = (n: NewCounts | undefined) => (n ? n.announcements + n.assignments + n.pages + n.files + n.posts : 0);
-
 /** The views of a course with something in them (the rest aren't shown as tabs). */
 export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   const c = overview?.counts;
   const has: Record<ViewName, boolean> = {
-    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, ed: !!c?.posts, assignments: !!c?.assignments,
+    overview: true, modules: !!c?.modules, announcements: !!c?.announcements, ed: !!c?.ed, assignments: !!c?.assignments,
     grades: !!c?.grades, files: c ? c.files > 0 : true, syllabus: !!c?.syllabus, pages: !!c?.pages, tools: true, canvas: true,
   };
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
@@ -103,9 +103,7 @@ export function CourseTabs({
   const entries = loaded ?? [];
   const n = overview?.new;
   const has = viewsWithContent(overview);
-  const fresh: Partial<Record<ViewName, number>> = {
-    announcements: n?.announcements, assignments: n?.assignments, files: n?.files, pages: n?.pages, ed: n?.posts,
-  };
+  const fresh: Partial<Record<ViewName, number>> = n ?? {};
   const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
   const visible = entries.filter((e) => same(e, tab) || (!e.hidden && (!isOwn(e) || has.has(e.view))));
   const extra = !loaded || entries.some((e) => same(e, tab)) ? null : (tab as Shown); // shown, but not one of the tabs
@@ -238,7 +236,7 @@ export function CourseTabs({
       {markerLeft !== null && (
         <span aria-hidden className="pointer-events-none absolute top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" style={{ left: markerLeft - 1 }} />
       )}
-      {totalNew(n) > 0 && (
+      {!!n?.total && (
         <button onClick={onMarkAllSeen} className="ml-auto shrink-0 py-2 text-xs text-muted hover:text-fg" title={t("清除这门课所有的“新”标记")}>
           {t("全部标为已读")}
         </button>
@@ -547,21 +545,21 @@ export function CourseDoc({ course, kind, id, version, onSeen }: {
 }
 
 /** A list on the left, the selected item on the right, like a mail client. */
-export function CourseReader({ course, kind, selected, version, onSelect, onSeen, box }: {
+export function CourseReader({ course, of, selected, version, onSelect, onSeen, box }: {
   course: Course;
-  kind: DocKind;
+  of: DocKind | "ed"; // what it lists
   selected: string | null;
   version: number;
   onSelect: (id: string) => void;
   onSeen: () => void;
   box: SearchBox; // the list shows what matches, best first (by name, and the text inside)
 }) {
-  const items = useLoaded(`items:${course.id}:${kind}`, () => api.items(course.id, kind).catch(() => []), [version]).value ?? null;
+  const items = useLoaded(`items:${course.id}:${of}`, () => (of === "ed" ? api.edItems(course.id) : api.items(course.id, of)).catch(() => []), [version]).value ?? null;
   // Opened here: no dot, even if the list was fetched before opening it marked it seen.
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const all = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
   const entries = useMemo(() => all && all.map((x) => docEntry(course.id, x)), [all, course.id]);
-  const narrowing = useNarrowing(kind === "syllabus" ? "" : box.query, entries, { course: course.id, kind });
+  const narrowing = useNarrowing(of === "syllabus" ? "" : box.query, entries, of === "ed" ? { course: course.id, source: "ed" } : { course: course.id, kind: of });
   const searching = narrowing.scores !== null;
   const list = useMemo(() => {
     const scores = narrowing.scores;
@@ -572,8 +570,8 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
 
   // Nothing chosen yet: the newest announcement, the next assignment, the front page (or the best match).
   const current = selected ?? list?.[0]?.id ?? null;
-  // Ed lists its announcements too: each opens as what it is. (Not till that's known.)
-  const currentKind = kind === "post" ? all?.find((x) => x.id === current)?.kind ?? (all ? kind : null) : kind;
+  // On Ed, each opens as the kind it is. (Not till that's known.)
+  const kind = of === "ed" ? all?.find((x) => x.id === current)?.kind ?? (all ? "post" : null) : of;
   const seen = (id: string) => {
     setOpened((s) => new Set(s).add(id));
     onSeen(); // the counts in the tabs and the sidebar
@@ -584,7 +582,7 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
   const pane = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) listEl.current?.focus();
-  }, [kind]);
+  }, [of]);
   const onKeyDown = (ev: React.KeyboardEvent) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey || (ev.target as HTMLElement).closest("select")) return;
     if (ev.key === " ") {
@@ -603,7 +601,7 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
     row.scrollIntoView({ block: "nearest" });
   };
 
-  if (kind === "syllabus") {
+  if (of === "syllabus") {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ItemView course={course} kind="syllabus" id={String(course.id)} version={version} />
@@ -619,17 +617,17 @@ export function CourseReader({ course, kind, selected, version, onSelect, onSeen
         {searching && !narrowing.loading && <li><FilterNote n={list?.length ?? 0} box={box} narrowing={narrowing} /></li>}
         {list === null && <li><Loading className="px-2 py-3 text-sm" /></li>}
         {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
-        {kind === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} />
-          : kind === "post" ? <PostList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
+        {of === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} />
+          : of === "ed" ? <EdList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
           <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
         ))}
       </ul>
       <div ref={pane} className="min-w-0 flex-1 overflow-y-auto">
-        {current && currentKind && (
+        {current && kind && (
           <ItemView
-            key={`${currentKind}:${current}`}
+            key={`${kind}:${current}`}
             course={course}
-            kind={currentKind}
+            kind={kind}
             id={current}
             version={version}
             onLoaded={(it) => it.new && seen(it.id)}
@@ -661,27 +659,31 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
 
 // -- Ed ----------------------------------------------------------------------------------
 
-type PostFilter = "all" | "pinned" | "staff" | "new" | "watched";
-const POST_FILTERS: [PostFilter, string][] = [
-  ["all", t("全部")], ["pinned", t("置顶@@heading")], ["staff", t("教师")], ["new", t("未读")], ["watched", t("关注")],
+/** (By what it is on Ed: a copy of a Canvas announcement is kept as a post, and is one there.) */
+const isEdAnnouncement = (p: ItemSummary) => p.ed?.type === "announcement";
+export const EdAnnouncementMark = () => <Megaphone className="size-3 shrink-0 text-muted" aria-label={t("公告")} />;
+
+type EdFilter = "all" | "announcements" | "pinned" | "staff" | "new" | "watched";
+const ED_FILTERS: [EdFilter, string][] = [
+  ["all", t("全部")], ["announcements", t("公告")], ["pinned", t("置顶@@heading")], ["staff", t("教师")], ["new", t("未读")], ["watched", t("关注")],
 ];
-const keeps: Record<PostFilter, (p: ItemSummary) => boolean> = {
-  all: () => true, pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
+const keeps: Record<EdFilter, (p: ItemSummary) => boolean> = {
+  all: () => true, announcements: isEdAnnouncement, pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
   watched: (p) => !!(p.ed?.watched || p.ed?.starred),
 };
 
-/** What a course has on Ed, its announcements too, pinned first then newest, as Ed lists them; narrowed to what's
- * pinned, staff's, new or watched, and to one category. */
-function PostList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
+/** What a course has on Ed, pinned first then newest, as Ed lists it; narrowed to its
+ * announcements, or what's pinned, staff's, new or watched, and to one category. */
+function EdList({ course, list, current, onSelect }: { course: number; list: ItemSummary[]; current: string | null; onSelect: (id: string) => void }) {
   const thing = useThing();
-  const [filter, setFilter] = usePref<PostFilter>("ed.filter", "all");
+  const [filter, setFilter] = usePref<EdFilter>("ed.filter", "all");
   const [category, setCategory] = useState("");
   const categories = useMemo(() => [...new Set(list.map((p) => p.ed?.category ?? "").filter(Boolean))].sort(), [list]);
   const shown = list.filter((p) => keeps[filter](p) && (!category || p.ed?.category === category));
   return (
     <>
       <li className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 flex flex-wrap items-center gap-1 border-b border-line bg-bg px-2 py-2">
-        {POST_FILTERS.map(([f, label]) => (
+        {ED_FILTERS.map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`rounded-full px-2 py-0.5 text-xs ${filter === f ? "bg-selected font-medium text-accent" : "text-muted hover:bg-chip"}`}>
             {label}
@@ -695,7 +697,7 @@ function PostList({ course, list, current, onSelect }: { course: number; list: I
           </select>
         )}
       </li>
-      {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("没有这样的帖子")}</li>}
+      {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("没有这样的内容")}</li>}
       {shown.map((p) => (
         <li key={p.id}>
           <button data-item={p.id} onClick={() => onSelect(p.id)} {...thing(docThing(course, p))}
@@ -703,8 +705,8 @@ function PostList({ course, list, current, onSelect }: { course: number; list: I
             <div className="flex items-center gap-2">
               {p.new && <NewDot />}
               {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+              {isEdAnnouncement(p) && <EdAnnouncementMark />}
               <span className={`truncate text-sm ${p.new ? "font-medium" : ""}`}>{p.title}</span>
-              {p.ed?.type === "announcement" && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">{t("公告")}</span>}
               <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
             </div>
             <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
@@ -818,8 +820,8 @@ function ItemView({ course, kind, id, version, onLoaded }: {
       <header className="mb-4 border-b border-line pb-4">
         <h1 className="selectable text-xl font-semibold">{kind === "syllabus" ? t("课程大纲") : it.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-          {kind === "announcement" && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span><SourceTag source={it.source} /></>}
-          {kind === "post" && (
+          {kind === "announcement" && !it.ed && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span><SourceTag source={it.source} /></>}
+          {it.ed && (
             <>
               <span className="flex items-center gap-1.5">{it.author ?? t("匿名")}{it.ed?.staff && <StaffTag />}</span>
               <span>{shortDate(it.date)}</span>

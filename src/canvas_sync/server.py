@@ -53,7 +53,7 @@ from .local import open_path
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
 from .search import course_label
-from .state import META_DIR, NEWS_KINDS
+from .state import META_DIR
 from .things import Entry, parse_entry
 from .thumbs import thumbnail
 
@@ -113,15 +113,12 @@ class LaunchRequest(BaseModel):
 
 
 class SeenRequest(BaseModel):
-    kinds: list[str] | None = None  # announcement / assignment / page / file; None: all
+    views: list[str] | None = None  # the ones that count what's new (content.NEWS_VIEWS); None: all
 
 
-class FolderSeenRequest(BaseModel):
-    path: str  # a folder in the sync folder ("": all of it)
-
-
-class FileSeenRequest(BaseModel):
-    path: str  # a file in the sync folder
+class PathsSeenRequest(BaseModel):
+    files: list[str] = []    # in the sync folder
+    folders: list[str] = []  # in the sync folder ("": all of it)
 
 
 class ScopeRequest(BaseModel):
@@ -664,6 +661,12 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         with engine() as e:
             return content.items(e.state, e.root, course_id, kind)
 
+    @api.get("/courses/{course_id}/ed")
+    def course_ed(course_id: int) -> list[dict[str, Any]]:
+        """Everything the course has on Ed (the `ed` view's list), each the kind it is."""
+        with engine() as e:
+            return content.ed_items(e.state, e.root, course_id)
+
     @api.get("/courses/{course_id}/items/{kind}/{doc_id}")
     async def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
         """One item in full. Opening it is reading it: it's no longer new. One from Ed comes
@@ -685,31 +688,23 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.post("/courses/{course_id}/seen")
     def course_seen(course_id: int, req: SeenRequest | None = None) -> dict[str, int]:
-        """Mark everything new in a course (or just some kinds of things) as seen."""
-        kinds = (req.kinds if req else None) or None
-        if kinds and set(kinds) - set(NEWS_KINDS):
-            raise HTTPException(400, f"kinds must be among {NEWS_KINDS}")
+        """Mark everything new in a course (or in some of its views) as seen."""
+        views = (req.views if req else None) or None
+        if views and set(views) - set(content.NEWS_VIEWS):
+            raise HTTPException(400, f"views must be among {list(content.NEWS_VIEWS)}")
         with engine() as e:
-            e.state.mark_seen(course_id, kinds=kinds)
-            if kinds and "post" in kinds:  # (Ed's: what's listed there)
-                e.state.mark_seen(course_id, content.ed_announcements(e.state, course_id))
+            content.mark_seen(e.state, course_id, views)
             return news_counts(news(e.state, e.root, course_id))
 
-    @api.post("/seen/folder")
-    def folder_seen(req: FolderSeenRequest) -> dict[str, str]:
-        """Mark the new files in a folder seen."""
-        if req.path.strip("/") and not inside(req.path).is_dir():
-            raise HTTPException(404, f"{req.path} is not a folder")
+    @api.post("/seen/paths")
+    def paths_seen(req: PathsSeenRequest) -> dict[str, list[str]]:
+        """Mark new files seen: these, and those in these folders."""
+        for folder in req.folders:
+            if folder.strip("/") and not inside(folder).is_dir():
+                raise HTTPException(404, f"{folder} is not a folder")
         with engine() as e:
-            e.state.mark_seen_under(req.path)
-        return {"seen": req.path}
-
-    @api.post("/seen/file")
-    def file_seen(req: FileSeenRequest) -> dict[str, str]:
-        """Mark a file seen."""
-        with engine() as e:
-            e.state.mark_file_seen(req.path)
-        return {"seen": req.path}
+            e.state.mark_paths_seen(req.files, req.folders)
+        return {"seen": [*req.files, *req.folders]}
 
     @api.get("/new/files")
     def new_files() -> list[str]:

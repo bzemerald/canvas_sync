@@ -479,13 +479,13 @@ export const en: Record<string, string | [string, string]> = {
   "课程@@ed": "Courses",
   "在 Ed 中打开": "Open in Ed",
   "来自 Ed": "From Ed",
-  // 讨论 (Ed)
+  // Ed
   "教师": "Staff",
   "未读": "Unread",
   "关注": "Watching",
   "分类": "Category",
   "所有分类": "All categories",
-  "没有这样的帖子": "No posts like that",
+  "没有这样的内容": "Nothing like that",
   "匿名": "Anonymous",
   "已解答": "Answered",
   "回答": "Answer",
@@ -495,7 +495,7 @@ export const en: Record<string, string | [string, string]> = {
   "回复还没下载：连上网后再打开就有了。": "The replies aren't downloaded yet: open this again when you're online.",
   "帖子": "Post",
   "Ed 帖子": "Ed post",
-  "没有置顶或教师发的帖子": "Nothing pinned or posted by staff",
+  "Ed 上没有置顶、公告或教师发的内容": "Nothing pinned, announced or from staff on Ed",
   "连不上 Canvas": "Can't reach Canvas",
 
   // -- signing in

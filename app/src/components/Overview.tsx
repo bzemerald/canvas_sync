@@ -8,7 +8,7 @@
 import { FolderOpen, Pin, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Course, DocKind, Hit, Module, Overview } from "../lib/api";
+import type { Course, DocKind, Hit, Module, NewsView, Overview } from "../lib/api";
 import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
@@ -22,7 +22,7 @@ import {
 } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
 import { Button, Dialog } from "./Dialog";
-import { AssignmentRow, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, useItemOpener } from "./CourseView";
+import { AssignmentRow, EdAnnouncementMark, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, useItemOpener } from "./CourseView";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
 import { RenameDialog } from "./RenameDialog";
@@ -83,7 +83,6 @@ function nearest(boxes: { left: number; top: number; width: number; height: numb
   return best;
 }
 const LOADING = "px-2 py-3 text-sm"; // (as Empty)
-type Kinds = ("announcement" | "assignment" | "file" | "post")[];
 
 /** Things with a card of their own; the rest (a tool, a link, a course...) go into 工具与链接. */
 const hasCard = (e: Thing) =>
@@ -99,7 +98,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   onReset: () => void; // back to the default arrangement (what was added stays)
   onMakeDefault: () => void; // this arrangement for every course that doesn't have its own
   onSay: (message: string, action?: { label: string; run: () => void }) => void;
-  onMarkSeen: (kinds: Kinds) => void;
+  onMarkSeen: (of: NewsView) => void;
 }) {
   const things = useThings();
   const thing = useThing();
@@ -167,7 +166,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       : e.view === "modules" ? !!overview?.current_modules.length
         : e.view === "grades" ? !!overview?.counts.grades
           : e.view === "syllabus" ? !!overview?.counts.syllabus
-            : e.view === "ed" ? !!overview?.counts.posts
+            : e.view === "ed" ? !!overview?.counts.ed
               : true;
   const shown = all.filter((e) => !e.hidden && available(e));
   const add = (entry: Shown, index = all.length) => {
@@ -240,8 +239,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   useFlip(grid, placed);
 
   if (!overview || !cards) return <Loading />;
-  const { upcoming, announcements, posts, new_files, counts, grades, tools, current_modules } = overview;
-  const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus && !counts.posts;
+  const { upcoming, announcements, ed, new_files, counts, grades, tools, current_modules } = overview;
+  const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus && !counts.ed;
   if (empty && all.every((e) => e.hidden || isOwn(e))) {
     return (
       <div className="mx-auto max-w-md px-6 py-16 text-sm text-fg-soft">
@@ -288,7 +287,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     isView(e, "tools") ? [{ label: t("添加链接…"), onSelect: () => setAddingLink(true) }] : [],
   );
 
-  const markRead = (n: number, kinds: Kinds) => (n > 0 ? { label: t("标为已读"), onClick: () => onMarkSeen(kinds) } : undefined);
+  const markRead = (n: number, of: NewsView) => (n > 0 ? { label: t("标为已读"), onClick: () => onMarkSeen(of) } : undefined);
   const more = (name: Parameters<typeof view>[1]) => () => things.open(view(course.id, name));
   const moduleItems = (m: Module, limit = 10) => (
     <>
@@ -324,13 +323,13 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
       switch (e.view) {
         case "assignments":
           return {
-            more: counts.assignments ? more("assignments") : undefined, action: markRead(overview.new.assignments, ["assignment"]),
+            more: counts.assignments ? more("assignments") : undefined, action: markRead(overview.new.assignments, "assignments"),
             body: upcoming.length === 0 ? <Empty>{t("接下来三周没有要交的作业")}</Empty>
               : upcoming.map((a) => <AssignmentRow key={a.id} a={a} course={course.id} onClick={() => things.open(docThing(course.id, a))} />),
           };
         case "announcements":
           return {
-            more: counts.announcements ? more("announcements") : undefined, action: markRead(overview.new.announcements, ["announcement"]),
+            more: counts.announcements ? more("announcements") : undefined, action: markRead(overview.new.announcements, "announcements"),
             body: announcements.length === 0 ? <Empty>{t("还没有公告")}</Empty> : announcements.map((a) => (
               <Row key={a.id} onClick={() => things.open(docThing(course.id, a))} thing={docThing(course.id, a)}>
                 <div className="flex items-center gap-2">
@@ -345,12 +344,13 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
           };
         case "ed":
           return {
-            more: more("ed"), action: markRead(overview.new.posts, ["post"]),
-            body: posts.length === 0 ? <Empty>{t("没有置顶或教师发的帖子")}</Empty> : posts.map((p) => (
-              <Row key={p.id} onClick={() => things.open(docThing(course.id, p))} thing={docThing(course.id, p)}>
+            more: more("ed"), action: markRead(overview.new.ed, "ed"),
+            body: ed.length === 0 ? <Empty>{t("Ed 上没有置顶、公告或教师发的内容")}</Empty> : ed.map((p) => (
+              <Row key={p.id} onClick={() => things.openIn(docThing(course.id, p), "ed")} thing={docThing(course.id, p)}>
                 <div className="flex items-center gap-2">
                   {p.new && <NewDot />}
                   {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+                  {p.ed?.type === "announcement" && <EdAnnouncementMark />}
                   <span className={`truncate ${p.new ? "font-medium" : ""}`}>{p.title}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
                 </div>
@@ -370,7 +370,7 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
           };
         case "files":
           return {
-            more: more("files"), action: markRead(overview.new.files, ["file"]),
+            more: more("files"), action: markRead(overview.new.files, "files"),
             body: new_files.length === 0 ? <Empty>{t("还没有文件")}</Empty> : new_files.map((f) => (
               <FileRow key={f.file_id} path={f.path} name={f.name} date={f.date} isNew={f.new} updated={f.updated} />
             )),

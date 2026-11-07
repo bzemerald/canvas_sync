@@ -115,7 +115,8 @@ export interface NewCounts {
   assignments: number;
   pages: number;
   files: number;
-  posts: number;
+  ed: number; // (its announcements too, so they count in two views)
+  total: number; // everything new in the course, once each
 }
 
 /** One in full: its HTML, and local copies of the Canvas files it refers to. */
@@ -157,14 +158,14 @@ export interface Module {
 export interface Overview {
   upcoming: ItemSummary[];
   announcements: ItemSummary[];
-  posts: ItemSummary[]; // on Ed: what's pinned, then what staff posted
+  ed: ItemSummary[]; // on Ed: what's pinned, then announcements and what staff posted
   new_files: { file_id: number; path: string; name: string; date: string | null; new: boolean; updated: boolean }[];
   grades: { total: Total | null; recent: ItemSummary[] };
   tools: Tool[];
   current_modules: Module[]; // this week's (newest upload, next deadline)
   new: NewCounts;
   counts: {
-    modules: number; announcements: number; assignments: number; pages: number; posts: number; files: number; syllabus: boolean;
+    modules: number; announcements: number; assignments: number; pages: number; ed: number; files: number; syllabus: boolean;
     grades: boolean;
   };
 }
@@ -375,21 +376,21 @@ export const courses = () => api<Course[]>("/courses");
 export const overview = (course: number) => api<Overview>(`/courses/${course}/overview`);
 export const modules = (course: number) => api<Module[]>(`/courses/${course}/modules`);
 export const items = (course: number, kind: DocKind) => api<ItemSummary[]>(`/courses/${course}/items?kind=${kind}`);
+/** Everything a course has on Ed, as Ed lists it, each the kind it is. */
+export const edItems = (course: number) => api<ItemSummary[]>(`/courses/${course}/ed`);
 /** One in full. Opening it marks it seen. */
 export const item = (course: number, kind: DocKind, id: string) =>
   api<Item>(`/courses/${course}/items/${kind}/${encodeURIComponent(id)}`);
 export const grades = (course: number) => api<Grades>(`/courses/${course}/grades`);
-/** Mark the new files in a folder seen ("": all of them). */
-export const markFolderSeen = (path: string) => post("/seen/folder", { path });
-/** Mark a file seen. */
-export const markFileSeen = (path: string) => post("/seen/file", { path });
+/** Mark new files seen: these, and those in these folders ("": all of them). */
+export const markPathsSeen = (files: string[], folders: string[] = []) => post("/seen/paths", { files, folders });
 /** Where the files not opened yet are. */
 export const newFiles = () => api<string[]>("/new/files");
-/** Mark everything new in a course as seen (or only some kinds of things). */
-/** What's counted as new in a course, by kind. */
-export type NewsKind = "announcement" | "assignment" | "page" | "file" | "post";
-export const markSeen = (course: number, kinds?: NewsKind[]) =>
-  api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ kinds: kinds ?? null }) });
+/** The views that count what's new in them. */
+export type NewsView = Exclude<keyof NewCounts, "total">;
+/** Mark everything new in a course as seen (or only what's in one of its views). */
+export const markSeen = (course: number, of?: NewsView) =>
+  api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ views: of ? [of] : null }) });
 
 /** An image in a page (needs the Canvas login, or is on another site), as an object URL. */
 export async function media(url: string): Promise<string | null> {

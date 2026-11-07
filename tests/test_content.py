@@ -55,7 +55,7 @@ def test_overview(root, course):
     assert [a["title"] for a in o["announcements"]] == ["Midterm room", "Welcome"]
     assert o["announcements"][0]["author"] == "Prof"
     assert [f["name"] for f in o["new_files"]] == ["hw6.pdf", "lec1.pdf"]  # newest upload first
-    assert o["counts"] == {"modules": 1, "announcements": 2, "assignments": 4, "pages": 2, "posts": 0, "files": 2, "syllabus": True,
+    assert o["counts"] == {"modules": 1, "announcements": 2, "assignments": 4, "pages": 2, "ed": 0, "files": 2, "syllabus": True,
                            "grades": False}
 
 
@@ -183,6 +183,23 @@ def test_modules_survive_a_failed_fetch_but_not_being_turned_off(root, course):
 # -- what's new, submissions, grades ---------------------------------------------------------
 
 
+def test_marking_several_paths_read_looks_once(root, course, monkeypatch):
+    pull(root, course)
+    with Engine(root) as e:
+        looks, marked = [], {}
+        def unseen():
+            looks.append(1)
+            return {"a/1.pdf": (1, 1), "b/link to 1.pdf": (1, 1), "a/x/2.pdf": (1, 2), "b/3.pdf": (1, 3), "c/4.pdf": (2, 4), "ab/5.pdf": (2, 5)}
+        monkeypatch.setattr(e.state, "unseen_files", unseen)
+        monkeypatch.setattr(e.state, "mark_seen", lambda c, items: marked.__setitem__(c, set(items)))
+        e.state.mark_paths_seen(["b/link to 1.pdf", "c/4.pdf", "c/nowhere.pdf"], ["a"])
+        assert len(looks) == 1
+        assert marked == {1: {("file", "1"), ("file", "2")}, 2: {("file", "4")}}  # (not b/3.pdf, nor ab/5.pdf)
+        marked.clear()
+        e.state.mark_paths_seen([], [])
+        assert marked == {}  # (none named: none marked)
+
+
 def test_whats_new(api, course, root, monkeypatch):
     monkeypatch.setattr("canvas_sync.server.open_path", lambda p, **kw: None)
     api.post("/api/courses/1/seen")  # start with nothing new
@@ -202,7 +219,7 @@ def test_whats_new(api, course, root, monkeypatch):
     wait_for_sync(api)
 
     o = api.get("/api/courses/1/overview").json()
-    assert o["new"] == {"announcements": 1, "assignments": 1, "pages": 1, "files": 2, "posts": 0}
+    assert o["new"] == {"announcements": 1, "assignments": 1, "pages": 1, "files": 2, "ed": 0, "total": 5}
     assert [a["title"] for a in o["announcements"] if a["new"]] == ["Exam moved"]  # not the one read on Canvas
     assert {f["name"]: f["updated"] for f in o["new_files"] if f["new"]} == {"lec2.pdf": False, "lec1.pdf": True}
     assert next(c for c in api.get("/api/courses").json() if c["id"] == 1)["new"] == 5
@@ -214,20 +231,20 @@ def test_whats_new(api, course, root, monkeypatch):
     api.post("/api/open", json={"path": f"{COURSE}/Files/lec2.pdf"})
     api.post("/api/open", json={"path": f"{COURSE}/Modules/01 Week 1/lec1.pdf", "reveal": True})  # only showing it
     o = api.get("/api/courses/1/overview").json()
-    assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "posts": 0}
+    assert o["new"] == {"announcements": 0, "assignments": 1, "pages": 1, "files": 1, "ed": 0, "total": 3}
     # What can be marked read; a file that isn't new, or isn't there, changes nothing.
     new = api.get("/api/new/files").json()
     assert f"{COURSE}/Modules/01 Week 1/lec1.pdf" in new and f"{COURSE}/Files/lec2.pdf" not in new
-    api.post("/api/seen/file", json={"path": f"{COURSE}/Files/lec2.pdf"})  # (already: nothing changes)
-    api.post("/api/seen/file", json={"path": f"{COURSE}/Nowhere.pdf"})
+    api.post("/api/seen/paths", json={"files": [f"{COURSE}/Files/lec2.pdf"]})  # (already: nothing changes)
+    api.post("/api/seen/paths", json={"files": [f"{COURSE}/Nowhere.pdf"]})
     assert api.get("/api/courses/1/overview").json()["new"]["files"] == 1
     # A folder marked read: the new files in it (lec1.pdf is in Modules as a link).
-    assert api.post("/api/seen/folder", json={"path": f"{COURSE}/Nowhere"}).status_code == 404
-    api.post("/api/seen/folder", json={"path": f"{COURSE}/Modules"})
+    assert api.post("/api/seen/paths", json={"folders": [f"{COURSE}/Nowhere"]}).status_code == 404
+    api.post("/api/seen/paths", json={"folders": [f"{COURSE}/Modules"]})
     assert api.get("/api/courses/1/overview").json()["new"]["files"] == 0
-    assert api.post("/api/courses/1/seen", json={"kinds": ["page"]}).json()["pages"] == 0
-    assert api.post("/api/courses/1/seen", json={"kinds": ["movie"]}).status_code == 400
-    assert api.post("/api/courses/1/seen").json() == {"announcements": 0, "assignments": 0, "pages": 0, "files": 0, "posts": 0}
+    assert api.post("/api/courses/1/seen", json={"views": ["pages"]}).json()["pages"] == 0
+    assert api.post("/api/courses/1/seen", json={"views": ["movie"]}).status_code == 400
+    assert api.post("/api/courses/1/seen").json() == {"announcements": 0, "assignments": 0, "pages": 0, "files": 0, "ed": 0, "total": 0}
 
     # Handing it in on Canvas also makes it old news.
     course.assignments.append({"id": 22, "name": "HW 8", "submission_types": ["online_upload"]})
@@ -274,7 +291,7 @@ def test_a_file_marked_read_at_one_of_its_paths_is_read_at_all(root, fake):
     pull(root, fake)
     with Engine(root) as e:
         assert f"{COURSE}/Modules/01 Week 1/lec2.pdf" in e.state.unseen_files()
-        e.state.mark_file_seen(f"{COURSE}/Modules/01 Week 1/lec2.pdf")
+        e.state.mark_paths_seen([f"{COURSE}/Modules/01 Week 1/lec2.pdf"])
         assert e.state.unseen_files() == {}
         assert {x.name: x for x in e.list_dir(f"{COURSE}/Modules/01 Week 1")}["lec2.pdf"].new is None
         assert {x.name: x for x in e.list_dir(COURSE)}["Files"].new_inside == 0

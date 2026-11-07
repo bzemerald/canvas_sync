@@ -225,7 +225,7 @@ describe("on Ed", () => {
     expect(all).toContain("HW 4 megathread");
     expect(all.indexOf("HW 4 megathread")).toBeGreaterThan(all.indexOf("EE16A_FA26_HW4.pdf"));
   });
-  it("ee16a 帖子: the course's discussion, then its posts", () => { // i18n-ignore
+  it("ee16a 帖子: the course's Ed, then its posts", () => { // i18n-ignore
     const r = search("ee16a 帖子"); // i18n-ignore
     expect(r.top).toBe("EE 16A ed");
     expect(r.all).toEqual(expect.arrayContaining(["Lab 2 Clarification", "HW 4 megathread"]));
@@ -233,7 +233,7 @@ describe("on Ed", () => {
   it("lab 2 clarification: the post by its name", () => {
     expect(search("lab 2 clarification").top).toBe("Lab 2 Clarification");
   });
-  it("ee16a ed: the course's discussion, then what's from Ed, newest first; nothing else", () => {
+  it("ee16a ed: the course's Ed, then what's from Ed, newest first; nothing else", () => {
     const r = search("ee16a ed");
     expect(r.top).toBe("EE 16A ed");
     expect(r.all.slice(1)).toEqual(["Lab Extensions", "Lab 2 Clarification", "HW 4 megathread"]);

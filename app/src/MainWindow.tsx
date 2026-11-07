@@ -11,7 +11,7 @@ import {
   CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog,
 } from "./components/Found";
 import {
-  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_KIND, useOverview,
+  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, VIEW_LISTS, useOverview,
 } from "./components/CourseView";
 import { CourseOverview, LinksPage, NoteEditor } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
@@ -31,10 +31,9 @@ import {
 } from "./components/Things";
 import * as api from "./lib/api";
 import { quickLook } from "./lib/quicklook";
-import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewCounts, NewsKind, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
-import type { KindId } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { keysLabel, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
@@ -103,16 +102,14 @@ const RESTORABLE = new Set(["modified", "missing", "ignored"]);
 const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 const countLabel = (names: string[]) => (names.length === 1 ? names[0] : t("{n} 项", { n: names.length }));
 const listed = (list: Shown[], x: Thing) => list.some((e) => same(e, x) && !e.hidden);
-/** The views that count what's new in them: the kind to mark seen, and its count in `NewCounts`. */
-const VIEW_NEWS: Partial<Record<ViewName, [NewsKind, keyof NewCounts]>> = {
-  announcements: ["announcement", "announcements"], assignments: ["assignment", "assignments"], pages: ["page", "pages"],
-  files: ["file", "files"], ed: ["post", "posts"],
-};
+/** The views that count what's new in them. */
+const countsNew = (v: ViewName): v is NewsView => ["announcements", "assignments", "pages", "files", "ed"].includes(v);
 // Views that narrow their own lists as you type in the search box.
 const FILTERS_ITSELF: ViewName[] = ["announcements", "assignments", "pages", "ed", "modules", "grades"];
-// What a tab shows, searched from it: that kind comes a little first.
-const VIEW_FINDS: Partial<Record<ViewName, KindId>> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", ed: "post", modules: "module", files: "file",
+// What a tab shows, searched from it: that comes a little first.
+const VIEW_FINDS: Partial<Record<ViewName, Pick<Where, "kind" | "source">>> = {
+  announcements: { kind: "announcement" }, assignments: { kind: "assignment" }, pages: { kind: "page" }, ed: { source: "ed" },
+  modules: { kind: "module" }, files: { kind: "file" },
 };
 // A course's 文件 shows its Files folder as itself (what Canvas's Files has), and the folders of
 // what's from elsewhere in the course first, saying what they are.
@@ -127,8 +124,8 @@ const sourceMarks = (c: Course) => {
   }
   return marks.get(c);
 };
-const kindShown = (tab: Thing | null): KindId | undefined =>
-  !tab ? undefined : isView(tab) ? VIEW_FINDS[tab.view] : tab.type === "doc" ? tab.kind : tab.type === "module" ? "module" : tab.type === "folder" ? "file" : undefined;
+const shownOn = (tab: Thing | null): Pick<Where, "kind" | "source"> =>
+  !tab ? {} : isView(tab) ? VIEW_FINDS[tab.view] ?? {} : tab.type === "doc" ? { kind: tab.kind } : tab.type === "module" ? { kind: "module" } : tab.type === "folder" ? { kind: "file" } : {};
 
 export function MainWindow() {
   const launcherKeys = useLauncherKeys();
@@ -355,6 +352,11 @@ export function MainWindow() {
     else if (cv && cv.id === x.course) go(toTab(cv, x));
     else if (courseById(x.course)) go({ kind: "course", id: x.course, tab: x, path: courseById(x.course)!.dir });
   };
+  const openIn = (x: Thing, list: ViewName) => {
+    if (x.type !== "doc" || cv?.id !== x.course) return open(x);
+    api.noteOpened(thingKey(x));
+    go({ ...toTab(cv, viewOf(x.course, list)), item: x.id });
+  };
   const openHere = (h: Hit) => {
     const x = thingOfHit(h);
     return x ? open(x) : void api.openHit(h);
@@ -418,7 +420,7 @@ export function MainWindow() {
   // the course (what its tab shows a little first), or everything.
   const scope = useMemo((): Where => {
     if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : folderScope && scopeCourses.length ? { courses: scopeCourses } : {}) };
-    return cv ? { courses: [cv.id], kind: kindShown(tab) } : {};
+    return cv ? { courses: [cv.id], ...shownOn(tab) } : {};
   }, [folderScope, cv?.id, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "");
   const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
@@ -553,23 +555,19 @@ export function MainWindow() {
     const item = (n: number | undefined, run: () => Promise<unknown>, label = t("全部标为已读")): MenuItem[] =>
       n === 0 ? [] : [{ label, onSelect: () => void run().then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
     if (x.type === "course") return item(count ?? courseById(x.course)?.new, () => api.markSeen(x.course));
-    if (x.type === "view" && VIEW_NEWS[x.view]) {
-      const [kind, key] = VIEW_NEWS[x.view]!;
-      return item(count ?? (cv?.id === x.course && overview ? overview.new[key] : courseById(x.course)?.new), () => api.markSeen(x.course, [kind]));
+    if (x.type === "view" && countsNew(x.view)) {
+      const of = x.view;
+      return item(count ?? (cv?.id === x.course && overview ? overview.new[of] : courseById(x.course)?.new), () => api.markSeen(x.course, of));
     }
-    if (x.type === "folder") {
-      const some = courseList.some((c) => c.new > 0 && (under(c.dir, x.path) || under(x.path, c.dir)));
-      return item(count ?? (some ? undefined : 0), () => api.markFolderSeen(x.path));
-    }
-    if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markFileSeen(x.path), t("标为已读"));
+    if (x.type === "folder") return item(count ?? (newFiles?.some((p) => under(p, x.path)) ? undefined : 0), () => api.markPathsSeen([], [x.path]));
+    if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markPathsSeen([x.path]), t("标为已读"));
     return [];
   };
   /** 标为已读, for several selected: new files, and folders with new files in them. */
   const markSeveralRead = (files: string[], folders: string[] = []): MenuItem[] => {
     const n = files.length + folders.length;
     if (!n) return [];
-    const all = [...files.map((p) => () => api.markFileSeen(p)), ...folders.map((p) => () => api.markFolderSeen(p))];
-    return [{ label: t("标为已读 {n} 项", { n }), onSelect: () => void Promise.all(all.map((run) => run())).then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
+    return [{ label: t("标为已读 {n} 项", { n }), onSelect: () => void api.markPathsSeen(files, folders).then(() => (refresh(), seenChanged()), fail(t("标记失败"))) }];
   };
   /** What can be done with a thing, besides putting it places (they add that). */
   const ways = (x: Thing): MenuItem[] => [...waysOf(x), ...markRead(x)];
@@ -601,7 +599,7 @@ export function MainWindow() {
     }
   };
   const things: Things = {
-    courses: courseList, open, opening, ways, markRead, isPinned,
+    courses: courseList, open, openIn, opening, ways, markRead, isPinned,
     showInFolder: (path) => goPath(parentOf(path), path),
     pin: (x) => pinThing(x),
     unpin: unpinThing,
@@ -937,7 +935,7 @@ export function MainWindow() {
     if (x.type === "folder") return folderShown === x.path;
     if (!cv || !tab) return false;
     if (same(x, tab)) return true;
-    if (x.type === "doc") return x.course === cv.id && isView(tab, KIND_VIEW[x.kind]) && cv.item === x.id;
+    if (x.type === "doc") return x.course === cv.id && (isView(tab, KIND_VIEW[x.kind]) || (isView(tab, "ed") && fromEd(x))) && cv.item === x.id;
     if (x.type === "module") return x.course === cv.id && isView(tab, "modules") && cv.item === String(x.module);
     return false;
   };
@@ -982,7 +980,7 @@ export function MainWindow() {
           onReset={() => void resetLayout(["overview", "links"])}
           onMakeDefault={() => void makeDefaultLayout("overview")}
           onSay={say}
-          onMarkSeen={(kinds) => void api.markSeen(course.id, kinds).then(refresh, fail(t("标记失败")))}
+          onMarkSeen={(of) => void api.markSeen(course.id, of).then(refresh, fail(t("标记失败")))}
         />
       );
     }
@@ -1007,11 +1005,11 @@ export function MainWindow() {
           onArrange={(next) => arrangeLayout("links", next)} onSay={say} />
       );
     }
-    if (isView(tab) && VIEW_KIND[tab.view]) {
+    if (isView(tab) && VIEW_LISTS[tab.view]) {
       return (
         <CourseReader
           course={course}
-          kind={VIEW_KIND[tab.view]!}
+          of={VIEW_LISTS[tab.view]!}
           selected={cv.item ?? null}
           version={version}
           onSelect={(id) => replaceView({ ...cv, item: id })}

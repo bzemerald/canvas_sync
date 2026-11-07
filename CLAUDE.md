@@ -105,6 +105,9 @@ without the Canvas website or Finder.
     note, view (one of a course's views: overview, modules, announcements, ed (what it has on
     Ed), assignments, grades, files, syllabus, pages, tools = 工具与链接, canvas). Same
     fields in config.toml, the API and the app.
+  - `post` is a kind, a thread on Ed that isn't an announcement. The `ed` view is where things are
+    from (`on_ed` in content.py, `fromEd` in the app: the id starts `ed-`), not a kind: what's new
+    in a view is counted and marked by view (`NEWS_VIEWS`), and an announcement on Ed counts in both.
   - A *place* is a list of entries: a thing, `title` (your name for it there; "" = its own),
     `hidden`. Places: `pinned` (anything), and per course `tabs`, `overview`, `links`, which
     hold only the course's things (`Place.holds`, `ofCourse` in the app): its views, documents,

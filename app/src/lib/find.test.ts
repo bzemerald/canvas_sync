@@ -263,6 +263,13 @@ describe("searching from where you are", () => {
     expect(keyOf(from("homework 3", { courses: [70] }).top)).toBe("doc:70:assignment:3");
     expect(named(from("hw3", { courses: [70], kind: "file" }).top!)).toBe("HW3_solutions.pdf");
   });
+
+  it("puts what's from the source the tab shows a little first, whatever its kind", () => {
+    const c = prepare([doc(70, "assignment", "3", "Exam room"), doc(70, "announcement", "ed-9", "Exam room", { source: "ed" })], describeEntry);
+    const top = (scope: Scope) => keyOf(find(read("exam room", vocabulary(c, KINDS), NOW), c, none, [], [], NOW, null, scope).top);
+    expect(top({ courses: [70], kind: "assignment" })).toBe("doc:70:assignment:3");
+    expect(top({ courses: [70], source: "ed" })).toBe("doc:70:announcement:ed-9");
+  });
 });
 
 describe("narrowing a list", () => {

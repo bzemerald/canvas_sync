@@ -160,8 +160,8 @@ export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabu
   const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);
   const hits = answer.hits;
   const results = useMemo(
-    () => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions, Date.now(), lastCourse(), { ...where, kind: scope.kind }) : null),
-    [query, reading, catalog, usage, hits, actions, where, scope.kind],
+    () => (query.trim() ? find(reading, catalog ?? EMPTY, usage, hits, actions, Date.now(), lastCourse(), { ...where, kind: scope.kind, source: scope.source }) : null),
+    [query, reading, catalog, usage, hits, actions, where, scope.kind, scope.source],
   );
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
   const due = useMemo(() => {
@@ -377,17 +377,17 @@ const listed: Describe = (e) => ({ names: [e.title || e.name || ""], aliases: e.
 
 /** A list narrowed by what's typed in the search box, read and matched as search does (find.ts:
  * `narrow`): `entries`, the list's things as catalog entries; `index`, where the index has more of
- * them (the text inside). `scores`: how well each matches, by key; null when nothing typed narrows
+ * them (the text inside): a kind of thing in a course, or what's from a source. `scores`: how well each matches, by key; null when nothing typed narrows
  * it (nothing, or only a course: the list is of one). */
-export function useNarrowing(query: string, entries: CatalogEntry[] | null, index?: { course: number; kind: api.Kind }) {
+export function useNarrowing(query: string, entries: CatalogEntry[] | null, index?: { course: number; kind?: api.Kind; source?: "ed" }) {
   const finder = useContext(FinderContext);
   const vocab = finder?.vocab ?? NO_VOCABULARY;
   const abbr = finder?.catalog?.abbreviations ?? NO_ABBREVIATIONS;
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
   const asked = useMemo(() => {
     const q = index && indexQuery({ ...typed, parts: typed.parts.filter((p) => p.role !== "course") }, abbr);
-    return q ? { ...q, courses: [index.course], kinds: (index.kind === "post" ? ["post", "announcement"] : [index.kind]) as api.Kind[] } : null; // (Ed lists both)
-  }, [typed, abbr, index?.course, index?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+    return q ? { ...q, courses: [index.course], ...(index.kind ? { kinds: [index.kind] } : { source: index.source }) } : null;
+  }, [typed, abbr, index?.course, index?.kind, index?.source]); // eslint-disable-line react-hooks/exhaustive-deps
   const { answer, loading } = useAnswer(asked ? JSON.stringify(asked) : "", () =>
     asked ? api.find(asked.q, { ...asked, limit: 200 }) : Promise.resolve(NO_ANSWER), NO_ANSWER);
   const reading = useMemo(() => corrected(typed, answer.corrected), [typed, answer]);

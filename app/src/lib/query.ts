@@ -9,7 +9,7 @@
 //              "graded" / "已评分": where you are with an assignment
 //   a number   "hw3", "hw 3", "homework #3", "problem set 3", "2nd midterm", "第三次作业", "期中2":
 //              one of a series, whatever its course calls the series (see `sameSeries`)
-//   a source   "ed": only what's from there (Ed's announcements and posts, and its 讨论)
+//   a source   "ed": only what's from there (Ed's announcements and posts, and its Ed view)
 // Or said outright: in:cs70, kind:file, due:friday, date:10/20, is:missing, from:ed; "in quotes": only as
 // text. Each part keeps where it was typed, to be shown as a chip (and taken back, or taken as text).
 //
