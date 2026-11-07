@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 from .discover import file_refs
 from .layout import Layout, sanitize
 from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url
-from .state import NEWS_KINDS, State
+from .state import NEWS_KINDS, FileRecord, State
 from .text import html_to_text
 
 if TYPE_CHECKING:
@@ -196,6 +196,11 @@ def _still_new(kind: str, raw: dict[str, Any]) -> bool:
     return True
 
 
+def _file_there(rec: FileRecord | None, root: Path) -> bool:
+    """Whether a new file counts: it's still on Canvas and in the sync folder, and being synced."""
+    return bool(rec and rec.path and not rec.ignored and not rec.remote_deleted and (root / rec.path).exists())
+
+
 def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]:
     """What's new to you in a course: kind -> {id: whether it's a new version (files)}."""
     out: dict[str, dict[str, bool]] = {k: {} for k in NEWS_KINDS}
@@ -205,12 +210,18 @@ def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]
     docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
     for (_, kind, i), updated in unseen.items():
         if kind == "file":
-            rec = state.get(int(i))
-            if rec and rec.path and not rec.ignored and not rec.remote_deleted and (root / rec.path).exists():
+            if _file_there(state.get(int(i)), root):
                 out["file"][i] = updated  # (not one taken off Canvas since)
         elif (kind, i) in docs and _still_new(kind, docs[(kind, i)]):
             out[kind][i] = False
     return out
+
+
+def new_files(state: State, root: Path) -> list[str]:
+    """Where the new files are, links too: what can be marked read (what `news` counts)."""
+    paths = state.unseen_files()
+    there = {fid for _, fid in paths.values() if _file_there(state.get(fid), root)}
+    return sorted(p for p, (_, fid) in paths.items() if fid in there)
 
 
 def news_counts(n: dict[str, dict[str, bool]]) -> dict[str, int]:

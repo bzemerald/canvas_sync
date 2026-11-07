@@ -298,6 +298,26 @@ def test_a_file_marked_read_at_one_of_its_paths_is_read_at_all(root, fake):
         assert {x.name: x for x in e.list_dir(COURSE)}["Files"].new_inside == 0
 
 
+def test_only_files_that_count_as_new_can_be_marked_read(root, fake):
+    pull(root, fake)
+    fake.put(102, "lec2.pdf", b"l2")
+    fake.put(103, "lec3.pdf", b"l3")
+    fake.put(104, "lec4.pdf", b"l4")
+    fake.put(105, "lec5.pdf", b"l5")
+    fake.module(1, "Week 2", [{"type": "File", "content_id": i} for i in (102, 103, 104, 105)])
+    pull(root, fake)
+    with Engine(root) as e:
+        def where(fid):
+            return [p for p, (_, f) in e.state.unseen_files().items() if f == fid]
+        assert len(where(103)) == 2  # (in Files, and linked from its module)
+        (root / e.state.get(103).path).unlink()  # gone from here
+        e.state.db.execute("UPDATE files SET remote_deleted = 1 WHERE id = 104")  # taken off Canvas
+        e.state.db.execute("UPDATE files SET ignored = 1 WHERE id = 105")  # no longer synced
+        new = content.new_files(e.state, e.root)
+        assert set(new) == set(where(102)) and len(new) == 2
+        assert set(content.news(e.state, e.root, 1)["file"]) == {"102"}
+
+
 def test_external_tools(root, course):
     course.tabs = [
         {"id": "home", "label": "Home", "type": "internal", "position": 1},

@@ -710,7 +710,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def new_files() -> list[str]:
         """Where the files not opened yet are: what can be marked read."""
         with engine() as e:
-            return sorted(e.state.unseen_files())
+            return content.new_files(e.state, e.root)
 
     @api.get("/media")
     async def media(url: str) -> Response:
