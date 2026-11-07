@@ -72,7 +72,9 @@ without the Canvas website or Finder.
   - `src/lib/api.ts`: every backend call and its types.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
-  - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin`.
+  - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin` (on Windows `python -m
+    canvas_sync`: Smart App Control may block `.venv\Scripts\canvas.exe`, which is unsigned; the
+    command line too, there).
     `src-tauri/src/quicklook.rs`: Quick Look (macOS), the system's panel, zooming out of the icon
     that has the file's `data-ql` (`src/lib/quicklook.ts`).
     `src-tauri/src/dragout.rs`: dragging files out to other apps, the system's drag (a copy).

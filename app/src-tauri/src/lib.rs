@@ -60,7 +60,8 @@ fn backend_path(app: &AppHandle) -> PathBuf {
     }
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     if cfg!(windows) {
-        repo.join(".venv/Scripts/canvas.exe")
+        // Not canvas.exe: it's unsigned and only here, and Smart App Control can block it any day.
+        repo.join(".venv/Scripts/python.exe")
     } else {
         repo.join(".venv/bin/canvas")
     }
@@ -70,6 +71,9 @@ fn start_backend(app: &AppHandle) {
     let state = app.state::<BackendState>();
     let path = backend_path(app);
     let mut command = Command::new(&path);
+    if path.file_stem().is_some_and(|s| s == "python") {
+        command.args(["-m", "canvas_sync"]);
+    }
     command.args(["serve", "--exit-with-stdin"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
