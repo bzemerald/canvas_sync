@@ -81,7 +81,10 @@ export function Launcher() {
         setShown((n) => n + 1);
         input.current?.focus();
         input.current?.select();
-      } else setAhead((was) => makeTips() ?? was); // (for next time: it's hidden now)
+      } else {
+        setAhead((was) => makeTips() ?? was); // (for next time: it's hidden now)
+        void emitTo("main", "launcher-left").catch(() => {});
+      }
     });
     return () => void off.then((f) => f());
   }, []);

@@ -38,7 +38,7 @@ import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
 import { type Reading, read } from "./lib/query";
 import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
-import { keysLabel, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
+import { clickSearchButton, keysLabel, pressSearchButton, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
@@ -1093,7 +1093,7 @@ export function MainWindow() {
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          <NavItem icon={<Search className="size-4" />} active={false} onClick={() => void showLauncher()} title={t("搜索")} keys={keysLabel(launcherKeys)} />
+          <NavItem icon={<Search className="size-4" />} active={false} onPress={pressSearchButton} onClick={clickSearchButton} title={t("搜索")} keys={keysLabel(launcherKeys)} />
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
           <PinnedSection
@@ -1658,7 +1658,7 @@ function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search">; name
   );
 }
 
-function NavItem({ icon, title, subtitle, keys, active, count, muted, onClick, onMenu }: {
+function NavItem({ icon, title, subtitle, keys, active, count, muted, onPress, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
   subtitle?: string;
@@ -1666,12 +1666,14 @@ function NavItem({ icon, title, subtitle, keys, active, count, muted, onClick, o
   active: boolean;
   muted?: boolean;
   count?: number; // new things in it
+  onPress?: () => void;
   onClick: () => void;
   onMenu?: (x: number, y: number) => void;
 }) {
   return (
     <div className="group relative">
       <button
+        onPointerDown={onPress}
         onClick={onClick}
         onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-selected text-fg" : "text-fg-soft hover:bg-chip"} ${muted ? "opacity-50" : ""}`}

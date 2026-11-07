@@ -3,7 +3,7 @@
 // Written as the shell reads them: modifiers, then the key's KeyboardEvent.code ("Super+Shift+KeyK");
 // "": the usual (⌘⇧Space, Ctrl+Shift+Space).
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 import * as api from "./api";
 import { isMac } from "./keys";
@@ -25,6 +25,7 @@ export function useLauncherKeys(): string {
 
 /** At startup (in the main window): the saved keys, in place of the usual ones the shell starts with. */
 export async function loadLauncherKeys() {
+  void listen("launcher-left", () => void (leftAt = performance.now()));
   const keys = (await api.prefs()).launcher_key ?? "";
   changed(keys);
   if (keys) await setKeys(keys).catch(() => {}); // taken since: the usual ones stay
@@ -37,6 +38,24 @@ export const setKeys = (keys: string | null) => invoke<void>("set_launcher_keys"
 export async function showLauncher(query?: string) {
   if (query !== undefined) await emitTo("launcher", "launcher-query", { query }).catch(() => {});
   await invoke<void>("show_launcher");
+}
+
+// Pressing the sidebar's search button takes the focus from the search window, which hides. So by
+// the click, it isn't open any more: it's the two happening together that says it was.
+const TOGETHER = 500; // ms
+let leftAt = -Infinity; // when the search window lost the focus
+let pressedAt = 0;
+
+/** The sidebar's search button, pressed. */
+export function pressSearchButton() {
+  pressedAt = performance.now();
+}
+
+/** The sidebar's search button, clicked: opens the search window, or leaves it closed if it was open. */
+export function clickSearchButton() {
+  const wasOpen = Math.abs(leftAt - pressedAt) < TOGETHER;
+  leftAt = -Infinity;
+  if (!wasOpen) void showLauncher();
 }
 
 /** Makes `keys` open the search window, and remembers them. */
