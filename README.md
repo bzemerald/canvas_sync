@@ -44,9 +44,9 @@
    - **Your school's Canvas address**, the one in your browser when you use Canvas
      (e.g. `bcourses.berkeley.edu`).
    - **An access token**, which lets the app read Canvas as you. In Canvas, click **Account →
-     Settings**, scroll to *Approved Integrations*, click **+ New Access Token**, give it any
-     name, set its expiration date to as long as possible, 
-and copy the long code it shows (it's only shown once) into the app.
+     Settings**, scroll to *Approved Integrations*, click **+ New Access Token**, set
+     *Purpose* to `Canvas Sync`, and copy the long code it shows (it's only shown once) into the
+     app. After its expiration date, you'll need to make a new token.
    - **A folder** for your course files, e.g. a new folder called `Canvas` in your home folder.
 4. If your Mac asks whether Canvas Sync may use your keychain, click **Always Allow**. That's
    where it keeps the token.

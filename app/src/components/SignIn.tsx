@@ -9,6 +9,9 @@ import { t } from "../lib/i18n";
 import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 
+/** How to make a Canvas token, when signing in and when replacing one. */
+export const tokenSteps = () => t("在 Canvas 里依次点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，然后把生成的令牌复制到这里。过了它的过期日期，就要再生成一个新令牌。令牌只保存在这台电脑上。");
+
 /** "bcourses.berkeley.edu" -> "https://bcourses.berkeley.edu" (for the link to the token page). */
 function siteOf(url: string): string | null {
   const u = url.trim();
@@ -65,7 +68,7 @@ export function SignInForm({ initial, submitLabel, onDone, onCancel }: {
         <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("粘贴令牌")}
           autoComplete="off" spellCheck={false} className={inputClass} />
         <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-          {t("在 Canvas 的“账户 → 设置”页面点“新访问令牌”生成一个，复制到这里。令牌只保存在这台电脑上。")}
+          {tokenSteps()}
           {site && (
             <button type="button" onClick={() => void api.openExternal(`${site}/profile/settings`)} className="ml-1 text-accent hover:underline">
               {t("打开 Canvas 设置页")}

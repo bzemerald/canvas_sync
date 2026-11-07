@@ -431,8 +431,6 @@ export const en: Record<string, string | [string, string]> = {
   "每天": "Every day",
   "账号": "Account",
   "Canvas 用户": "Canvas user",
-  "在 Canvas 的“账户 → 设置”页面点“新访问令牌”生成一个新的，粘贴到这里。":
-    "In Canvas, go to Account → Settings, click “+ New Access Token” to make a new one, and paste it here.",
   "粘贴令牌": "Paste the token",
   "打开 Canvas 设置页": "Open Canvas settings",
   "更换令牌…": "Replace token…",
@@ -521,8 +519,8 @@ export const en: Record<string, string | [string, string]> = {
   "学校的 Canvas 网址": "Your school's Canvas address",
   "例如 bcourses.berkeley.edu": "e.g. bcourses.berkeley.edu",
   "访问令牌": "Access token",
-  "在 Canvas 的“账户 → 设置”页面点“新访问令牌”生成一个，复制到这里。令牌只保存在这台电脑上。":
-    "In Canvas, go to Account → Settings and click “+ New Access Token”, then paste it here. It's only kept on this computer.",
+  "在 Canvas 里依次点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，然后把生成的令牌复制到这里。过了它的过期日期，就要再生成一个新令牌。令牌只保存在这台电脑上。":
+    "In Canvas, go to Account → Settings → Approved Integrations → “+ New Access Token”, set “Purpose” to Canvas Sync, then copy the token here. After its expiration date, you'll need to make a new one. It's only kept on this computer.",
   "选择…": "Choose…",
   "课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。":
     "Course files download here. Choose an empty folder if it's your first time using Canvas Sync.",

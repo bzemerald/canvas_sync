@@ -97,7 +97,7 @@ def init(
     url = url or typer.prompt("Canvas URL", default=existing.base_url if existing else None)
     if not url.startswith("http"):
         url = "https://" + url
-    console.print("Create a token in Canvas under Account → Settings → New Access Token.")
+    console.print("Create a token in Canvas: Account → Settings → Approved Integrations → + New Access Token, Purpose: Canvas Sync.")
     token = typer.prompt("Access token", hide_input=True)
     root = root or Path(typer.prompt("Sync folder", default=str(existing.root) if existing else "~/Canvas"))
 

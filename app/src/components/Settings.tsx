@@ -13,7 +13,7 @@ import { termRank } from "../lib/terms";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
-import { SignInForm, inputClass } from "./SignIn";
+import { SignInForm, inputClass, tokenSteps } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
@@ -98,7 +98,7 @@ export function Settings({ sync, onSync, onAccount, onShowFiles }: {
               </div>
               {newToken !== null ? (
                 <div className="border-t border-line px-4 py-3">
-                  <p className="mb-2 text-xs text-muted">{t("在 Canvas 的“账户 → 设置”页面点“新访问令牌”生成一个新的，粘贴到这里。")}</p>
+                  <p className="mb-2 text-xs text-muted">{tokenSteps()}</p>
                   <div className="flex gap-2">
                     <input type="password" autoFocus value={newToken} onChange={(e) => setNewToken(e.target.value)} placeholder={t("粘贴令牌")}
                       autoComplete="off" spellCheck={false} className={inputClass} onKeyDown={(e) => e.key === "Enter" && void saveToken()} />
