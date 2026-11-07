@@ -22,7 +22,7 @@ import { HitBrowser } from "./components/HitBrowser";
 import { KeysDialog } from "./components/KeysDialog";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
 import { KIND } from "./components/Result";
-import { RenameDialog } from "./components/RenameDialog";
+import { RenameInput } from "./components/RenameInput";
 import { RestoreDialog } from "./components/RestoreDialog";
 import { Settings } from "./components/Settings";
 import { Count } from "./components/Status";
@@ -162,8 +162,7 @@ export function MainWindow() {
   const [deleting, setDeleting] = useState<{ paths: string[]; label: string } | null>(null);
   const [editing, setEditing] = useState<{ folder: SmartFolder | null; preset?: Partial<SmartFolder> } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null); // a folder being renamed in place
-  const [renameDialog, setRenameDialog] = useState<{ path: string; title: string; current: string; hint?: string } | null>(null);
-  const [renamingPin, setRenamingPin] = useState<Shown | null>(null);
+  const [renamingHere, setRenamingHere] = useState<string | null>(null); // the sidebar's row: course:<id>, term:<key>, pin:<thing>
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null); // a tool on its way, by thingKey
@@ -635,7 +634,7 @@ export function MainWindow() {
   /** Rename a folder, then follow it: any open view inside it moves to the new path. */
   const renameFolder = async (path: string, name: string) => {
     setRenaming(null);
-    setRenameDialog(null);
+    setRenamingHere(null);
     try {
       const { path: renamed } = await api.rename(path, name);
       const move = (p: string) => (under(p, path) ? renamed + p.slice(path.length) : p);
@@ -700,7 +699,7 @@ export function MainWindow() {
         ...markRead({ type: "folder", path: e.path }, e.new_inside),
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
-        { label: t("重命名…"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
+        { label: t("重命名"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
         "separator",
         { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
         { label: t("恢复此文件夹的原版…"), disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
@@ -832,7 +831,8 @@ export function MainWindow() {
     "separator",
     { label: c.excluded ? t("取消隐藏并恢复同步") : t("取消隐藏"), onSelect: () => void unhide(c) },
   ];
-  const courseMenu = (c: Course): MenuItem[] => [
+  /** `row`: which row of the sidebar this is the menu of, where renaming happens. */
+  const courseMenu = (c: Course, row = `course:${c.id}`): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
     ...markRead({ type: "course", course: c.id }),
     { label: t("查看文件"), onSelect: () => go({ kind: "course", id: c.id, tab: viewOf(c.id, "files"), path: c.dir }) },
@@ -843,10 +843,7 @@ export function MainWindow() {
     { label: t("恢复此课程的原版…"), disabled: !changes[c.id], onSelect: () => setRestoring({ scope: { paths: [c.dir] }, label: c.label }) },
     "separator",
     pinOf({ type: "course", course: c.id }),
-    {
-      label: t("重命名课程…"), disabled: syncBusy,
-      onSelect: () => setRenameDialog({ path: c.dir, title: t("重命名课程"), current: c.label, hint: t("只改在这里显示的名字，同步不受影响。") }),
-    },
+    { label: t("重命名课程"), disabled: syncBusy, onSelect: () => setRenamingHere(row) },
     ...(c.renamed ? [{ label: t("恢复原名（{name}）", { name: c.default_name }), disabled: syncBusy, onSelect: () => void renameFolder(c.dir, c.default_name) }] : []),
     { label: t("更换图标…"), onSelect: () => setChoosingIcon(c) },
     "separator",
@@ -855,20 +852,20 @@ export function MainWindow() {
     { label: t("隐藏此课程…"), onSelect: () => setHiding({ courses: [c] }) },
   ];
 
-  const termMenu = (term: string, list: Course[]): MenuItem[] => {
-    // The term's own folder, if its courses share one (they do with the default layout).
+  // The term's own folder, if its courses share one (they do with the default layout).
+  const termDirOf = (list: Course[]) => {
     const parents = [...new Set(list.map((c) => parentOf(c.dir)))];
-    const termDir = parents.length === 1 && parents[0] ? parents[0] : null;
+    return parents.length === 1 && parents[0] ? parents[0] : null;
+  };
+  const termMenu = (key: string, term: string, list: Course[]): MenuItem[] => {
+    const termDir = termDirOf(list);
     return [
       { label: t("从 Canvas 同步 {term}", { term }), disabled: syncBusy, onSelect: () => startSync({ paths: list.map((c) => c.dir) }, term) },
       { label: t("恢复 {term} 的原版…", { term }), disabled: !list.some((c) => changes[c.id]), onSelect: () => setRestoring({ scope: { paths: list.map((c) => c.dir) }, label: term }) },
       ...(termDir
         ? [
             "separator" as const,
-            {
-              label: t("重命名学期…"), disabled: syncBusy,
-              onSelect: () => setRenameDialog({ path: termDir, title: t("重命名学期"), current: term, hint: t("只改在这里显示的名字，同步不受影响。") }),
-            },
+            { label: t("重命名学期"), disabled: syncBusy, onSelect: () => setRenamingHere(`term:${key}`) },
             ...(list[0].term && list[0].term !== term
               ? [{ label: t("恢复原名（{name}）", { name: list[0].term! }), disabled: syncBusy, onSelect: () => void renameFolder(termDir, list[0].term!) }]
               : []),
@@ -883,12 +880,12 @@ export function MainWindow() {
    * has its own menu; a smart folder is edited, and deleted when unpinned.) */
   const pinnedMenu = (x: Shown): MenuItem[] => {
     const c = x.type === "course" ? courseById(x.course) : null;
-    if (c) return sections(courseMenu(c), moveItems(x));
+    if (c) return sections(courseMenu(c, `pin:${thingKey(x)}`), moveItems(x));
     return sections(
       x.exists === false ? [] : ways(x),
       x.type === "search" ? [{ label: t("编辑…"), onSelect: () => setEditing({ folder: { ...x, title: x.title ?? "" } }) }] : [],
       [
-        { label: t("重命名…"), onSelect: () => setRenamingPin(x) },
+        { label: t("重命名"), onSelect: () => setRenamingHere(`pin:${thingKey(x)}`) },
         ...(x.title && x.type !== "search" ? [{ label: t("恢复原名（{name}）", { name: ownName(x, courseList) }), onSelect: () => savePinned(changed(pinned, x, { title: "" })) }] : []),
       ],
       moveItems(x),
@@ -958,6 +955,12 @@ export function MainWindow() {
     return false;
   };
   const pinnedHere = pinned.some(showing); // highlight that, not also its course
+  /** The sidebar's row `row`, if it's the one being renamed: its name, as an input. */
+  const nameEditor = (row: string, initial: string, submit: (name: string) => void, hint?: string, className = "h-5 text-sm") =>
+    renamingHere !== row ? undefined : (
+      <RenameInput initial={initial} hint={hint} onSubmit={submit} onCancel={() => setRenamingHere(null)} className={`block w-full ${className}`} />
+    );
+  const folderHint = t("只改在这里显示的名字，同步不受影响。");
   const renderPinned = (x: Shown) => {
     const c = x.type === "course" ? courseById(x.course) : null;
     const inCourse = x.in_course != null ? courseById(x.in_course)
@@ -973,6 +976,12 @@ export function MainWindow() {
       <NavItem
         icon={<ThingIcon thing={x} courses={courseList} />}
         title={nameOf(x)}
+        editor={c
+          ? nameEditor(`pin:${thingKey(x)}`, c.label, (name) => void renameFolder(c.dir, name), folderHint)
+          : nameEditor(`pin:${thingKey(x)}`, nameOf(x), (title) => {
+              savePinned(changed(pinned, x, { title }));
+              setRenamingHere(null);
+            })}
         subtitle={where}
         count={c?.new}
         muted={gone}
@@ -1129,12 +1138,17 @@ export function MainWindow() {
               grab={termDrag.handle(i)}
               collapsed={isCollapsed(`term:${g.key}`)}
               onToggle={() => toggle(`term:${g.key}`)}
-              onMenu={(x, y) => openMenu(termMenu(g.label, g.courses), x, y)}
+              onMenu={(x, y) => openMenu(termMenu(g.key, g.label, g.courses), x, y)}
+              editor={nameEditor(`term:${g.key}`, g.label, (name) => {
+                const dir = termDirOf(g.courses);
+                if (dir) void renameFolder(dir, name);
+              }, folderHint, "h-[18px] text-[11px] font-medium")}
               onReorder={(ids) => reorderTerm(g.key, ids)}
               renderCourse={(c) => (
                 <NavItem
                   icon={<CourseIcon course={c} />}
                   title={c.label}
+                  editor={nameEditor(`course:${c.id}`, c.label, (name) => void renameFolder(c.dir, name), folderHint)}
                   subtitle={c.renamed ? c.display_code : c.name !== c.display_code ? c.name : undefined}
                   active={course?.id === c.id && !pinnedHere && !isPinned({ type: "course", course: c.id })}
                   count={c.new}
@@ -1297,27 +1311,6 @@ export function MainWindow() {
       </main>
 
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
-      {renameDialog && (
-        <RenameDialog
-          current={renameDialog.current}
-          title={renameDialog.title}
-          hint={renameDialog.hint}
-          onClose={() => setRenameDialog(null)}
-          onSubmit={(name) => void renameFolder(renameDialog.path, name)}
-        />
-      )}
-      {renamingPin && (
-        <RenameDialog
-          current={nameOf(renamingPin)}
-          title={t("重命名")}
-          hint={t("只改在置顶里显示的名字。")}
-          onClose={() => setRenamingPin(null)}
-          onSubmit={(title) => {
-            savePinned(changed(pinned, renamingPin, { title }));
-            setRenamingPin(null);
-          }}
-        />
-      )}
       <Notice notice={notice} onDone={() => setNotice(null)} />
       {choosingIcon && (
         <CourseIconDialog
@@ -1455,8 +1448,9 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin,
 
 /** A term in the sidebar: its header folds it and drags it among the terms; its courses drag
  * among themselves. */
-function TermSection({ group, sectionRef, grab, collapsed, onToggle, onMenu, onReorder, renderCourse }: {
+function TermSection({ group, sectionRef, grab, collapsed, editor, onToggle, onMenu, onReorder, renderCourse }: {
   group: TermGroup;
+  editor?: React.ReactNode; // being renamed: the input, in its name's place
   sectionRef: (el: HTMLElement | null) => void;
   grab: { onPointerDown: (e: React.PointerEvent) => void };
   collapsed: boolean;
@@ -1473,6 +1467,7 @@ function TermSection({ group, sectionRef, grab, collapsed, onToggle, onMenu, onR
     <section ref={sectionRef}>
       <SectionHeader
         title={group.label}
+        editor={editor}
         collapsed={collapsed}
         onToggle={onToggle}
         grab={grab}
@@ -1658,9 +1653,10 @@ function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search">; name
   );
 }
 
-function NavItem({ icon, title, subtitle, keys, active, count, muted, onPress, onClick, onMenu }: {
+function NavItem({ icon, title, editor, subtitle, keys, active, count, muted, onPress, onClick, onMenu }: {
   icon?: React.ReactNode;
   title: string;
+  editor?: React.ReactNode; // being renamed: the input, in its name's place (not in a button)
   subtitle?: string;
   keys?: string; // its shortcut, shown on the right
   active: boolean;
@@ -1670,6 +1666,17 @@ function NavItem({ icon, title, subtitle, keys, active, count, muted, onPress, o
   onClick: () => void;
   onMenu?: (x: number, y: number) => void;
 }) {
+  if (editor) {
+    return (
+      <div className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${active ? "bg-selected text-fg" : "text-fg-soft"} ${muted ? "opacity-50" : ""}`}>
+        {icon && <span className="shrink-0 text-muted">{icon}</span>}
+        <span className="min-w-0 flex-1">
+          {editor}
+          {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="group relative">
       <button
@@ -1702,8 +1709,9 @@ function NavItem({ icon, title, subtitle, keys, active, count, muted, onPress, o
   );
 }
 
-function SectionHeader({ title, action, onMenu, collapsed, onToggle, grab, count = 0 }: {
+function SectionHeader({ title, editor, action, onMenu, collapsed, onToggle, grab, count = 0 }: {
   title: string;
+  editor?: React.ReactNode; // being renamed: the input, in its name's place
   action?: { label: string; icon: React.ReactNode; onClick: (x: number, y: number) => void };
   onMenu?: (x: number, y: number) => void;
   collapsed?: boolean;
@@ -1718,7 +1726,7 @@ function SectionHeader({ title, action, onMenu, collapsed, onToggle, grab, count
       onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
     >
       <h2 className="min-w-0 flex-1">
-        <button
+        {editor ?? <button
           onClick={onToggle}
           disabled={!onToggle}
           aria-expanded={onToggle ? !collapsed : undefined}
@@ -1729,11 +1737,11 @@ function SectionHeader({ title, action, onMenu, collapsed, onToggle, grab, count
           {onToggle && (
             <ChevronRight className={`size-3 shrink-0 transition-transform ${collapsed ? "" : "rotate-90 opacity-0 group-hover:opacity-100"}`} />
           )}
-        </button>
+        </button>}
       </h2>
       {/* What's new in a folded section; on hover, its actions take the place. */}
       {count > 0 && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
-      {action && (
+      {action && !editor && (
         <button
           title={action.label}
           aria-label={action.label}

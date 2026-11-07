@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import { t } from "../lib/i18n";
 
 /** In-place name editor: Enter or clicking away saves, Escape cancels. */
-export function RenameInput({ initial, onSubmit, onCancel, className = "" }: {
+export function RenameInput({ initial, onSubmit, onCancel, hint, className = "" }: {
   initial: string;
   onSubmit: (name: string) => void;
   onCancel: () => void;
+  hint?: string; // shown on hover
   className?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -29,8 +30,10 @@ export function RenameInput({ initial, onSubmit, onCancel, className = "" }: {
       ref={input}
       defaultValue={initial}
       aria-label={t("新名称")}
+      title={hint}
       onKeyDown={(e) => {
         e.stopPropagation(); // the list's own keys (arrows, Enter, Space) don't apply while typing
+        if (e.nativeEvent.isComposing) return; // (the input method's: choosing a word)
         if (e.key === "Enter") finish(true);
         else if (e.key === "Escape") finish(false);
       }}

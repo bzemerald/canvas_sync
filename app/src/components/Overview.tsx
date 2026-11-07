@@ -17,7 +17,7 @@ import { Settling, lineIn, slotInColumn } from "../lib/slot";
 import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
 import {
-  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, slotIndex, thingKey, thingOfHit, view,
+  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, same, slotIndex, thingKey, thingOfHit, view,
   without,
 } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
@@ -25,7 +25,7 @@ import { Button, Dialog } from "./Dialog";
 import { AssignmentRow, EdAnnouncementMark, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, useItemOpener } from "./CourseView";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
-import { RenameDialog } from "./RenameDialog";
+import { RenameInput } from "./RenameInput";
 import { RichText } from "./RichText";
 import { Loading, NewDot } from "./Status";
 import { Thumb } from "./Thumb";
@@ -265,11 +265,15 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
     { label: t("设为所有课程的默认概览"), onSelect: onMakeDefault },
     { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
   ];
+  const rename = (place: "overview" | "links", e: Shown, title: string) => {
+    onArrange(place, changed(place === "overview" ? all : links, e, { title }));
+    setRenaming(null);
+  };
   /** Rename, restore its name, hide (its own) or take away (what you put there). */
   const placing = (place: "overview" | "links", e: Shown, name: string): MenuItem[] => {
     const list = place === "overview" ? all : links;
     return [
-      { label: t("重命名…"), onSelect: () => setRenaming({ place, entry: e }) },
+      { label: t("重命名"), onSelect: () => setRenaming({ place, entry: e }) },
       ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, place === "overview" ? "card" : "row") }), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
       ownIn(place, e, course.id)
         ? { label: t("隐藏“{name}”", { name }), onSelect: () => onArrange(place, changed(list, e, { hidden: true })) }
@@ -402,7 +406,8 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
           return {
             body: <LinksList course={course} links={links} shown={linkShown} menu={(x) => sections(things.ways(x), placing("links", x, thingName(x, things.courses)), [pinItem(things, x)])}
               listMenu={() => linksMenu(links, (next) => onArrange("links", next), () => setAddingLink(true), things.courses)}
-              onArrange={(next) => onArrange("links", next)} onTakeAway={(x) => takeAway("links", x, thingName(x, things.courses))} onAdd={() => setAddingLink(true)} />,
+              onArrange={(next) => onArrange("links", next)} onTakeAway={(x) => takeAway("links", x, thingName(x, things.courses))} onAdd={() => setAddingLink(true)}
+              renaming={renaming?.place === "links" ? renaming.entry : null} onRename={(x, title) => rename("links", x, title)} onRenameCancel={() => setRenaming(null)} />,
           };
         case "syllabus":
           return { more: more("syllabus"), body: <DocCard course={course} kind="syllabus" id={String(course.id)} /> };
@@ -450,6 +455,9 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
                 cardRef={drag.ref(i)}
                 grab={drag.handle(i)}
                 title={titleOf(e)}
+                editor={renaming?.place === "overview" && same(renaming.entry, e)
+                  ? <RenameInput initial={titleOf(e)} onSubmit={(title) => rename("overview", e, title)} onCancel={() => setRenaming(null)} className="h-5 flex-1 text-sm" />
+                  : undefined}
                 icon={<ThingIcon thing={e} courses={things.courses} />}
                 more={s.more}
                 action={s.action}
@@ -480,18 +488,6 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
           }}
         />
       )}
-      {renaming && (
-        <RenameDialog
-          current={renaming.place === "overview" ? titleOf(renaming.entry) : thingName(renaming.entry, things.courses)}
-          title={renaming.place === "overview" ? t("重命名卡片") : t("重命名链接")}
-          hint={renaming.place === "overview" ? t("只改这张卡片的标题。") : t("只改在这里显示的名字。")}
-          onClose={() => setRenaming(null)}
-          onSubmit={(title) => {
-            onArrange(renaming.place, changed(renaming.place === "overview" ? all : links, renaming.entry, { title }));
-            setRenaming(null);
-          }}
-        />
-      )}
       {addingLink && (
         <LinkDialog onClose={() => setAddingLink(false)} onAdd={(link) => (setAddingLink(false), linkTo({ type: "link", url: link.url, title: link.title }))} />
       )}
@@ -499,11 +495,12 @@ export function CourseOverview({ course, overview, cards, links, own, onArrange,
   );
 }
 
-function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab, onMenu, children }: {
+function Card({ cardKey, style, flash, title, editor, icon, more, action, cardRef, grab, onMenu, children }: {
   cardKey: string;
   style: React.CSSProperties;
   flash: boolean; // just added: outlined for a moment
   title: string;
+  editor?: React.ReactNode; // being renamed: the input, in its title's place
   icon: React.ReactNode;
   more?: () => void;
   action?: { label: string; onClick: () => void };
@@ -529,7 +526,7 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
         className="flex cursor-grab items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium active:cursor-grabbing"
       >
         <span className="text-muted">{icon}</span>
-        <span className="truncate">{title}</span>
+        {editor ?? <span className="truncate">{title}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-3 text-xs font-normal">
           {action && <button onClick={action.onClick} className="text-muted hover:text-fg">{action.label}</button>}
           {more && <button onClick={more} className="text-muted hover:text-fg">{t("全部 ›")}</button>}
@@ -542,7 +539,7 @@ function Card({ cardKey, style, flash, title, icon, more, action, cardRef, grab,
 
 /** 工具与链接's rows: the course's tools, its syllabus, Canvas, and what you put there. Drag them
  * into your order, or anything in among them; drag one you put there off to take it away. */
-function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway, onAdd }: {
+function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway, onAdd, renaming, onRename, onRenameCancel }: {
   course: Course;
   links: Shown[]; // all of them, hidden ones too
   shown: Shown[];
@@ -552,6 +549,9 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
   onArrange: (next: Shown[]) => void;
   onTakeAway: (e: Shown) => void;
   onAdd: () => void;
+  renaming: Shown | null;
+  onRename: (e: Shown, title: string) => void;
+  onRenameCancel: () => void;
 }) {
   const things = useThings();
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -593,14 +593,26 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
         <div key={DROP} aria-hidden data-link data-placeholder data-flip={DROP} className="h-8 w-28 rounded-md" />
       ) : (
         <div key={thingKey(shown[i])} data-link data-flip={thingKey(shown[i])} className="relative rounded-md" {...drag.item(i)}
-          onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(menu(shown[i]), ev.clientX, ev.clientY))}>
-          <Row onClick={() => things.open(shown[i])}>
-            <span className="flex items-center gap-2">
+          onContextMenu={(ev) => {
+            ev.stopPropagation();
+            if (keepsOwnMenu(ev)) return;
+            ev.preventDefault();
+            things.menu(menu(shown[i]), ev.clientX, ev.clientY);
+          }}>
+          {same(shown[i], renaming) ? (
+            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
               <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
-              {thingName(shown[i], things.courses)}
-              {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
-            </span>
-          </Row>
+              <RenameInput initial={thingName(shown[i], things.courses)} onSubmit={(title) => onRename(shown[i], title)} onCancel={onRenameCancel} className="h-5 w-40 text-sm" />
+            </div>
+          ) : (
+            <Row onClick={() => things.open(shown[i])}>
+              <span className="flex items-center gap-2">
+                <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
+                {thingName(shown[i], things.courses)}
+                {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+              </span>
+            </Row>
+          )}
         </div>
       ))}
       <div data-flip="add">
@@ -646,7 +658,7 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
     onSay(t("已移除“{name}”", { name: thingName(e, things.courses) }), { label: t("撤销"), run: () => onArrange(links) });
   };
   const menu = (e: Shown): MenuItem[] => sections(things.ways(e), [
-    { label: t("重命名…"), onSelect: () => setRenaming(e) },
+    { label: t("重命名"), onSelect: () => setRenaming(e) },
     ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
     ownIn("links", e, course.id)
       ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
@@ -656,13 +668,10 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(listMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-3xl px-6 py-6">
-        <LinksList course={course} links={links} shown={shown} menu={menu} listMenu={listMenu} onArrange={onArrange} onTakeAway={takeAway} onAdd={() => setAdding(true)} />
+        <LinksList course={course} links={links} shown={shown} menu={menu} listMenu={listMenu} onArrange={onArrange} onTakeAway={takeAway} onAdd={() => setAdding(true)}
+          renaming={renaming} onRename={(e, title) => (onArrange(changed(links, e, { title })), setRenaming(null))} onRenameCancel={() => setRenaming(null)} />
       </div>
       {adding && <LinkDialog onClose={() => setAdding(false)} onAdd={(link) => (setAdding(false), onArrange(putAt(links, { type: "link", url: link.url, title: link.title }, links.length)))} />}
-      {renaming && (
-        <RenameDialog current={thingName(renaming, things.courses)} title={t("重命名链接")} hint={t("只改在这里显示的名字。")}
-          onClose={() => setRenaming(null)} onSubmit={(title) => (onArrange(changed(links, renaming, { title })), setRenaming(null))} />
-      )}
     </div>
   );
 }

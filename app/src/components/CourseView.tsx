@@ -21,7 +21,7 @@ import {
 import { FileIcon } from "./FileIcon";
 import { ReadingBar, useNarrowing } from "./Found";
 import type { MenuItem } from "./Menu";
-import { RenameDialog } from "./RenameDialog";
+import { RenameInput } from "./RenameInput";
 import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
 import { SourceTag, ThingIcon, onTheWeb, opensHint, ownName, pinItem, sections, thingName, useThing, useThings } from "./Things";
@@ -170,7 +170,7 @@ export function CourseTabs({
     e === extra
       ? [{ label: t("加为标签"), onSelect: () => onArrange([...entries, { ...e, hidden: false }]) }]
       : [
-          { label: t("重命名…"), onSelect: () => setRenaming(e) },
+          { label: t("重命名"), onSelect: () => setRenaming(e) },
           ...(e.title ? [{ label: t("恢复原名（{name}）", { name: ownName(e, things.courses, "tab") }), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
           isOwn(e)
             ? { label: t("隐藏“{name}”标签", { name: name(e) }), disabled: visible.length <= 1, onSelect: () => onArrange(changed(entries, e, { hidden: true })) }
@@ -189,7 +189,26 @@ export function CourseTabs({
     ],
   );
 
-  const button = (e: Shown, props: object, i: number | null) => (
+  const button = (e: Shown, props: object, i: number | null) => same(e, renaming) ? (
+    <div
+      key={thingKey(e)}
+      data-tab={i === null ? undefined : ""}
+      {...props}
+      onContextMenu={(ev) => ev.stopPropagation()} // (the input's own: paste)
+      className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${same(tab, e) ? "border-accent" : "border-transparent"}`}
+    >
+      {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
+      <RenameInput
+        initial={name(e)}
+        onSubmit={(title) => {
+          onArrange(changed(entries, e, { title }));
+          setRenaming(null);
+        }}
+        onCancel={() => setRenaming(null)}
+        className="h-5 w-36 text-sm"
+      />
+    </div>
+  ) : (
     <button
       key={thingKey(e)}
       data-tab={i === null ? undefined : ""}
@@ -240,18 +259,6 @@ export function CourseTabs({
         <button onClick={onMarkAllSeen} className="ml-auto shrink-0 py-2 text-xs text-muted hover:text-fg" title={t("清除这门课所有的“新”标记")}>
           {t("全部标为已读")}
         </button>
-      )}
-      {renaming && (
-        <RenameDialog
-          current={name(renaming)}
-          title={t("重命名标签")}
-          hint={t("只改这个标签的名字。")}
-          onClose={() => setRenaming(null)}
-          onSubmit={(title) => {
-            onArrange(changed(entries, renaming, { title }));
-            setRenaming(null);
-          }}
-        />
       )}
     </nav>
   );
