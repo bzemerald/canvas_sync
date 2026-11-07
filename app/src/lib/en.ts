@@ -601,7 +601,6 @@ export const en: Record<string, string | [string, string]> = {
   "这门课的标签恢复了默认": "This course's tabs are back to the default",
   "这门课的概览恢复了默认，添加的卡片还在": "This course's overview is back to the default; the cards you added are still there",
   "其他没单独排过的课程现在也这样排": "Courses you haven't arranged on their own now look like this too",
-  "设为所有课程的默认排列": "Make this the default for every course",
   "恢复默认（和其他课程一样）": "Back to the default (like other courses)",
   "设为所有课程的默认概览": "Make this every course's default overview",
   "添加卡片": "Add a card",

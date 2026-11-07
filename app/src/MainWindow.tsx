@@ -1267,10 +1267,7 @@ export function MainWindow() {
             blank={!!cv.blank}
             overview={overview}
             entries={courseLayout ? tabs : null}
-            own={!!courseLayout?.own.tabs}
             onArrange={(next) => arrangeLayout("tabs", next)}
-            onReset={() => void resetLayout(["tabs"])}
-            onMakeDefault={() => void makeDefaultLayout("tabs")}
             onTab={(x) => go(toTab(cv, x))}
             onNewTab={() => go({ ...cv, blank: true, found: undefined, select: undefined })}
             onCloseBlank={() => replaceView({ ...cv, blank: false })}

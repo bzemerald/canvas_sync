@@ -91,20 +91,17 @@ function tabsShown(entries: Shown[], course: Course, overview: Overview | null, 
  * Something shown that isn't a tab (a page, when 页面 is hidden) gets one for now, at the end.
  * "+" opens a new tab (`blank`, and `NewTab`). */
 export function CourseTabs({
-  course, tab, blank, overview, entries: loaded, own, onTab, onNewTab, onCloseBlank, onArrange, onReset, onMakeDefault, onSay,
+  course, tab, blank, overview, entries: loaded, onTab, onNewTab, onCloseBlank, onArrange, onSay,
 }: {
   course: Course;
   tab: Thing; // what's showing (or was, before the new tab)
   blank: boolean; // the new tab is showing
   overview: Overview | null;
   entries: Shown[] | null; // every tab, in order, hidden ones too (null: not loaded yet)
-  own: boolean; // arranged for this course (else as every course is)
   onTab: (t: Thing) => void;
   onNewTab: () => void;
   onCloseBlank: () => void;
   onArrange: (entries: Shown[]) => void; // for this course
-  onReset: () => void; // back to how every course is
-  onMakeDefault: () => void; // every course (not arranged for itself) like this one
   onSay: (message: string, action?: { label: string; run: () => void }) => void;
 }) {
   const things = useThings();
@@ -192,11 +189,6 @@ export function CourseTabs({
             : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
         ],
     [pinItem(things, e)],
-    // The tabs as a whole.
-    [
-      { label: t("设为所有课程的默认排列"), onSelect: onMakeDefault },
-      { label: t("恢复默认（和其他课程一样）"), disabled: !own, onSelect: onReset },
-    ],
   );
 
   const button = (e: Shown, props: object, i: number | null) => same(e, renaming) ? (
