@@ -319,7 +319,7 @@ export function NewTab({ course, overview, entries, box, typing, found, onOpen, 
           const here = shown.some((x) => same(x, e));
           return (
             <button key={thingKey(e)} onClick={() => pick(e)} title={here ? t("在标签栏里：转到那里") : t("在这个标签里打开")}
-              className={`relative flex w-28 flex-col items-center gap-2 rounded-lg px-2 py-3 text-sm hover:bg-chip hover:text-fg ${here ? "text-fg-soft" : "text-muted"}`}>
+              className={`relative flex w-[7.25rem] flex-col items-center gap-2 rounded-lg px-0.5 py-3 text-sm hover:bg-chip hover:text-fg ${here ? "text-fg-soft" : "text-muted"}`}>
               <ThingIcon thing={e} courses={things.courses} className="size-5" />
               <span className="max-w-full truncate">{thingName(e, things.courses, "tab")}</span>
               {!!count && <span className="absolute top-1.5 right-2"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
