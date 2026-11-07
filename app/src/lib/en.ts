@@ -730,4 +730,13 @@ export const en: Record<string, string | [string, string]> = {
   "上一处": "Previous match",
   "下一处": "Next match",
   "清除高亮 (Esc)": "Clear highlights (Esc)",
+  "检查更新": "Check for updates",
+  "已是最新版本": "Up to date",
+  "有新版本 {v}": "Version {v} is available",
+  "更新并重启": "Update and restart",
+  "新版本 {v} · 更新并重启": "Version {v} · Update and restart",
+  "正在下载 {v}…": "Downloading {v}…",
+  "正在安装，马上重启…": "Installing, restarting soon…",
+  "更新失败": "Update failed",
+  "检查失败": "Couldn't check",
 };

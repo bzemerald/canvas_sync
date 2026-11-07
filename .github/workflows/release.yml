@@ -1,0 +1,69 @@
+# Builds the Mac and Windows apps when a version tag is pushed (npm run release -- <version>, in
+# app/, makes the tag), and puts them in a draft release with latest.json, which the apps'
+# 检查更新 reads once the draft is published. Run by hand (Actions → release → Run workflow) it
+# only builds, to try the build: the apps are kept with the run, no release is made.
+#
+# Needs the secret TAURI_SIGNING_PRIVATE_KEY (Settings → Secrets and variables → Actions): the
+# private key whose public half is in app/src-tauri/tauri.conf.json.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write # (to make the release)
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest] # (macos-latest: Apple silicon)
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: The backend's virtualenv (build-backend.mjs packs it with PyInstaller)
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -d .venv/Scripts ]; then py=.venv/Scripts/python; else py=.venv/bin/python; fi
+          $py -m pip install --upgrade pip
+          $py -m pip install -e '.[dev]'
+      - run: npm ci
+        working-directory: app
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: app
+          # The backend packed in (as npm run bundle), and the signed update archives.
+          args: --config src-tauri/tauri.bundle.json --config src-tauri/tauri.release.json
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: Canvas Sync ${{ github.ref_name }}
+          releaseBody: ""
+          releaseDraft: true
+          includeUpdaterJson: true
+      - name: Keep the apps with the run (when run by hand)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-sync-${{ matrix.os }}
+          path: |
+            app/src-tauri/target/release/bundle/dmg/*.dmg
+            app/src-tauri/target/release/bundle/macos/*.tar.gz
+            app/src-tauri/target/release/bundle/nsis/*.exe
+            app/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: ignore

@@ -1,5 +1,6 @@
 // 设置: the account, syncing, language. Preferences are this computer's (app.toml, via the
 // backend); which courses sync is the sync folder's (its config.toml), shared with the CLI.
+import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Check, CheckCircle2, CircleAlert, CircleQuestionMark, Copy, FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -11,6 +12,7 @@ import { t } from "../lib/i18n";
 import { chooseLauncherKeys, keysLabel, keysOf, setKeys, useLauncherKeys } from "../lib/launcherKeys";
 import { fileManager, isMac } from "../lib/keys";
 import { termRank } from "../lib/terms";
+import { checkForUpdate, installUpdate, useUpdate } from "../lib/update";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
@@ -28,7 +30,6 @@ export function Settings({ sync, onSync, onAccount }: {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [check, setCheck] = useState<{ ok: boolean; error?: string } | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
-  const [version, setVersion] = useState("");
   const [newToken, setNewToken] = useState<string | null>(null); // replacing the token
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -44,7 +45,6 @@ export function Settings({ sync, onSync, onAccount }: {
   useEffect(() => {
     void api.account().then(setAccount, () => {});
     void api.prefs().then(setPrefs, () => {});
-    void api.health().then((h) => setVersion(h.version), () => {});
   }, []);
   useEffect(() => {
     if (!account?.signed_in) return void setCheck(null);
@@ -182,7 +182,7 @@ export function Settings({ sync, onSync, onAccount }: {
           <Row label={t("编辑高级同步规则")}>
             <Button onClick={() => void api.openConfig().catch((e) => setError(friendly(e.message)))}>{t("打开配置文件")}</Button>
           </Row>
-          {version && <Row label={t("版本")}><span className="text-sm text-muted">{version}</span></Row>}
+          <VersionRow />
         </Section>
       </div>
 
@@ -367,6 +367,32 @@ function Row({ label, hint, children }: { label: React.ReactNode; hint?: React.R
       </div>
       <div className="flex min-w-0 shrink-0 justify-end">{children}</div>
     </div>
+  );
+}
+
+/** 版本: this one, and 检查更新 (which the app also does by itself now and then). */
+function VersionRow() {
+  const [version, setVersion] = useState("");
+  const update = useUpdate();
+  useEffect(() => void getVersion().then(setVersion, () => {}), []);
+  const status =
+    update.phase === "checking" ? t("正在检查…")
+      : update.phase === "latest" ? t("已是最新版本")
+        : update.phase === "available" ? t("有新版本 {v}", { v: update.version })
+          : update.phase === "downloading" ? t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
+            : update.phase === "installing" ? t("正在安装，马上重启…")
+              : null;
+  return (
+    <Row label={t("版本")} hint={version ? <span className="tabular-nums">{version}</span> : undefined}>
+      <span className="flex items-center gap-3 text-sm">
+        {update.phase === "failed"
+          ? <span className="flex items-center gap-1 text-xs text-danger" title={update.error}><CircleAlert className="size-3.5" />{update.version ? t("更新失败") : t("检查失败")}</span>
+          : status && <span className={update.phase === "available" ? "text-accent" : "text-muted"}>{status}</span>}
+        {update.phase === "available" || (update.phase === "failed" && update.version)
+          ? <Button onClick={() => void installUpdate()}>{t("更新并重启")}</Button>
+          : <Button onClick={() => void checkForUpdate()} disabled={update.phase === "checking" || update.phase === "downloading" || update.phase === "installing"}>{t("检查更新")}</Button>}
+      </span>
+    </Row>
   );
 }
 

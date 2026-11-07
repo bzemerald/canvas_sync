@@ -49,6 +49,7 @@ import {
   view as viewOf, without,
 } from "./lib/things";
 import { ownFrame, useTrafficLights } from "./lib/window";
+import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
 import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
 import { locale, t } from "./lib/i18n";
@@ -190,6 +191,8 @@ export function MainWindow() {
   const refresh = () => setVersion((n) => n + 1);
   const seenChanged = () => setSeenTick((n) => n + 1);
   const newFiles = useLoaded("new-files", api.newFiles, [version, seenTick]).value; // (what a file's menu can mark read)
+
+  useEffect(startUpdateChecks, []);
 
   // -- data ------------------------------------------------------------------------
   useEffect(() => {
@@ -1257,6 +1260,7 @@ export function MainWindow() {
           )}
         </nav>
         <div className="border-t border-line px-2 py-2">
+          <UpdateNotice />
           <NavItem icon={<SettingsIcon className="size-4" />} active={view.kind === "settings"} onClick={() => go({ kind: "settings" })} title={t("设置")} keys={shortcut.settings} />
         </div>
       </aside>
@@ -1879,6 +1883,21 @@ const CHANGE: Record<string, (n: number) => string> = {
   remote_deleted: (n) => t("{n} 个已从 Canvas 删除", { n }),
   delete: (n) => t("删除了 {n} 个", { n }),
 };
+
+/** A new version, at the sidebar's foot once a check found one: click to update (and restart). */
+function UpdateNotice() {
+  const update = useUpdate();
+  if (update.phase !== "available" && update.phase !== "downloading" && update.phase !== "installing") return null;
+  const label = update.phase === "available" ? t("新版本 {v} · 更新并重启", { v: update.version })
+    : update.phase === "downloading" ? t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
+      : t("正在安装，马上重启…");
+  return (
+    <button onClick={() => void installUpdate()} disabled={update.phase !== "available"}
+      className="mb-1 w-full rounded-md bg-selected px-2.5 py-1.5 text-left text-xs text-accent hover:opacity-90 disabled:opacity-80">
+      {label}
+    </button>
+  );
+}
 
 function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: string; onFix: () => void }) {
   if (!sync || sync.phase === "idle") return null;

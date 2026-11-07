@@ -70,6 +70,8 @@ without the Canvas website or Finder.
   - `src/lib/marks.ts`: what a query's words look like in text; `src/components/Marked.tsx`: marks
     them on the page search opened, whatever the page (`found` on the view, so going back has them).
   - `src/lib/api.ts`: every backend call and its types.
+  - `src/lib/update.ts`: 检查更新 (Tauri's updater, from GitHub's releases; checks by itself
+    in a release build).
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin` (on Windows `python -m
@@ -88,6 +90,11 @@ without the Canvas website or Finder.
   `npm run check:i18n` (it must report nothing missing and nothing unused).
 - A standalone app: `npm run bundle` in `app/` (the backend packed in, by PyInstaller:
   `scripts/build-backend.mjs`, `src-tauri/tauri.bundle.json`).
+- A release: `npm run release -- <version>` in `app/` writes the version everywhere, commits and
+  tags; pushing the tag runs `.github/workflows/release.yml` (Mac and Windows, a draft release
+  with `latest.json`); publishing the draft is what 检查更新 sees. Updates are signed with
+  `~/.tauri/canvas-sync.key` (the GitHub secret `TAURI_SIGNING_PRIVATE_KEY`); its public half
+  is in tauri.conf.json, so a lost key means apps already out can't update.
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
   terminal (check `ps`). Frontend edits hot-reload. The Python server keeps running old code
   until the app restarts: `touch app/src-tauri/src/lib.rs`, and tauri dev rebuilds and

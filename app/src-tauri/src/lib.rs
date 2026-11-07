@@ -135,6 +135,13 @@ fn stop_backend(app: &AppHandle) {
     }
 }
 
+/// Before an update is installed: on Windows the installer can't replace a running canvas.exe.
+/// (The app restarts after, and the backend with it.)
+#[tauri::command]
+fn stop_backend_for_update(app: AppHandle) {
+    stop_backend(&app);
+}
+
 /// The UI calls this once on load; it waits until the backend is listening.
 #[tauri::command]
 async fn backend(state: tauri::State<'_, BackendState>) -> Result<Backend, String> {
@@ -301,6 +308,8 @@ pub fn run() {
         .manage(BackendState::default())
         .manage(LauncherKeys::default())
         .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
+        .plugin(tauri_plugin_updater::Builder::new().build()) // 检查更新, from GitHub's releases
+        .plugin(tauri_plugin_process::init()) // restarting after an update
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -379,6 +388,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             backend,
+            stop_backend_for_update,
             hide_launcher,
             show_main,
             show_launcher,
