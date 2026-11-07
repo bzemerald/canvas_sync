@@ -33,7 +33,7 @@ USUALLY_HIDDEN = {"overview": ("syllabus",)}
 
 
 def usual(place: str) -> list[Entry]:
-    """How a course's tabs or overview are arranged until you set a default."""
+    """How a course's tabs or overview are arranged until app.toml has a default."""
     names = TAB_VIEWS if place == "tabs" else CARD_VIEWS if place == "overview" else ()
     return [Entry(view(None, v), hidden=v in USUALLY_HIDDEN.get(place, ())) for v in names]
 

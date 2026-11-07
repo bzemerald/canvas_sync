@@ -113,7 +113,7 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # if you like, and `hidden = true` to hide it. A course's views are its own (overview, modules, announcements, assignments, grades,
 # files, syllabus, pages; on the overview also tools, which is 工具与链接), and so are its tools
 # and Canvas (view "canvas") in 工具与链接: they're hidden, never taken away. A list without any
-# of them follows the default arrangement (set in the app), with what's in it after.
+# of them follows the default arrangement (in app.toml), with what's in it after.
 # [course_layouts.12345]
 # tabs = [
 #     {type = "view", view = "overview"},

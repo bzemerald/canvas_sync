@@ -963,27 +963,6 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             save_course_place(config(), course_id, name, p.settle(items))
         return layout_of(course_id)
 
-    @api.post("/courses/{course_id}/layout/{name}/reset")
-    def reset_course_layout(course_id: int, name: str) -> dict[str, Any]:
-        """Back to the default (as other courses are). What was added stays, after the rest."""
-        known(name)
-        with engine() as e:
-            save_course_place(config(), course_id, name, place(e, course_id, name).added(getattr(own_layout(e, course_id), name)))
-        return layout_of(course_id)
-
-    @api.post("/courses/{course_id}/layout/{name}/default")
-    def make_default_layout(course_id: int, name: str) -> dict[str, Any]:
-        """The course's own things here (its views), as it has them, become the default: for every
-        course that isn't arranged for itself. (What it added is its own.)"""
-        if name not in ("tabs", "overview"):
-            raise HTTPException(404, "tabs or overview")
-        with engine() as e:
-            p, stored = place(e, course_id, name), getattr(own_layout(e, course_id), name)
-            mine = [Entry(replace(x.thing, course=None), x.title, x.hidden) for x in p.arranged(stored) if p.own(x.thing)]
-            replace(prefs(), **{name: mine}).save(prefs_path)
-            save_course_place(config(), course_id, name, place(e, course_id, name).settle(stored))
-        return layout_of(course_id)
-
     def note_file(course_id: int, note: str) -> Path:
         if not re.fullmatch(r"[a-z0-9-]{1,40}", note):
             raise HTTPException(400, "not a note id")

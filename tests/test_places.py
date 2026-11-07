@@ -229,18 +229,6 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
                       {"type": "course", "course": 2}, {"type": "search", "query": "mt"}):
             assert api.put("/api/courses/1/layout/overview", json={"entries": [other]}).status_code == 400, other
 
-        # Every course's default: what this one has of its own (not what it added).
-        api.put("/api/courses/1/layout/tabs", json={"entries": moved})
-        r = api.post("/api/courses/1/layout/tabs/default").json()
-        assert r["own"]["tabs"] and r["tabs"][1]["id"] == "schedule"  # (where what it added is is its own)
-        other = api.get("/api/courses/2/layout").json()["tabs"]
-        assert [(e["view"], e["title"], e["hidden"]) for e in other[:3]] == [
-            ("overview", "", False), ("modules", "Weeks", False), ("announcements", "", True)]
-        # Back to the default: what was added stays, after the rest.
-        api.put("/api/courses/1/layout/tabs", json={"entries": [moved[1], *moved[2:], moved[0]]})
-        r = api.post("/api/courses/1/layout/tabs/reset").json()
-        assert not r["own"]["tabs"] and r["tabs"][0]["view"] == "overview" and r["tabs"][-1]["id"] == "schedule"
-
         # The overview and 工具与链接 are places too.
         note, link = {"type": "note", "id": "n1"}, {"type": "link", "url": "https://math.test", "title": "Site"}
         r = api.put("/api/courses/1/layout/overview", json={"entries": [*r["overview"], note, page]}).json()
@@ -248,12 +236,9 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
         links = [{**r["links"][0], "hidden": True}, *r["links"][1:], link]
         r = api.put("/api/courses/1/layout/links", json={"entries": links}).json()
         assert r["own"]["links"] and [e["hidden"] for e in r["links"]] == [True, False, False, False]
-        r = api.post("/api/courses/1/layout/links/reset").json()
-        assert not r["own"]["links"] and [e["hidden"] for e in r["links"]] == [False] * 4
-        assert api.post("/api/courses/1/layout/links/default").status_code == 404
 
     stored = Settings.load(root / ".canvas/config.toml").course_layouts[1]
-    assert stored.tabs == [Entry(PAGE, "Syllabus")] and stored.links == [Entry(Thing("link", url="https://math.test"), "Site")]
+    assert stored.tabs[0] == Entry(PAGE, "Syllabus") and stored.links[-1] == Entry(Thing("link", url="https://math.test"), "Site")
 
 
 def test_pinning_anything(root, tmp_path, fake: FakeCanvas):
