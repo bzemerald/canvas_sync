@@ -54,12 +54,18 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
     scroller?.stop();
     document.documentElement.classList.remove("dragging");
   };
+  /** What's under the pointer now, and the copy showing what letting go would do. */
+  const hover = (x: number, y: number) => {
+    const over = h.onMove?.(x, y);
+    ghost?.compact(over === "zone");
+    ghost?.removing(over === "remove");
+  };
   const move = (ev: PointerEvent) => {
     last = { x: ev.clientX, y: ev.clientY };
     if (!ghost) {
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < THRESHOLD) return;
       ghost = new Ghost(source, startX, startY);
-      scroller = new AutoScroll(source, () => h.onMove?.(last.x, last.y));
+      scroller = new AutoScroll(source, () => hover(last.x, last.y));
       // Not selecting text on the way (the press was the start of a selection too), nor pointing
       // at what's passed over. So the wheel has to be passed on to what's under the pointer.
       document.documentElement.classList.add("dragging");
@@ -68,9 +74,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
       h.onStart?.();
     }
     scroller?.update(ev.clientX, ev.clientY);
-    const over = h.onMove?.(ev.clientX, ev.clientY);
-    ghost.compact(over === "zone");
-    ghost.removing(over === "remove");
+    hover(ev.clientX, ev.clientY);
     if (h.out && !handing && outside(ev)) {
       handing = true;
       void h.out().catch(() => false).then((handed) => {
@@ -86,7 +90,7 @@ export function trackDrag(e: React.PointerEvent, source: HTMLElement, h: DragHan
   };
   const wheel = (ev: WheelEvent) => {
     scrollUnder(ev);
-    h.onMove?.(last.x, last.y);
+    hover(last.x, last.y);
   };
   const land = (to: Landing) => {
     const g = ghost!;
