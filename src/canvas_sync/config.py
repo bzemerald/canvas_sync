@@ -407,7 +407,10 @@ def set_folder_title(path: Path, folder: str, title: str | None) -> None:
 def old_folder_names(path: Path) -> dict[str, str] | None:
     """[folder_names]: folders renamed on disk, as versions before [folder_titles] did it
     (the path Canvas names would give a folder -> its name). None: there's none of that."""
-    names = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap().get("folder_names")
+    try:
+        names = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap().get("folder_names")
+    except Exception as e:
+        raise ConfigError(f"{path}: {e}") from e
     return None if names is None else {str(k).strip("/"): str(v) for k, v in names.items()}
 
 

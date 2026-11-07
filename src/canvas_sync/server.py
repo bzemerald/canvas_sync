@@ -644,7 +644,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """Everything search can go to by name (see catalog.py), what words stand for, and what
         you open: how often and lately, and what you'd typed for what."""
         with engine() as e:
-            return {"things": catalog(e), "abbreviations": abbreviations(e), **e.state.usage()}
+            return {"things": catalog(e), "abbreviations": abbreviations(e), "folder_titles": e.settings.folder_titles,
+                    **e.state.usage()}
 
     @api.post("/opened")
     def opened(req: OpenedRequest) -> dict[str, bool]:
@@ -1015,13 +1016,12 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         return sidebar()
 
     @api.post("/rename")
-    def rename(req: RenameRequest) -> dict[str, str]:
-        if job.running:
-            raise HTTPException(409, "wait for the sync to finish")
+    def rename(req: RenameRequest) -> dict[str, bool]:
         inside(req.path)
         with engine() as e:
             try:
-                return {"path": e.rename_folder(req.path, req.name)}
+                e.rename_folder(req.path, req.name)
+                return {"ok": True}
             except ValueError as err:
                 raise HTTPException(400, str(err))
             except LookupError as err:

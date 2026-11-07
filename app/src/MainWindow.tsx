@@ -691,8 +691,8 @@ export function MainWindow() {
         ...markRead({ type: "folder", path: e.path }, e.new_inside),
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
-        { label: t("重命名"), hint: shortcut.rename, disabled: syncBusy, onSelect: () => setRenaming(e.path) },
-        ...(e.renamed_from ? [{ label: t("恢复原名（{name}）", { name: e.renamed_from }), disabled: syncBusy, onSelect: () => void renameFolder(e.path, "") }] : []),
+        { label: t("重命名"), hint: shortcut.rename, onSelect: () => setRenaming(e.path) },
+        ...(e.renamed_from ? [{ label: t("恢复原名（{name}）", { name: e.renamed_from }), onSelect: () => void renameFolder(e.path, "") }] : []),
         "separator",
         { label: t("从 Canvas 同步此文件夹"), disabled: syncBusy || e.skipped, onSelect: () => startSync({ paths: [e.path] }, e.name) },
         { label: t("恢复此文件夹的原版…"), disabled: !e.changes, onSelect: () => setRestoring({ scope: { paths: [e.path] }, label: e.name }) },
@@ -1056,7 +1056,7 @@ export function MainWindow() {
           if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
         }}
         renaming={renaming}
-        onStartRename={(e) => canRename(e) && !syncBusy && setRenaming(e.path)}
+        onStartRename={(e) => canRename(e) && setRenaming(e.path)}
         onRename={(e, name) => void renameFolder(e.path, name)}
         onRenameCancel={() => setRenaming(null)}
       />
@@ -1273,7 +1273,7 @@ export function MainWindow() {
               if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
             }}
             renaming={renaming}
-            onStartRename={(e) => canRename(e) && !syncBusy && setRenaming(e.path)}
+            onStartRename={(e) => canRename(e) && setRenaming(e.path)}
             onRename={(e, name) => void renameFolder(e.path, name)}
             onRenameCancel={() => setRenaming(null)}
           />

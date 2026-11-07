@@ -34,8 +34,8 @@ class NotInitialized(Exception):
 
 
 def migrate_folder_names(root: Path) -> None:
-    """A sync folder from when renaming a folder renamed it on disk, as it is now. (Not when an
-    Engine opens: `canvas mcp` only reads.)"""
+    """A sync folder from when renaming a folder renamed it on disk, as it is now. Once, where the
+    app, the command line and `canvas mcp` start (not when an Engine opens: most only read)."""
     cfg = root.expanduser() / META_DIR / "config.toml"
     if cfg.exists() and (names := old_folder_names(cfg)) is not None:
         with Engine(root) as e:
@@ -381,17 +381,16 @@ class Engine:
         """Sync these paths' folders again: what's at or under them, and the folders above
         them that weren't synced (else nothing in them could be). The other folders in
         those stay as they were: not synced."""
-        canon = rels
-        above = [s for s in self.settings.skip_folders if any(c.startswith(s + "/") for c in canon)]
+        above = [s for s in self.settings.skip_folders if any(c.startswith(s + "/") for c in rels)]
         keep: list[str] = []
         for s in above:
-            for c in (c for c in canon if c.startswith(s + "/")):
+            for c in (c for c in rels if c.startswith(s + "/")):
                 here = s
                 for part in c[len(s) + 1:].split("/"):
                     keep += [d for d in self._subfolders(here) if d != f"{here}/{part}"]
                     here = f"{here}/{part}"
-        keep = [k for k in keep if not any(_under(k, c) or _under(c, k) for c in canon)]
-        update_skip_folders(self.meta / "config.toml", remove_under=canon, remove=above, add=keep)
+        keep = [k for k in keep if not any(_under(k, c) or _under(c, k) for c in rels)]
+        update_skip_folders(self.meta / "config.toml", remove_under=rels, remove=above, add=keep)
         self._reload()
 
     def _subfolders(self, rel: str) -> list[str]:
@@ -459,9 +458,9 @@ class Engine:
             self._resume(done)
         return done
 
-    def rename_folder(self, rel: str, name: str) -> str:
+    def rename_folder(self, rel: str, name: str) -> None:
         """What the app calls a folder: on disk it keeps its name, so syncing, links and Finder
-        are as they were. An empty name, or its own: back to its own name. Returns its path."""
+        are as they were. An empty name, or its own: back to its own name."""
         rel = rel.strip("/")
         if not rel or rel.split("/")[0] == META_DIR:
             raise ValueError("that folder can't be renamed")
@@ -471,47 +470,48 @@ class Engine:
         title = name.strip()
         set_folder_title(self.meta / "config.toml", rel, title if title and title != src.name else None)
         self._reload()
-        return rel
 
     def undo_folder_names(self, names: dict[str, str]) -> None:
         """Folders renamed on disk by older versions (see `migrate_folder_names`) get their own
-        names back, deepest first; what you called them becomes their titles. Each is committed
-        by itself, so an interrupted run can run again. One that can't go back stays where it
-        is, and the next sync moves its files (their layout changed)."""
+        names back, deepest first; what you called them becomes their titles. A name no course's
+        folder goes through (an old one, left over) renamed nothing, so it's dropped: a folder
+        called that is yours. Each folder is committed by itself and [folder_names] goes last, so
+        an interrupted run runs again. One you deleted only has its records put right; one that
+        can't go back stays where it is, and the next sync moves its files (their layout changed)."""
         cfg = self.meta / "config.toml"
+        dirs = [self.layout.course_dir(c).as_posix() for c in self.state.courses()]
+        live = {k: v for k, v in names.items()
+                if not dirs or any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in dirs)}
 
         def on_disk(key: str) -> str:
             parts = key.split("/")
-            return "/".join(names.get("/".join(parts[: i + 1]), part) for i, part in enumerate(parts))
+            return "/".join(live.get("/".join(parts[: i + 1]), part) for i, part in enumerate(parts))
 
-        changed = False
-        for key in sorted(names, key=lambda k: -k.count("/")):
+        for key in sorted(live, key=lambda k: -k.count("/")):
             now = on_disk(key)
             home = posixpath.join(posixpath.dirname(now), posixpath.basename(key))
             src, dest = self.root / now, self.root / home
-            if now == home or not src.is_dir():
+            if now == home:
                 continue
-            try:
-                if dest.is_dir() and not dest.samefile(src) and not any(dest.iterdir()):
-                    dest.rmdir()  # (empty, so nothing's in the way)
-                if os.path.lexists(dest) and not dest.samefile(src):
-                    log.warning("couldn't rename %s back to %s: it's there already", now, home)
+            if src.is_dir():
+                try:
+                    if dest.is_dir() and not dest.samefile(src) and not any(dest.iterdir()):
+                        dest.rmdir()  # (empty, so nothing's in the way)
+                    if os.path.lexists(dest) and not dest.samefile(src):
+                        log.warning("couldn't rename %s back to %s: it's there already", now, home)
+                        continue
+                    os.rename(src, dest)
+                except OSError as err:
+                    log.warning("couldn't rename %s back to %s: %s", now, home, err)
                     continue
-                os.rename(src, dest)
-            except OSError as err:
-                log.warning("couldn't rename %s back to %s: %s", now, home, err)
-                continue
             self._repath(now, home)
             self.state.commit()
             change_things(cfg, lambda t: t.moved(now, home))
-            changed = True
-        replace_folder_names(cfg, {k: v for k, v in names.items()
-                                   if v != posixpath.basename(k) and (self.root / k).is_dir()})
+        self._relink()
+        self.state.commit()
+        self.reindex()  # (only paths changed: no file is read again)
+        replace_folder_names(cfg, {k: v for k, v in live.items() if v != posixpath.basename(k)})
         self._reload()
-        if changed:
-            self._relink()
-            self.state.commit()
-            self.reindex()
 
     def _repath(self, old: str, new: str) -> None:
         """Every path we've recorded at or under `old` now starts with `new`."""
@@ -538,9 +538,12 @@ class Engine:
             if rec is None or rec.path is None or not link.is_symlink():
                 continue
             want = os.path.relpath(self.root / rec.path, link.parent)
-            if os.readlink(link) != want:
-                link.unlink()
-                os.symlink(want, link)
+            try:
+                if os.readlink(link) != want:
+                    link.unlink()
+                    os.symlink(want, link)
+            except OSError as err:
+                log.warning("couldn't link %s: %s", path, err)
 
     def list_dir(self, rel: str = "") -> list[Entry]:
         """A folder's contents as the app shows them; see `browse.list_dir`."""

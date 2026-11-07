@@ -22,8 +22,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from . import __version__, content
-from .config import PREFS_FILE, Account
-from .engine import Engine, NotInitialized
+from .config import PREFS_FILE, Account, ConfigError
+from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import inside
 from .models import Course
 from .search import Hit, course_label, pick_courses
@@ -510,4 +510,10 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
 
 
 def serve() -> None:
-    create_server(Account.load()).run()
+    account = Account.load()
+    if account is not None:
+        try:
+            migrate_folder_names(account.root)
+        except (NotInitialized, ConfigError):  # (each call says so)
+            pass
+    create_server(account).run()

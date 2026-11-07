@@ -125,7 +125,9 @@ without the Canvas website or Finder.
   - In the app: `open(thing)` opens anything where it opens; `ways(thing)` is what its menu
     offers; each place renders a thing its own way (a tab shows it, a card sums it up).
   - Old config formats (pinned without `type`, `tab_items`, `cards`, `hidden_links`, app.toml's
-    `tab_order`...) are read by `old_*` in things.py and rewritten once, when the server starts.
+    `tab_order`...) are read by `old_*` in things.py and rewritten once, when the server starts. (`[folder_names]` also moves
+    folders, so it's undone where anything starts, the command line and `canvas mcp` too:
+    `migrate_folder_names`.)
 - **Dragging uses pointer events, not HTML5 drag and drop:**
   - `lib/drag.ts` (`trackDrag`): threshold, the copy that follows the pointer, auto-scroll, the
     swallowed click.

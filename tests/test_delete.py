@@ -250,7 +250,8 @@ def test_resuming_in_a_renamed_folder(root, fake):
     two_weeks(fake)
     pull(root, fake)
     with Engine(root) as e:
-        renamed = e.rename_folder(MODULES, "Weeks")
+        renamed = MODULES
+        e.rename_folder(renamed, "Weeks")
         e.untrack([renamed])
         e.track([f"{renamed}/01 Week 1"])
     assert skip_folders(root) == [WEEK2]  # (Canvas's names)

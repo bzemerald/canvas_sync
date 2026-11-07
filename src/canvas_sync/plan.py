@@ -126,8 +126,7 @@ class Inspector:
         return LocalInfo(None)
 
     @staticmethod
-    def _modified(rec: FileRecord, path: Path | str, st: os.stat_result | None = None) -> bool:
-        st = st or os.stat(path)
+    def _modified(rec: FileRecord, path: str, st: os.stat_result) -> bool:
         if st.st_mtime == rec.snap_mtime and st.st_size == rec.snap_size:
             return False
         return sha256_file(Path(path)) != rec.base_hash

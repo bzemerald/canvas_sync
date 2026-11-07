@@ -5,13 +5,17 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from canvas_sync import Engine
-from canvas_sync.config import Account, Settings, change_things, needs_titles, old_folder_names, save_pinned
+from canvas_sync import Engine, agent
+from canvas_sync.config import (
+    Account, ConfigError, Settings, change_things, needs_titles, old_folder_names, save_pinned, update_skip_folders,
+)
 from canvas_sync.engine import migrate_folder_names
+from canvas_sync.plan import Scope
 from canvas_sync.things import Entry, Thing
 from canvas_sync.catalog import catalog
 from canvas_sync.server import create_app
@@ -24,7 +28,8 @@ LINK = f"{COURSE}/Files/Lectures/lec1.pdf"
 
 def rename(root: Path, rel: str, name: str) -> str:
     with Engine(root) as e:
-        return e.rename_folder(rel, name)
+        e.rename_folder(rel, name)
+    return rel
 
 
 def names(root: Path) -> dict[str, str]:
@@ -195,6 +200,76 @@ def test_an_old_name_for_a_folder_that_is_gone_is_dropped(root, fake):
     assert names(root) == {} and old_folder_names(cfg) is None
 
 
+def test_an_interrupted_going_back_runs_again(root, fake, monkeypatch):
+    pull(root, fake)
+    before = tree(root)
+    cfg = root / ".canvas/config.toml"
+    renamed_on_disk(root, {WEEK1: "第一周"})
+    os.rename(root / MOD / "第一周", root / WEEK1)  # renamed, and stopped before that was recorded
+
+    def stops(self, *args):
+        raise RuntimeError("stopped")
+
+    monkeypatch.setattr(Engine, "reindex", stops)
+    with pytest.raises(RuntimeError):
+        migrate_folder_names(root)
+    assert old_folder_names(cfg) is not None  # (so it isn't done yet)
+    monkeypatch.undo()
+
+    migrate_folder_names(root)
+
+    assert tree(root) == before and old_folder_names(cfg) is None
+    with Engine(root) as e:
+        assert e.status() == []
+        assert [h.path for h in e.search("lec1")] == [f"{WEEK1}/lec1.pdf"]
+
+
+def test_a_folder_you_deleted_goes_back_in_the_records(root, fake):
+    pull(root, fake)
+    renamed_on_disk(root, {WEEK1: "第一周"})
+    shutil.rmtree(root / MOD / "第一周")
+    with Engine(root) as e:
+        for r in e.state.all_files():
+            e.state.update(r.id, ignored=1)
+        e.state.commit()
+    update_skip_folders(root / ".canvas/config.toml", add=[WEEK1])
+
+    migrate_folder_names(root)
+
+    assert names(root) == {WEEK1: "第一周"}
+    with Engine(root) as e:
+        assert {r.path for r in e.state.all_files()} == {f"{WEEK1}/lec1.pdf"}
+        e.restore_in(Scope(paths=[WEEK1]))
+        assert e.settings.skip_folders == []
+    assert (root / WEEK1 / "lec1.pdf").read_bytes() == b"v1"
+
+
+def test_a_name_no_course_goes_through_renames_nothing(root, fake):
+    pull(root, fake)
+    (root / "Mine/My Notes").mkdir(parents=True)
+    cfg = root / ".canvas/config.toml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '\n[folder_names]\n"Mine/Notes" = "My Notes"\n', encoding="utf-8")
+    migrate_folder_names(root)
+    assert (root / "Mine/My Notes").is_dir() and not (root / "Mine/Notes").exists()
+    assert names(root) == {} and old_folder_names(cfg) is None
+
+
+def test_a_broken_config_is_said_as_such(root):
+    cfg = root / ".canvas/config.toml"
+    cfg.write_text("[broken", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        migrate_folder_names(root)
+
+
+def test_the_assistant_starting_goes_back_too(root, fake, monkeypatch):
+    pull(root, fake)
+    renamed_on_disk(root, {WEEK1: "第一周"})
+    monkeypatch.setattr(agent.Account, "load", classmethod(lambda cls: Account(BASE, root)))
+    monkeypatch.setattr(agent, "create_server", lambda account: SimpleNamespace(run=lambda: None))
+    agent.serve()
+    assert (root / WEEK1 / "lec1.pdf").exists()
+
+
 @pytest.fixture
 def api(root, fake):
     pull(root, fake)
@@ -274,7 +349,7 @@ def test_api_rename_and_pin(api, root):
     assert api.put("/api/pinned", json={"entries": [{"type": "folder", "path": WEEK1}]}).json() == [
         {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1}
     ]
-    assert api.post("/api/rename", json={"path": WEEK1, "name": "Week One"}).json() == {"path": WEEK1}
+    assert api.post("/api/rename", json={"path": WEEK1, "name": "Week One"}).status_code == 200
     assert api.get("/api/pinned").json()[0]["path"] == WEEK1
     assert api.get("/api/folder-titles").json() == {WEEK1: "Week One"}
     assert api.post("/api/rename", json={"path": ".canvas", "name": "y"}).status_code == 400

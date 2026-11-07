@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import fnmatch
 import mimetypes
-import posixpath
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass

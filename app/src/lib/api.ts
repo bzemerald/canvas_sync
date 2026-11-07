@@ -347,7 +347,7 @@ export interface Usage {
 }
 /** Everything search can go to by name, what words stand for ("mt": midterm; the index's, and
  * yours), and what you open. */
-export const catalog = () => api<{ things: CatalogEntry[]; abbreviations: Record<string, string[]> } & Usage>("/catalog");
+export const catalog = () => api<{ things: CatalogEntry[]; abbreviations: Record<string, string[]>; folder_titles: Record<string, string> } & Usage>("/catalog");
 /** Search as you type, in the index: `q` only words to find (the app read the courses, kinds and
  * times out of what was typed: lib/query.ts), narrowed to `courses`, `kinds`, `since` up to `until`,
  * files `under` a folder. */
@@ -483,9 +483,8 @@ export const deletePaths = (paths: string[], stopSyncingFolders: boolean) =>
 export const untrack = (paths: string[]) => post<{ files: number }>("/untrack", { paths });
 export const track = (paths: string[]) => post<{ files: number }>("/track", { paths });
 
-/** Rename a folder; syncing keeps putting Canvas's files in it. Returns the new path. */
 /** What the app calls a folder (on disk it keeps its name); "": its own name. */
-export const rename = (path: string, name: string) => post<{ path: string }>("/rename", { path, name });
+export const rename = (path: string, name: string) => post<{ ok: boolean }>("/rename", { path, name });
 export const folderTitles = () => api<Record<string, string>>("/folder-titles");
 
 /** A JPEG preview as an object URL, or null if the file has none. */
