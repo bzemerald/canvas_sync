@@ -1,5 +1,6 @@
 // 设置: the account, syncing, language. Preferences are this computer's (app.toml, via the
 // backend); which courses sync is the sync folder's (its config.toml), shared with the CLI.
+import { open } from "@tauri-apps/plugin-dialog";
 import { Check, CheckCircle2, CircleAlert, Copy, FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
@@ -32,6 +33,7 @@ export function Settings({ sync, onSync, onAccount }: {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -125,6 +127,9 @@ export function Settings({ sync, onSync, onAccount }: {
                     className="shrink-0 rounded p-1 text-muted hover:bg-chip hover:text-fg">
                     <FolderOpen className="size-4" />
                   </button>
+                  <Button onClick={() => setMoving(true)} disabled={!!sync?.running} className="shrink-0 px-2.5! py-1! text-xs!">
+                    {t("移动…")}
+                  </Button>
                 </span>
               </Row>
             </>
@@ -209,6 +214,7 @@ export function Settings({ sync, onSync, onAccount }: {
           </div>
         </Dialog>
       )}
+      {moving && account?.root && <MoveFolderDialog root={account.root} onClose={() => setMoving(false)} />}
       {switching && account && (
         <Dialog title={t("切换账号或学校")} onClose={() => setSwitching(false)}>
           <div className="pb-3">
@@ -404,6 +410,66 @@ function MeaningRow() {
     >
       <Toggle on={state.on} onChange={turn} />
     </Row>
+  );
+}
+
+/** Everything in the sync folder, moved to an empty folder of your choice. */
+function MoveFolderDialog({ root, onClose }: { root: string; onClose: () => void }) {
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [leftBehind, setLeftBehind] = useState<string | null>(null);
+  const choose = async () => {
+    const picked = await open({ directory: true, title: t("选择同步文件夹") });
+    if (typeof picked === "string") {
+      setTarget(picked);
+      setError(null);
+    }
+  };
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { left_behind } = await api.moveWorkspace(target);
+      if (left_behind) setLeftBehind(left_behind);
+      else location.reload(); // every path is somewhere else now
+    } catch (e) {
+      setError(friendly((e as Error).message));
+      setBusy(false);
+    }
+  };
+  if (leftBehind) {
+    return (
+      <Dialog title={t("移动同步文件夹")} onClose={stay}
+        footer={<Button primary onClick={() => location.reload()}>{t("完成")}</Button>}>
+        <p className="mb-2 text-fg-soft [overflow-wrap:anywhere] select-text">
+          {t("文件已经移好了，但旧文件夹没能删干净，可以自己删掉：{path}", { path: leftBehind })}
+        </p>
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog title={t("移动同步文件夹")} onClose={busy ? stay : onClose}
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>{t("取消")}</Button>
+          <Button primary disabled={busy || !target} onClick={() => void go()}>
+            {busy ? t("正在移动…") : t("移动")}
+          </Button>
+        </>
+      }>
+      <p className="mb-1 font-medium">{t("现在的位置")}</p>
+      <code className="mb-3 block truncate rounded-md border border-line bg-chip px-2.5 py-1.5" title={root}>{root}</code>
+      <p className="mb-1 font-medium">{t("移到")}</p>
+      <div className="flex gap-2">
+        <code className={`min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5 ${target ? "" : "font-sans text-muted"}`} title={target}>
+          {target || t("还没选")}
+        </code>
+        <Button disabled={busy} onClick={() => void choose()}>{t("选择…")}</Button>
+      </div>
+      <p className="mt-1.5 mb-3 text-xs text-muted">{t("选一个空文件夹。所有课程文件和设置都会搬过去，不用重新下载。")}</p>
+      {error && <p className="mb-3 text-danger">{error}</p>}
+    </Dialog>
   );
 }
 

@@ -232,3 +232,17 @@ def test_the_app_says_how_to_start_it(root):
         assert got["args"] == ["-m", "canvas_sync", "mcp"] and Path(got["command"]).name == "python.exe"
     else:
         assert got["args"] == ["mcp"] and Path(got["command"]).name == "canvas"
+
+
+def test_a_folder_moved_by_the_app_is_found(root, course, tmp_path, monkeypatch):
+    monkeypatch.setattr("canvas_sync.config.ACCOUNT_FILE", tmp_path / "home" / "config.toml")
+    pull(root, course)
+    new = tmp_path / "Moved"
+
+    async def go() -> None:
+        async with Client(create_server(Account(BASE, root))) as c:  # (started before the move)
+            assert (await c.call_tool("list_courses", {})).structured_content["sync_root"] == str(root.resolve())
+            root.rename(new)
+            Account(BASE, new).save()
+            assert (await c.call_tool("list_courses", {})).structured_content["sync_root"] == str(new.resolve())
+    asyncio.run(go())

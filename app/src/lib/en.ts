@@ -601,6 +601,22 @@ export const en: Record<string, string | [string, string]> = {
   "没有找到": "Nothing found",
 
   "在 {app} 中打开": "Open in {app}",
+  "移动…": "Move…",
+  "移动同步文件夹": "Move sync folder",
+  "现在的位置": "Current location",
+  "移到": "Move to",
+  "移动": "Move",
+  "正在移动…": "Moving…",
+  "选一个空文件夹。所有课程文件和设置都会搬过去，不用重新下载。":
+    "Choose an empty folder. All your course files and settings move there, with nothing to download again.",
+  "文件已经移好了，但旧文件夹没能删干净，可以自己删掉：{path}":
+    "Your files have moved, but the old folder couldn't be fully deleted. You can delete it yourself: {path}",
+  "没能移动同步文件夹，文件还在原来的位置。可能有文件正被其他应用使用，关掉后再试一次。":
+    "Couldn't move the sync folder, so your files are still where they were. Another app may be using one of them: close it and try again.",
+  "不能移到现在的同步文件夹里面。请选别的文件夹。": "It can't move inside the current sync folder. Choose another folder.",
+  "这个文件夹不是空的。请选一个空文件夹。": "That folder isn't empty. Choose an empty folder.",
+  "那里的磁盘空间不够放下同步文件夹。": "There isn't enough disk space there for the sync folder.",
+  "正在移动同步文件夹，等移动完成再试": "The sync folder is moving. Try again when it's done",
 
   // -- picking courses
   "去掉": "Remove",

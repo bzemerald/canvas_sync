@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import errno
 import functools
 import hashlib
 import os
@@ -39,6 +40,72 @@ def clone_file(src: Path, dst: Path) -> None:
     if _clonefile is not None and _clonefile(os.fsencode(src), os.fsencode(dst), 0) == 0:
         return
     shutil.copy2(src, dst)
+
+
+class MoveError(Exception):
+    pass
+
+
+_NOT_CONTENT = {".DS_Store", "Thumbs.db", "desktop.ini"}  # (what file managers leave in a folder)
+
+
+def move_tree(src: Path, dst: Path) -> bool:
+    """Everything in `src` moved into `dst`, an empty folder (made if it isn't there). On failure
+    `src` is as it was. True: it was copied (another disk), and `src` still has to be deleted."""
+    if dst == src or dst.is_relative_to(src):
+        raise MoveError("can't move into itself")
+    if dst.exists() and not dst.is_dir():
+        raise MoveError("not a folder")
+    there = list(dst.iterdir()) if dst.exists() else []
+    if any(p.name not in _NOT_CONTENT for p in there):
+        raise MoveError("move target not empty")
+    made = not dst.exists()
+    for p in there:
+        p.unlink()
+    dst.mkdir(parents=True, exist_ok=True)
+    items = list(src.iterdir())
+    try:
+        if src.stat().st_dev == dst.stat().st_dev:
+            try:
+                _rename_into(items, dst)
+                return False
+            except OSError as err:
+                if err.errno != errno.EXDEV:
+                    raise
+        _copy_into(src, items, dst)
+        return True
+    except (OSError, MoveError):
+        if made:
+            dst.rmdir()
+        raise
+
+
+def _rename_into(items: list[Path], dst: Path) -> None:
+    moved: list[Path] = []
+    try:
+        for p in items:
+            os.rename(p, dst / p.name)
+            moved.append(p)
+    except OSError:
+        for p in reversed(moved):
+            os.rename(dst / p.name, p)
+        raise
+
+
+def _copy_into(src: Path, items: list[Path], dst: Path) -> None:
+    size = sum(os.lstat(os.path.join(folder, f)).st_size for folder, _, files in os.walk(src) for f in files)
+    if shutil.disk_usage(dst).free < size:
+        raise MoveError("not enough room")
+    try:
+        for p in items:
+            if p.is_dir() and not p.is_symlink():
+                shutil.copytree(p, dst / p.name, symlinks=True)
+            else:
+                shutil.copy2(p, dst / p.name, follow_symlinks=False)
+    except OSError:
+        for p in dst.iterdir():  # (it was empty: all of this is what was just copied)
+            shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
+        raise
 
 
 def open_path(path: Path, reveal: bool = False, preview: bool = False) -> None:

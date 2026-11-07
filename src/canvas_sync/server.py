@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import re
 import secrets
 import socket
@@ -51,7 +52,7 @@ from .config import (
 from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
-from .local import open_path
+from .local import MoveError, move_tree, open_path
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
 from .search import course_label
@@ -203,6 +204,10 @@ class HideRequest(BaseModel):
     courses: list[int] = []      # /courses/hide: which (a whole term)
 
 
+class MoveRequest(BaseModel):
+    root: str
+
+
 class FolderRequest(BaseModel):
     root: str
     new: bool  # True: an empty folder, to sync into anew; False: the old one, moved
@@ -282,6 +287,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     )
     job = SyncJob()
     meaning_job = MeaningJob()
+    moving = False  # the sync folder is on its way elsewhere (POST /account/move)
     home = prefs_path.parent  # the app's own folder (models/ is in it)
     tasks: set[asyncio.Task[None]] = set()
 
@@ -294,12 +300,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         path = path[path.find("/api") + 4:]
         if account is None and path not in SETUP_PATHS:
             raise HTTPException(409, "not set up")
+        if moving and path not in {"/health", "/sync", "/account", "/account/move"}:
+            raise HTTPException(409, "moving the sync folder")  # (its databases are on their way)
         if missing() and path not in SETUP_PATHS | {"/account/folder"}:
             raise HTTPException(409, "sync folder missing")
 
     def missing() -> bool:
         """The sync folder isn't where it was (moved, renamed or deleted)."""
-        return account is not None and not (account.root / META_DIR / "config.toml").exists()
+        return account is not None and not moving and not (account.root / META_DIR / "config.toml").exists()
 
     def prefs() -> AppPrefs:
         return AppPrefs.load(prefs_path)
@@ -326,7 +334,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def choosing() -> bool:
         """Signed in to a folder that has never synced: which courses to sync is chosen first
         (Canvas leaves most past courses "active", so syncing them all would bring every term)."""
-        if account is None or missing():
+        if account is None or moving or missing():
             return False
         with Engine(account.root) as e:
             return e.state.last_synced() is None
@@ -443,6 +451,35 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             except HTTPException:
                 pass  # signed out
         return account_info()
+
+    @api.post("/account/move")
+    async def move_workspace(req: MoveRequest) -> dict[str, Any]:
+        """Everything in the sync folder, moved to an empty folder, and used from there."""
+        nonlocal moving
+        assert account is not None
+        if job.running or meaning_job.phase in ("downloading", "indexing"):
+            raise HTTPException(409, "wait for the sync to finish")
+        old, new = account.root.resolve(), Path(req.root).expanduser().resolve()
+        moving = True
+        left_behind = None
+        try:
+            try:
+                copied = await asyncio.to_thread(move_tree, old, new)
+            except MoveError as err:
+                raise HTTPException(400, str(err))
+            except OSError as err:
+                raise HTTPException(400, f"could not move: {err}")
+            account.root = new  # (only now is the old one gone: a crash before it leaves a whole copy)
+            account.save()
+            try:
+                await asyncio.to_thread(shutil.rmtree if copied else os.rmdir, old)
+            except OSError:
+                if copied:
+                    left_behind = str(old)
+        finally:
+            moving = False
+        update_files()
+        return {**account_info(), "left_behind": left_behind}
 
     @api.post("/account/token")
     async def replace_token(req: TokenRequest) -> dict[str, Any]:
@@ -1116,7 +1153,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/sync")
     def sync_state() -> dict[str, Any]:
-        last = None if job.running else last_synced()
+        last = None if job.running or moving else last_synced()
         return {**asdict(job), "running": job.running, "last_synced": last.isoformat() if last else None}
 
     def start_sync(req: SyncRequest) -> None:
@@ -1124,6 +1161,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         assert account is not None
         if job.running:
             raise HTTPException(409, "a sync is already running")
+        if moving:
+            raise HTTPException(409, "moving the sync folder")
         canvas_token = account.token()
         if not canvas_token:
             raise HTTPException(400, "not signed in to Canvas")
@@ -1199,7 +1238,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         return max(times, default=None)
 
     def sync_if_due(within: timedelta) -> None:
-        if account is None or missing() or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
+        if account is None or moving or missing() or choosing() or not _due(last_synced(), within, datetime.now(timezone.utc)):
             return
         try:
             start_sync(SyncRequest())

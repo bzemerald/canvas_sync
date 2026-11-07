@@ -3,6 +3,12 @@
 import { t } from "./i18n";
 
 const SAYINGS: [RegExp, string][] = [
+  // (First: it quotes the system's error, which may say anything.)
+  [/could not move/, t("没能移动同步文件夹，文件还在原来的位置。可能有文件正被其他应用使用，关掉后再试一次。")],
+  [/move into itself/, t("不能移到现在的同步文件夹里面。请选别的文件夹。")],
+  [/move target not empty/, t("这个文件夹不是空的。请选一个空文件夹。")],
+  [/not enough room/, t("那里的磁盘空间不够放下同步文件夹。")],
+  [/moving the sync folder/, t("正在移动同步文件夹，等移动完成再试")],
   [/does not exist/, t("找不到这个文件了（可能已经在别处删除或移动）")],
   [/can't be changed/, t("这个不能改")],
   [/already exists/, t("这里已经有同名的文件夹了")],

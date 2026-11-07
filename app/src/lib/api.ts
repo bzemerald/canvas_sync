@@ -571,6 +571,10 @@ export const checkAccount = () => api<{ ok: boolean; user?: string; error?: stri
 export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
 /** The sync folder went missing: where it is now (`isNew` false), or an empty one to sync into anew. */
 export const moveFolder = (root: string, isNew: boolean) => post<AccountInfo>("/account/folder", { root, new: isNew });
+/** Everything in the sync folder, moved to an empty folder. `left_behind`: the old folder, if it
+ * couldn't all be deleted. */
+export const moveWorkspace = (root: string) =>
+  post<AccountInfo & { left_behind: string | null }>("/account/move", { root });
 export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
 export const signOut = () => post<AccountInfo>("/account/signout", {});
 /** What went wrong with Ed (see errors.ts: edSaying). */

@@ -27,6 +27,7 @@ from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import inside
 from .models import Course
 from .search import Hit, course_label, pick_courses
+from .state import META_DIR
 from .text import extract, html_to_text, slides
 from .things import Thing, of_item
 
@@ -121,12 +122,18 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE) -> MCP
     @contextmanager
     def engine() -> Iterator[Engine]:
         # One Engine per call: SQLite connections belong to the thread that made them.
+        nonlocal account
         if account is None:
             raise ToolError("Canvas Sync isn't set up yet: sign in in the Canvas Sync app (or `canvas init`), then sync.")
         try:
             e = Engine(account.root)
         except NotInitialized:
-            raise ToolError(f"Nothing has been synced to {account.root} yet: sync in Canvas Sync first.")
+            # The app may have moved the folder since this started.
+            now = Account.load()
+            if now is None or now.root == account.root or not (now.root / META_DIR).is_dir():
+                raise ToolError(f"Nothing has been synced to {account.root} yet: sync in Canvas Sync first.")
+            account = now
+            e = Engine(account.root)
         with e:
             yield e
 

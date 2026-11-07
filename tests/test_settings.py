@@ -280,3 +280,187 @@ def test_hide_a_whole_term(root, tmp_path, keychain):
         assert r == {"hidden": [], "excluded": []}
     settings = Settings.load(root / ".canvas" / "config.toml")
     assert (settings.hidden, settings.exclude) == ([3], [3])
+
+
+def moved_setup(api, root, tmp_path):
+    """A synced folder, with things of yours in it."""
+    assert api.post("/api/sync").status_code == 202
+    assert wait_for_sync(api)["phase"] == "done"
+    (root / ".canvas" / "notes").mkdir(exist_ok=True)
+    (root / ".canvas" / "notes" / "mine.md").write_text("note")
+    (root / "my own.txt").write_text("mine")
+    (root / ".hidden").write_text("hidden")
+    (root / "link").symlink_to("my own.txt")
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if "-wal" not in p.name and "-shm" not in p.name)
+
+
+def assert_moved(api, old, new, files):
+    assert sorted(p.relative_to(new).as_posix() for p in new.rglob("*")
+                  if "-wal" not in p.name and "-shm" not in p.name) == files
+    assert (new / "link").is_symlink() and (new / "link").read_text() == "mine"
+    assert not old.exists()
+    assert Account.load().root == new
+    h = api.get("/api/health").json()
+    assert h["root"] == str(new) and h["folder_missing"] is False
+    assert [c["id"] for c in api.get("/api/courses").json()] == [1]
+
+
+def test_move_folder_keeps_everything(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    canvas.put(1, "lec.pdf", b"lecture")
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        files = moved_setup(api, root, tmp_path)
+        new = (tmp_path / "Elsewhere" / "Canvas").resolve()  # (not there yet)
+        got = api.post("/api/account/move", json={"root": str(new)}).json()
+        assert got["root"] == str(new) and got["left_behind"] is None
+        assert_moved(api, root, new, files)
+
+        # It goes on from there: nothing downloaded again, nothing looks changed.
+        lecture = next(new.rglob("lec.pdf"))
+        before = lecture.stat().st_ino
+        assert api.post("/api/sync").status_code == 202
+        assert wait_for_sync(api)["phase"] == "done"
+        assert lecture.stat().st_ino == before
+        assert not [p for p in new.rglob("*") if "updated" in p.name or "mine)" in p.name]
+
+
+def test_move_folder_to_another_disk(root, tmp_path, canvas, keychain, monkeypatch):
+    keychain[BASE] = "t"
+    canvas.put(1, "lec.pdf", b"lecture")
+    import errno
+    import os as real_os
+
+    def no_rename(a, b, **kw):
+        raise OSError(errno.EXDEV, "cross-device")
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        files = moved_setup(api, root, tmp_path)
+        new = (tmp_path / "Disk").resolve()
+        monkeypatch.setattr("canvas_sync.local.os.rename", no_rename)
+        got = api.post("/api/account/move", json={"root": str(new)}).json()
+        monkeypatch.setattr("canvas_sync.local.os.rename", real_os.rename)
+        assert got["root"] == str(new) and got["left_behind"] is None
+        assert_moved(api, root, new, files)
+
+        # A copy's inode isn't the old one, and its time may not be: still nothing looks changed.
+        assert api.post("/api/sync").status_code == 202
+        assert wait_for_sync(api)["phase"] == "done"
+        assert not [p for p in new.rglob("*") if "updated" in p.name or "mine)" in p.name]
+
+
+def test_move_folder_fails_leaving_it_as_it_was(root, tmp_path, canvas, keychain, monkeypatch):
+    import errno
+    import shutil
+
+    keychain[BASE] = "t"
+    real_rename, real_copy, real_usage = server.os.rename, shutil.copy2, shutil.disk_usage
+    canvas.put(1, "lec.pdf", b"lecture")
+    canvas.put(2, "hw.pdf", b"homework")
+    new = (tmp_path / "New").resolve()
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        files = moved_setup(api, root, tmp_path)
+        before = (root / "my own.txt").read_text()
+
+        def check(status, detail):
+            r = api.post("/api/account/move", json={"root": str(new)})
+            assert r.status_code == status and detail in r.json()["detail"]
+            assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")
+                          if "-wal" not in p.name and "-shm" not in p.name) == files
+            assert (root / "my own.txt").read_text() == before
+            assert Account.load() is None or Account.load().root == root
+            assert not new.exists()  # (made for this, and gone again)
+            assert api.get("/api/health").json()["folder_missing"] is False
+
+        # The same disk: what had moved goes back.
+        n = [0]
+
+        def second_fails(a, b, **kw):
+            n[0] += 1
+            if n[0] == 2:
+                raise PermissionError("in use")
+            real_rename(a, b)
+        monkeypatch.setattr("canvas_sync.local.os.rename", second_fails)
+        check(400, "could not move")
+
+        # Another disk: what was copied is cleared.
+        def exdev(a, b, **kw):
+            raise OSError(errno.EXDEV, "cross-device")
+        copies = [0]
+
+        def third_copy_fails(a, b, **kw):
+            copies[0] += 1
+            if copies[0] == 3:
+                raise OSError("disk full")
+            return real_copy(a, b, **kw)
+        monkeypatch.setattr("canvas_sync.local.os.rename", exdev)
+        monkeypatch.setattr("canvas_sync.local.shutil.copy2", third_copy_fails)
+        check(400, "could not move")
+        monkeypatch.setattr("canvas_sync.local.shutil.copy2", real_copy)
+
+        monkeypatch.setattr("canvas_sync.local.shutil.disk_usage", lambda p: real_usage(p)._replace(free=0))
+        check(400, "not enough room")
+
+
+def test_move_folder_only_to_an_empty_folder(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        files = moved_setup(api, root, tmp_path)
+
+        def move(path):
+            return api.post("/api/account/move", json={"root": str(path)})
+        assert move(root).json()["detail"] == "can't move into itself"
+        assert move(root / "sub").json()["detail"] == "can't move into itself"
+        assert move(root.parent).json()["detail"] == "move target not empty"  # (it holds this one)
+        full = tmp_path / "Full"
+        full.mkdir()
+        (full / ".canvas").mkdir()
+        assert move(full).json()["detail"] == "move target not empty"
+        (tmp_path / "a file").write_text("x")
+        assert move(tmp_path / "a file").json()["detail"] == "not a folder"
+        assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")
+                      if "-wal" not in p.name and "-shm" not in p.name) == files
+
+        # What a file manager leaves in a folder doesn't count.
+        tidy = (tmp_path / "Tidy").resolve()
+        tidy.mkdir()
+        (tidy / ".DS_Store").write_text("x")
+        assert move(tidy).json()["root"] == str(tidy)
+
+
+def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keychain, monkeypatch):
+    keychain[BASE] = "t"
+    seen = {}
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        moved_setup(api, root, tmp_path)
+        real = server.move_tree
+
+        def looking(src, dst):
+            seen["courses"] = api.get("/api/courses").status_code
+            seen["sync"] = api.post("/api/sync").status_code
+            h = api.get("/api/health").json()
+            seen["health"] = (h["folder_missing"], h["choosing"])
+            seen["state"] = api.get("/api/sync").status_code
+            return real(src, dst)
+        monkeypatch.setattr(server, "move_tree", looking)
+        assert api.post("/api/account/move", json={"root": str(tmp_path / "New")}).status_code == 200
+    assert seen == {"courses": 409, "sync": 409, "health": (False, False), "state": 200}
+
+
+def test_move_folder_waits_for_a_sync(root, tmp_path, canvas, keychain, monkeypatch):
+    keychain[BASE] = "t"
+
+    async def still_going(*args, **kw):
+        pass
+    monkeypatch.setattr(server, "_run_sync", still_going)  # (so the job stays at its first phase)
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        assert api.post("/api/sync").status_code == 202
+        assert api.get("/api/sync").json()["running"]
+        assert api.post("/api/account/move", json={"root": str(tmp_path / "New")}).status_code == 409
+        assert not (tmp_path / "New").exists()
+
+
+def test_the_folder_opens_in_the_file_manager(root, tmp_path, canvas, keychain, monkeypatch):
+    opened = []
+    monkeypatch.setattr(server, "open_path", lambda p, **kw: opened.append((p, kw)))
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        assert api.post("/api/open", json={"path": ""}).status_code == 200
+    assert opened == [(root, {"reveal": False, "preview": False})]
