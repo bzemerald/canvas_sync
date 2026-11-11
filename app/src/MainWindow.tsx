@@ -52,7 +52,7 @@ import { ownFrame, useTrafficLights } from "./lib/window";
 import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
 import { shortDate } from "./lib/dates";
 import { edSaying, fileSaying, friendly, syncSaying } from "./lib/errors";
-import { SignInDialog, browserSignIn, cancelled } from "./components/SignIn";
+import { SignInDialog, browserSignIn } from "./components/SignIn";
 import { locale, t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
 
@@ -580,30 +580,20 @@ export function MainWindow() {
       return false;
     }
   };
-  /** The browser sign-in expired: sign in again (`silent`: only if the school still knows you),
-   * then sync what failed again. Whether that worked. */
-  const [renewing, setRenewing] = useState(false); // quietly, in a hidden window
-  const renewSignIn = async (silent: boolean): Promise<boolean> => {
-    if (!account?.base_url || !sync) return false;
-    const failed = sync;
-    if (silent) setRenewing(true);
-    try {
-      setAccount(await api.replaceCredentials({ cookies: await browserSignIn(account.base_url, silent) }));
-    } catch (e) {
-      if (!silent && !cancelled(e)) say(t("{what}：{why}", { what: t("登录失败"), why: friendly((e as Error).message) }));
-      return false;
-    } finally {
-      if (silent) setRenewing(false);
-    }
-    void startSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel);
-    return true;
-  };
-  // Once per sync that failed so: quietly first; the sidebar offers the window if that didn't do.
+  /** The browser sign-in expired: signed in again in a hidden window, if the school still knows
+   * you, and what failed syncs again. Once per sync that failed so; if it doesn't do, the sidebar
+   * offers to sign in (SignInDialog). */
+  const [renewing, setRenewing] = useState(false);
   const renewedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!sync?.expired || account?.auth !== "session" || renewedFor.current === sync.finished_at) return;
+    if (!sync?.expired || account?.auth !== "session" || !account.base_url || renewedFor.current === sync.finished_at) return;
     renewedFor.current = sync.finished_at;
-    void renewSignIn(true);
+    const failed = sync;
+    setRenewing(true);
+    void browserSignIn(account.base_url, true)
+      .then((cookies) => api.replaceCredentials({ cookies }))
+      .then((a) => (setAccount(a), void startSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel)), () => {})
+      .finally(() => setRenewing(false));
   }, [sync?.expired, sync?.finished_at, account?.auth]);
   const syncBusy = !!sync?.running;
   const openMenu = (items: MenuItem[], x: number, y: number) => setMenu({ x, y, items });
@@ -1196,7 +1186,7 @@ export function MainWindow() {
         ) : (
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })}
             session={account?.auth === "session"} renewing={renewing}
-            onSignIn={() => (account?.auth === "session" ? void renewSignIn(false) : setSigningIn(true))} />
+            onSignIn={() => setSigningIn(true)} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onPress={pressSearchButton} onClick={clickSearchButton} title={t("搜索")} keys={keysLabel(launcherKeys)} />
@@ -1991,7 +1981,7 @@ function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: {
       {sync.expired && (renewing ? (
         <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
       ) : (
-        <button onClick={onSignIn} className="mt-1 text-accent hover:underline">
+        <button onClick={onSignIn} className="mt-1 block text-left text-accent hover:underline">
           {session ? t("Canvas 登录已过期，点这里重新登录") : t("Canvas 令牌已失效，点这里更换")}
         </button>
       ))}
