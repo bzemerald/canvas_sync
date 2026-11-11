@@ -52,7 +52,7 @@ import { ownFrame, useTrafficLights } from "./lib/window";
 import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
 import { shortDate } from "./lib/dates";
 import { edSaying, fileSaying, friendly, syncSaying } from "./lib/errors";
-import { browserSignIn, cancelled } from "./components/SignIn";
+import { SignInDialog, browserSignIn, cancelled } from "./components/SignIn";
 import { locale, t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
 
@@ -146,6 +146,7 @@ export function MainWindow() {
   const [showChanges, setShowChanges] = usePref("showChanges", false); // what you changed, in files
   const [sync, setSync] = useState<SyncState | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
+  const [signingIn, setSigningIn] = useState(false); // signed out: signing in again (SignInDialog)
   const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
   const [collapsed, setCollapsed] = usePref<string[]>("sidebar-collapsed", []); // "pinned", "term:<term>"
   const [hiddenOpen, setHiddenOpen] = usePref("sidebar-hidden-open", false); // the hidden courses, folded at first
@@ -561,7 +562,7 @@ export function MainWindow() {
   /** Whether it started: not if signed out, or if one is already running (that one is shown). */
   const startSync = async (scope: Scope, label: string): Promise<boolean> => {
     if (signedOut) {
-      go({ kind: "settings" }); // sign in first
+      setSigningIn(true); // sign in first
       return false;
     }
     try {
@@ -1189,7 +1190,7 @@ export function MainWindow() {
           </button>
         </div>
         {signedOut ? (
-          <button onClick={() => go({ kind: "settings" })} className="mx-4 mb-2 rounded-md bg-warn-soft px-2.5 py-2 text-left text-xs text-warn hover:opacity-90">
+          <button onClick={() => setSigningIn(true)} className="mx-4 mb-2 rounded-md bg-warn-soft px-2.5 py-2 text-left text-xs text-warn hover:opacity-90">
             {t("还没有登录 Canvas，不能同步。点这里登录。")}
           </button>
         ) : (
@@ -1444,6 +1445,9 @@ export function MainWindow() {
         />
       )}
       {showingKeys && <KeysDialog onClose={() => setShowingKeys(false)} />}
+      {signingIn && account && (
+        <SignInDialog account={account} onClose={() => setSigningIn(false)} onDone={(a) => (setSigningIn(false), setAccount(a), refresh())} />
+      )}
       {restoring && (
         <RestoreDialog
           scope={restoring.scope}

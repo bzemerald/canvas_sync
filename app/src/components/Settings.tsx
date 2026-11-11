@@ -18,7 +18,7 @@ import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { updateSaying } from "./VersionLine";
 import { switchAccount } from "./Setup";
-import { browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
+import { SignInDialog, inputClass } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
@@ -32,8 +32,7 @@ export function Settings({ account, sync, onSync, onAccount }: {
 }) {
   const [check, setCheck] = useState<{ ok: boolean; error?: string } | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
-  const [newToken, setNewToken] = useState<string | null>(null); // replacing the token
-  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false); // again, to this account (SignInDialog)
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -56,28 +55,6 @@ export function Settings({ account, sync, onSync, onAccount }: {
       setPrefs(await api.setPrefs(changes));
     } catch (e) {
       setError(friendly((e as Error).message));
-    }
-  };
-  const saveToken = async () => {
-    setTokenError(null);
-    try {
-      changed(await api.replaceCredentials({ token: newToken ?? "" }));
-      setNewToken(null);
-      setCheck({ ok: true });
-    } catch (e) {
-      setTokenError(friendly((e as Error).message));
-    }
-  };
-  /** Signing in again in the Canvas window (or for the first time, instead of a token). */
-  const signInAgain = async () => {
-    if (!account?.base_url) return;
-    setError(null);
-    try {
-      changed(await api.replaceCredentials({ cookies: await browserSignIn(account.base_url) }));
-      setNewToken(null);
-      setCheck({ ok: true });
-    } catch (e) {
-      if (!cancelled(e)) setError(friendly((e as Error).message));
     }
   };
   /** Switching account or school: signed out, then the window goes to signing in (Setup.tsx),
@@ -122,34 +99,11 @@ export function Settings({ account, sync, onSync, onAccount }: {
                 </div>
                 <AccountStatus account={account} check={check} />
               </div>
-              {newToken !== null ? (
-                <div className="border-t border-line px-4 py-3">
-                  <p className="mb-2 text-xs text-muted">{tokenSteps()}</p>
-                  <div className="flex gap-2">
-                    <input type="password" autoFocus value={newToken} onChange={(e) => setNewToken(e.target.value)} placeholder={t("粘贴令牌")}
-                      autoComplete="off" spellCheck={false} className={inputClass} onKeyDown={(e) => e.key === "Enter" && void saveToken()} />
-                    <Button onClick={() => (setNewToken(null), setTokenError(null))}>{t("取消")}</Button>
-                    <Button primary disabled={!newToken.trim()} onClick={() => void saveToken()}>{t("保存")}</Button>
-                  </div>
-                  {tokenError && <p className="mt-2 text-xs text-danger">{tokenError}</p>}
-                  {account.base_url && (
-                    <button onClick={() => void api.openExternal(`${account.base_url}/profile/settings`)} className="mt-2 text-xs text-accent hover:underline">
-                      {t("打开 Canvas 设置页")}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
-                  {account.auth !== "token" && (
-                    <Button onClick={() => void signInAgain()}>{account.signed_in ? t("重新登录…") : t("在登录窗口中登录…")}</Button>
-                  )}
-                  {account.auth !== "session" && (
-                    <Button onClick={() => setNewToken("")}>{account.signed_in ? t("更换令牌…") : t("用令牌登录…")}</Button>
-                  )}
-                  {account.signed_in && <Button onClick={() => setConfirmSignOut(true)}>{t("退出登录…")}</Button>}
-                  <Button onClick={() => setSwitching(true)} disabled={!!sync?.running}>{t("切换账号或学校…")}</Button>
-                </div>
-              )}
+              <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
+                <Button onClick={() => setSigningIn(true)}>{account.signed_in ? t("重新登录…") : t("登录…")}</Button>
+                {account.signed_in && <Button onClick={() => setConfirmSignOut(true)}>{t("退出登录…")}</Button>}
+                <Button onClick={() => setSwitching(true)} disabled={!!sync?.running}>{t("切换账号或学校…")}</Button>
+              </div>
               <Row label={t("同步文件夹")} hint={t("课程文件都在这里。")}>
                 <span className="flex min-w-0 items-center gap-2">
                   <code className="min-w-0 truncate text-xs" title={account.root ?? ""}>{account.root}</code>
@@ -247,6 +201,10 @@ export function Settings({ account, sync, onSync, onAccount }: {
         </Dialog>
       )}
       {moving && account?.root && <MoveFolderDialog root={account.root} onClose={() => setMoving(false)} />}
+      {signingIn && account && (
+        <SignInDialog account={account} onClose={() => setSigningIn(false)}
+          onDone={(a) => (setSigningIn(false), changed(a), setCheck({ ok: true }))} />
+      )}
       {switching && (
         <Dialog
           title={t("切换账号或学校？")}
