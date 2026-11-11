@@ -484,8 +484,8 @@ export const en: Record<string, string | [string, string]> = {
   "这台电脑上保存的令牌会被删除，之后不能再同步或打开外部工具。已经下载的文件、置顶和设置都会保留，重新登录后接着用。":
     "The token saved on this computer is deleted, so nothing syncs and external tools won't open. Downloaded files, pins and settings stay, ready for when you sign in again.",
   "切换账号或学校？": "Switch account or school?",
-  "会先退出现在的账号，再从第一步重新登录。已经下载的文件和设置会留在现在的同步文件夹里。":
-    "You'll be signed out of this account first, then sign in from the first step. Downloaded files and settings stay in the current sync folder.",
+  "会退出现在的账号。已经下载的文件和设置会留在现在的同步文件夹里。":
+    "You'll be signed out of this account. Downloaded files and settings stay in the current sync folder.",
   "切换账号或学校": "Switch account or school",
   "换成另一所学校时，请选一个新的同步文件夹。": "For another school, choose a new sync folder.",
   "切换": "Switch",

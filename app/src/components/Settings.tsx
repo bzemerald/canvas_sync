@@ -216,7 +216,7 @@ export function Settings({ account, sync, onSync, onAccount }: {
             </>
           }
         >
-          <p className="text-fg-soft">{t("会先退出现在的账号，再从第一步重新登录。已经下载的文件和设置会留在现在的同步文件夹里。")}</p>
+          <p className="text-fg-soft">{t("会退出现在的账号。已经下载的文件和设置会留在现在的同步文件夹里。")}</p>
         </Dialog>
       )}
     </div>
