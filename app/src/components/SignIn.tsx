@@ -94,7 +94,7 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
       <p className="text-xs text-muted">{t("第 {n} 步，共 3 步", { n: at + 1 })}</p>
       {step === "folder" && (
         <div>
-          <span className="mb-1 block font-medium">{t("同步文件夹")}</span>
+          <span className="mb-1 block font-medium">{t("选择同步文件夹")}</span>
           <div className="flex gap-2">
             <code className={`min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5 ${root ? "" : "font-sans text-muted"}`} title={root}>
               {root || t("还没选")}
@@ -168,8 +168,7 @@ export function SignInPage({ onDone }: { onDone: () => void }) {
   return (
     <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
       <div className="w-full max-w-md">
-        <h1 className="mb-1 text-xl font-semibold">{t("连接 Canvas")}</h1>
-        <p className="mb-5 text-sm text-muted">{t("登录后，课程文件会同步到这台电脑上；公告、作业和成绩也能直接在这里看。")}</p>
+        <h1 className="mb-5 text-xl font-semibold">{t("连接 Canvas")}</h1>
         <div className="rounded-xl border border-line bg-panel p-5">
           <SignInForm onDone={onDone} />
         </div>
