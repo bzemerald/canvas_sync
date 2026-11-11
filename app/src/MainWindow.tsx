@@ -565,6 +565,10 @@ export function MainWindow() {
       setSigningIn(true); // sign in first
       return false;
     }
+    return runSync(scope, label);
+  };
+  /** Starting it, already signed in (just now: `signedOut` above is still this render's). */
+  const runSync = async (scope: Scope, label: string): Promise<boolean> => {
     try {
       const started = await api.startSync(scope);
       setSyncLabel(label);
@@ -581,18 +585,26 @@ export function MainWindow() {
     }
   };
   /** The browser sign-in expired: signed in again in a hidden window, if the school still knows
-   * you, and what failed syncs again. Once per sync that failed so; if it doesn't do, the sidebar
-   * offers to sign in (SignInDialog). */
+   * you, and what failed syncs again. Once per sync that failed so, and not again for the sync
+   * that started (it failing so too, quietly signing in doesn't do): then the sidebar offers to
+   * sign in (SignInDialog). */
   const [renewing, setRenewing] = useState(false);
   const renewedFor = useRef<string | null>(null);
+  const renewedSync = useRef(false); // the sync now (or last) was started by signing in quietly
   useEffect(() => {
+    if (sync?.finished_at && !sync.expired) renewedSync.current = false; // (it ended otherwise)
     if (!sync?.expired || account?.auth !== "session" || !account.base_url || renewedFor.current === sync.finished_at) return;
     renewedFor.current = sync.finished_at;
+    if (renewedSync.current) return void (renewedSync.current = false);
     const failed = sync;
     setRenewing(true);
     void browserSignIn(account.base_url, true)
       .then((cookies) => api.replaceCredentials({ cookies }))
-      .then((a) => (setAccount(a), void startSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel)), () => {})
+      .then((a) => {
+        setAccount(a);
+        renewedSync.current = true;
+        void runSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel);
+      }, () => {})
       .finally(() => setRenewing(false));
   }, [sync?.expired, sync?.finished_at, account?.auth]);
   const syncBusy = !!sync?.running;
@@ -1441,7 +1453,7 @@ export function MainWindow() {
           setSigningIn(false);
           setAccount(a);
           refresh();
-          if (sync?.expired) void startSync(sync.scope.length ? { paths: sync.scope } : {}, syncLabel); // (what failed for it)
+          if (sync?.expired) void runSync(sync.scope.length ? { paths: sync.scope } : {}, syncLabel); // (what failed for it)
         }} />
       )}
       {restoring && (
