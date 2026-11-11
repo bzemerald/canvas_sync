@@ -5,7 +5,7 @@ import { useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo } from "../lib/api";
 import { friendly } from "../lib/errors";
-import { t } from "../lib/i18n";
+import { t, tx } from "../lib/i18n";
 import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 
@@ -53,7 +53,7 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
 }) {
   const [step, setStep] = useState<Step>("folder");
   const [url, setUrl] = useState(address?.replace(/^https:\/\//, "") ?? "");
-  const [how, setHow] = useState<"browser" | "token">("browser");
+  const [how, setHow] = useState<"browser" | "token">("token");
   const [token, setToken] = useState("");
   const [root, setRoot] = useState(folder ?? "~/Canvas");
   const [busy, setBusy] = useState(false);
@@ -119,7 +119,7 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
         <div>
           <span className="mb-1 block font-medium">{t("登录方式")}</span>
           <div className="flex rounded-md border border-line p-0.5" role="radiogroup">
-            {([["browser", t("在登录窗口中登录")], ["token", t("访问令牌")]] as const).map(([k, label]) => (
+            {([["token", t("访问令牌")], ["browser", t("在登录窗口中登录")]] as const).map(([k, label]) => (
               <button key={k} type="button" role="radio" aria-checked={how === k} onClick={() => (setHow(k), setError(null))}
                 className={`flex-1 rounded px-2 py-1 text-xs ${how === k ? "bg-selected font-medium text-accent" : "text-muted hover:text-fg"}`}>
                 {label}
@@ -128,7 +128,7 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
           </div>
           {how === "browser" ? (
             <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-              {t("在新打开的浏览器窗口中完成登录。")}
+              {t("在打开的窗口中完成登录。")}
             </span>
           ) : (
             <>
@@ -141,6 +141,11 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
                     {t("打开 Canvas 设置页")}
                   </button>
                 )}
+              </span>
+              <span className="mt-1.5 block text-xs leading-relaxed text-muted">
+                {tx("有些学校不允许学生生成访问令牌，这时请用{page}登录。", {
+                  page: <button type="button" onClick={() => setHow("browser")} className="text-accent hover:underline">{t("登录页")}</button>,
+                })}
               </span>
             </>
           )}
