@@ -17,7 +17,8 @@ import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { updateSaying } from "./VersionLine";
-import { SignInForm, browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
+import { Setup } from "./Setup";
+import { browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
@@ -234,18 +235,10 @@ export function Settings({ account, sync, onSync, onAccount }: {
       )}
       {moving && account?.root && <MoveFolderDialog root={account.root} onClose={() => setMoving(false)} />}
       {switching && account && (
-        <Dialog title={t("切换账号或学校")} onClose={() => setSwitching(false)}>
-          <div className="pb-3">
-            <SignInForm
-              another
-              folder={account.root ?? undefined}
-              address={account.base_url ?? undefined}
-              submitLabel={t("切换")}
-              onCancel={() => setSwitching(false)}
-              onDone={() => location.reload()} // everything is someone else's now
-            />
-          </div>
-        </Dialog>
+        // Once switched, everything is someone else's: the window starts over.
+        <Setup another onFinish={() => location.reload()} onClose={() => setSwitching(false)} start={[{
+          kind: "sign in", progress: { root: account.root ?? undefined, url: account.base_url?.replace(/^https:\/\//, "") },
+        }]} />
       )}
     </div>
   );

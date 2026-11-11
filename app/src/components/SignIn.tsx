@@ -32,23 +32,10 @@ function siteOf(url: string): string | null {
 export const inputClass = "w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent";
 
 type Step = "folder" | "site" | "auth";
-
-// The first sign-in, as far as it got: changing the language reloads the page. (Not the token.)
-const KEPT = "sign-in";
-type Kept = { step: Step; url: string; how: "browser" | "token"; root: string };
-function kept(): Partial<Kept> {
-  try {
-    return JSON.parse(sessionStorage.getItem(KEPT) ?? "{}") as Partial<Kept>;
-  } catch {
-    return {};
-  }
-}
-export function forgetSignIn() {
-  try {
-    sessionStorage.removeItem(KEPT);
-  } catch { /* (nothing to forget) */ }
-}
 const STEPS: Step[] = ["folder", "site", "auth"]; // (signing in last: it's what sets it all up)
+
+/** How far a sign-in got (not the token: that's never kept). */
+export type Progress = { step: Step; url: string; how: "browser" | "token"; root: string };
 
 /** Which step a sign-in's error is about, to go back there. */
 function stepOf(message: string): Step {
@@ -57,30 +44,22 @@ function stepOf(message: string): Step {
   return "auth";
 }
 
-/** Signing in, a step at a time: the sync folder, the school's Canvas, how to sign in. */
-export function SignInForm({ another, folder, address, auth, start = "folder", keep, submitLabel, onDone, onCancel }: {
+/** Signing in, a step at a time: the sync folder, the school's Canvas, how to sign in. Where it
+ * starts is `seed`; how far it gets goes to `onProgress` (Setup.tsx keeps it, for coming back). */
+export function SignInForm({ another, seed, onProgress, submitLabel, onDone, onCancel }: {
   another?: boolean; // switching from the account there is
-  folder?: string; // the sync folder to start with (switching: the current one)
-  address?: string; // the Canvas address to start with (switching: the current school's)
-  auth?: "token" | "session" | null; // how you signed in (back from choosing the courses)
-  start?: Step;
-  keep?: boolean; // across a reload (the first sign-in, whose page has the language picker)
+  seed?: Partial<Progress>;
+  onProgress?: (p: Progress) => void;
   submitLabel?: string;
   onDone: (account: AccountInfo) => void;
   onCancel?: () => void;
 }) {
-  const [was] = useState(() => (keep ? kept() : {}));
-  const [step, setStep] = useState<Step>(was.step ?? start);
-  const [url, setUrl] = useState(was.url ?? address?.replace(/^https:\/\//, "") ?? "");
-  const [how, setHow] = useState<"browser" | "token">(was.how ?? (auth === "session" ? "browser" : "token"));
+  const [step, setStep] = useState<Step>(seed?.step ?? "folder");
+  const [url, setUrl] = useState(seed?.url ?? "");
+  const [how, setHow] = useState<"browser" | "token">(seed?.how ?? "token");
   const [token, setToken] = useState("");
-  const [root, setRoot] = useState(was.root ?? folder ?? "~/Canvas");
-  useEffect(() => {
-    if (!keep) return;
-    try {
-      sessionStorage.setItem(KEPT, JSON.stringify({ step, url, how, root } satisfies Kept));
-    } catch { /* (then a reload starts over) */ }
-  }, [keep, step, url, how, root]);
+  const [root, setRoot] = useState(seed?.root ?? "~/Canvas");
+  useEffect(() => onProgress?.({ step, url, how, root }), [step, url, how, root]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const site = siteOf(url);
@@ -96,9 +75,7 @@ export function SignInForm({ another, folder, address, auth, start = "folder", k
     setError(null);
     try {
       const cred = how === "token" ? { token } : { cookies: await browserSignIn(site ?? "") };
-      const done = await api.setUp(url, cred, root);
-      if (keep) forgetSignIn();
-      onDone(done);
+      onDone(await api.setUp(url, cred, root));
     } catch (err) {
       if (cancelled(err)) return;
       const message = (err as Error).message;

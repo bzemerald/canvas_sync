@@ -7,6 +7,7 @@ import { friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
 import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
+import { VersionLine } from "./VersionLine";
 
 export function MissingFolderPage({ root, onDone }: { root: string; onDone: () => void }) {
   const [target, setTarget] = useState(root);
@@ -60,6 +61,7 @@ export function MissingFolderPage({ root, onDone }: { root: string; onDone: () =
           {error && <p className="text-danger">{error}</p>}
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
+          <VersionLine />
           <span>{t("语言")}</span>
           <LanguagePicker />
         </div>
