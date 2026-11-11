@@ -17,7 +17,7 @@ import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
 import { updateSaying } from "./VersionLine";
-import { Setup } from "./Setup";
+import { switchAccount } from "./Setup";
 import { browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
@@ -78,6 +78,19 @@ export function Settings({ account, sync, onSync, onAccount }: {
       setCheck({ ok: true });
     } catch (e) {
       if (!cancelled(e)) setError(friendly((e as Error).message));
+    }
+  };
+  /** Switching account or school: signed out, then the window goes to signing in (Setup.tsx),
+   * from its first step, with no way back to this account but signing in to it. */
+  const switchNow = async () => {
+    setSwitching(false);
+    if (!account) return;
+    try {
+      if (account.auth === "session") await api.canvasLogout();
+      changed(await api.signOut());
+      switchAccount(account);
+    } catch (e) {
+      setError(friendly((e as Error).message));
     }
   };
   const signOut = async () => {
@@ -234,11 +247,19 @@ export function Settings({ account, sync, onSync, onAccount }: {
         </Dialog>
       )}
       {moving && account?.root && <MoveFolderDialog root={account.root} onClose={() => setMoving(false)} />}
-      {switching && account && (
-        // Once switched, everything is someone else's: the window starts over.
-        <Setup another onFinish={() => location.reload()} onClose={() => setSwitching(false)} start={[{
-          kind: "sign in", progress: { root: account.root ?? undefined, url: account.base_url?.replace(/^https:\/\//, "") },
-        }]} />
+      {switching && (
+        <Dialog
+          title={t("切换账号或学校？")}
+          onClose={() => setSwitching(false)}
+          footer={
+            <>
+              <Button onClick={() => setSwitching(false)}>{t("取消")}</Button>
+              <Button primary autoFocus onClick={() => void switchNow()}>{t("切换")}</Button>
+            </>
+          }
+        >
+          <p className="text-fg-soft">{t("会先退出现在的账号，再从第一步重新登录。已经下载的文件和设置会留在现在的同步文件夹里。")}</p>
+        </Dialog>
       )}
     </div>
   );
