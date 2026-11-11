@@ -22,12 +22,12 @@ const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
 ];
 
-export function Settings({ sync, onSync, onAccount }: {
+export function Settings({ account, sync, onSync, onAccount }: {
+  account: AccountInfo | null; // the main window's (signing in again happens there too)
   sync: SyncState | null;
   onSync: () => void;
   onAccount: (a: AccountInfo) => void; // signed in or out
 }) {
-  const [account, setAccount] = useState<AccountInfo | null>(null);
   const [check, setCheck] = useState<{ ok: boolean; error?: string } | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null); // replacing the token
@@ -38,18 +38,15 @@ export function Settings({ sync, onSync, onAccount }: {
   const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const changed = (a: AccountInfo) => {
-    setAccount(a);
-    onAccount(a);
-  };
+  const changed = onAccount;
   useEffect(() => {
-    void api.account().then(setAccount, () => {});
     void api.prefs().then(setPrefs, () => {});
   }, []);
+  // Again whenever the account is told anew: signed in again, here or from the sidebar.
   useEffect(() => {
     if (!account?.signed_in) return void setCheck(null);
     void api.checkAccount().then(setCheck, () => setCheck(null));
-  }, [account?.signed_in, account?.base_url]);
+  }, [account]);
 
   const update = async (changes: Partial<Prefs>) => {
     setError(null);

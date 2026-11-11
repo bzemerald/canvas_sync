@@ -1358,6 +1358,7 @@ export function MainWindow() {
         <Marked pattern={marking} place={markedPlace} tools={!narrowed} onClear={clearMarks}>
         {view.kind === "settings" ? (
           <Settings
+            account={account}
             sync={sync}
             onSync={() => void startSync({}, t("全部课程"))}
             onAccount={(a) => (setAccount(a), refresh())}
