@@ -1,6 +1,6 @@
 [project]
 name = "canvas-sync"
-version = "0.2.0"
+version = "0.3.0"
 description = "Mirror Canvas LMS course files into a local folder, git-pull style."
 requires-python = ">=3.11"
 dependencies = [

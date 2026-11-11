@@ -1,6 +1,6 @@
 [package]
 name = "canvas-desktop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop app for canvas-sync"
 authors = ["Gavin"]
 edition = "2024"

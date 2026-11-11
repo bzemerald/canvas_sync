@@ -1,6 +1,6 @@
 """Mirror Canvas course files into a local folder, git-pull style."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .api import Auth, CanvasClient, CanvasError
 from .engine import Engine, FileStatus, NotInitialized
