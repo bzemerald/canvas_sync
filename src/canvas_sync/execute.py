@@ -11,7 +11,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 
-from .api import CanvasClient
+from .api import CanvasClient, CanvasError
 from .local import clone_file, is_regular, prune_empty_dirs
 from .models import RemoteFile
 from .plan import Action, Kind, Plan
@@ -31,7 +31,8 @@ class Executor:
         self.on_event = on_event or (lambda action, error: None)
 
     async def apply(self, plan: Plan) -> list[tuple[Action, str]]:
-        """Run every action; one failure doesn't stop the rest. Returns the failures."""
+        """Run every action; one failure doesn't stop the rest. Returns the failures. Signed out
+        of Canvas on the way: raises that, once the rest has run (it isn't about one file)."""
         self.originals.mkdir(parents=True, exist_ok=True)
         shutil.rmtree(self.tmp, ignore_errors=True)  # leftovers from an interrupted run
         self.tmp.mkdir(parents=True)
@@ -57,6 +58,7 @@ class Executor:
         self.state.commit()
 
         errors: list[tuple[Action, str]] = []
+        gone: list[CanvasError] = []
 
         async def run(a: Action) -> None:
             try:
@@ -64,6 +66,8 @@ class Executor:
                 self.state.commit()
                 self.on_event(a, None)
             except Exception as e:
+                if isinstance(e, CanvasError) and e.signed_out:
+                    gone.append(e)
                 errors.append((a, str(e)))
                 self.on_event(a, str(e))
 
@@ -78,6 +82,8 @@ class Executor:
             await run(a)
 
         self.state.commit()
+        if gone:
+            raise gone[0]
         return errors
 
     async def _do(self, a: Action, f: RemoteFile | None) -> None:

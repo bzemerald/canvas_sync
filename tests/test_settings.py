@@ -588,6 +588,21 @@ def test_sync_with_a_browser_sign_in(root, fake):
     assert err.value.signed_out
     assert (root / "Fall 2026" / "MATH 221" / "Files" / "Lectures" / "notes.pdf").read_bytes() == b"stored:/blob"
 
+    # Signed out while downloading: the sync fails as signed out, not as files that didn't sync.
+    fake.renew_session, fake.valid_sessions = None, {"s1"}
+    fake.put(2, "more.pdf", b"y")  # (on Canvas itself, signed in)
+
+    async def expire_midway() -> None:
+        async with CanvasClient(BASE, Auth(cookies={"canvas_session": "s1"}), transport=httpx.MockTransport(fake.handle)) as client:
+            with Engine(root, client) as e:
+                plan = await e.plan()
+                fake.valid_sessions = set()
+                await e.apply(plan)
+
+    with pytest.raises(CanvasError) as err:
+        asyncio.run(expire_midway())
+    assert err.value.signed_out
+
 
 def test_sign_in_with_a_browser(tmp_path, canvas, keychain):
     canvas.valid_sessions = {"s1", "s3"}
