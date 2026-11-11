@@ -35,6 +35,9 @@ class FakeCanvas:
         self.launch_url = f"{BASE}/courses/1/external_tools/sessionless_launch?verifier=v"
         self.seen_auth: list[str | None] = []
         self.valid_tokens: set[str] | None = None  # None: any token works
+        self.valid_sessions: set[str] = set()  # browser sign-ins (the canvas_session cookie)
+        self.renew_session: str | None = None  # sent back as the new canvas_session
+        self.seen_cookies: dict[str, str | None] = {}  # host -> the Cookie header last sent there
         self.others: list[dict] = []  # more courses in the list (nothing else of them answers)
 
     def put(self, fid: int, name: str, content: bytes, folder: int = 11, version: str = "2026-09-01T00:00:00Z",
@@ -50,6 +53,27 @@ class FakeCanvas:
         self.modules.append({"id": position, "position": position, "name": name, "items": items})
 
     def handle(self, req: httpx.Request) -> httpx.Response:
+        """As Canvas answers a browser sign-in too: JSON starting `while(1);`; signed out, the
+        sign-in page."""
+        self.seen_cookies[req.url.host] = req.headers.get("cookie")
+        if req.url.host == "files.test":
+            return httpx.Response(200, content=b"stored:" + req.url.path.encode())  # file storage
+        cookie = dict(c.split("=", 1) for c in (req.headers.get("cookie") or "").split("; ") if "=" in c).get("canvas_session")
+        if cookie is None:
+            return self._handle(req)
+        if req.url.path == "/login":
+            return httpx.Response(200, html="<form>Sign in</form>")
+        if cookie not in self.valid_sessions:
+            return httpx.Response(302, headers={"location": f"{BASE}/login"})
+        resp = self._handle(req)
+        headers = {"content-type": resp.headers.get("content-type", "")}
+        if self.renew_session:
+            headers["set-cookie"] = f"canvas_session={self.renew_session}; path=/; secure; HttpOnly"
+        if "json" in headers["content-type"]:
+            return httpx.Response(resp.status_code, content=b"while(1);" + resp.content, headers=headers)
+        return httpx.Response(resp.status_code, content=resp.content, headers={**resp.headers, **headers})
+
+    def _handle(self, req: httpx.Request) -> httpx.Response:
         path = req.url.path
         public = lambda f: {k: v for k, v in f.items() if not k.startswith("_")}  # noqa: E731
         routes = {
@@ -63,7 +87,7 @@ class FakeCanvas:
             "/api/v1/announcements": lambda: self.announcements,
         }
         self.seen_auth.append(req.headers.get("authorization"))
-        if self.valid_tokens is not None and req.headers.get("authorization") not in {f"Bearer {t}" for t in self.valid_tokens}:
+        if "canvas_session=" not in req.headers.get("cookie", "") and self.valid_tokens is not None and req.headers.get("authorization") not in {f"Bearer {t}" for t in self.valid_tokens}:
             return httpx.Response(401, json={"errors": [{"message": "Invalid access token."}]})
         if path == "/api/v1/courses/1/modules" and self.modules_status != 200:
             return httpx.Response(self.modules_status, json={"errors": [{"message": "nope"}]})

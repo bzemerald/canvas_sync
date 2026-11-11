@@ -15,7 +15,7 @@ from rich.markup import escape
 from rich.progress import Progress
 from rich.table import Table
 
-from .api import CanvasClient, CanvasError
+from .api import Auth, CanvasClient, CanvasError
 from .config import PREFS_FILE, Account, ConfigError, set_course_listed
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import open_path
@@ -66,10 +66,10 @@ def with_engine(online: bool, body: Callable[[Engine], Awaitable[T]]) -> T:
     async def go() -> T:
         client = None
         if online:
-            token = acc.token()
-            if not token:
-                raise fail("no access token found; run `canvas init`")
-            client = CanvasClient(acc.base_url, token)
+            auth = acc.auth()
+            if not auth:
+                raise fail("not signed in to Canvas; run `canvas init`")
+            client = CanvasClient(acc.base_url, auth)
         try:
             migrate_folder_names(acc.root)
             with Engine(acc.root, client) as engine:
@@ -83,7 +83,7 @@ def with_engine(online: bool, body: Callable[[Engine], Awaitable[T]]) -> T:
     except (NotInitialized, ConfigError, LookupError) as e:
         raise fail(str(e))
     except CanvasError as e:
-        hint = " (is the token still valid? `canvas init` to replace it)" if e.status == 401 else ""
+        hint = " (signed out of Canvas? `canvas init` to sign in again)" if e.status == 401 else ""
         raise fail(f"{e}{hint}")
 
 
@@ -91,18 +91,24 @@ def with_engine(online: bool, body: Callable[[Engine], Awaitable[T]]) -> T:
 def init(
     url: Annotated[Optional[str], typer.Option(help="e.g. https://canvas.myschool.edu")] = None,
     root: Annotated[Optional[Path], typer.Option(help="Folder to sync into")] = None,
+    cookie: Annotated[bool, typer.Option("--cookie", help="Sign in with a browser's canvas_session cookie instead of a token")] = False,
 ) -> None:
     """Connect to Canvas and choose the sync folder."""
     existing = Account.load()
     url = url or typer.prompt("Canvas URL", default=existing.base_url if existing else None)
     if not url.startswith("http"):
         url = "https://" + url
-    console.print("Create a token in Canvas: Account → Settings → Approved Integrations → + New Access Token, Purpose: Canvas Sync.")
-    token = typer.prompt("Access token", hide_input=True)
+    if cookie:
+        console.print("Sign in to Canvas in a browser, then copy the value of the `canvas_session` cookie "
+                      "(developer tools → Application/Storage → Cookies). It expires: run this again then.")
+        auth = Auth(cookies={"canvas_session": typer.prompt("canvas_session", hide_input=True).strip()})
+    else:
+        console.print("Create a token in Canvas: Account → Settings → Approved Integrations → + New Access Token, Purpose: Canvas Sync.")
+        auth = Auth(token=typer.prompt("Access token", hide_input=True).strip())
     root = root or Path(typer.prompt("Sync folder", default=str(existing.root) if existing else "~/Canvas"))
 
     async def check() -> dict:
-        async with CanvasClient(url, token) as c:
+        async with CanvasClient(url, auth) as c:
             return await c.me()
 
     try:
@@ -112,7 +118,7 @@ def init(
     acc = Account(url.rstrip("/"), root.expanduser())
     acc.root = Engine.init_root(acc.root)
     acc.save()
-    acc.set_token(token)
+    acc.set_auth(auth)
     console.print(f"Logged in as [bold]{me.get('name')}[/]. Syncing into [bold]{acc.root}[/].")
     console.print(f"Settings: {acc.root / META_DIR / 'config.toml'}")
     console.print("Next: `canvas courses` to check the course list, then `canvas pull`.")

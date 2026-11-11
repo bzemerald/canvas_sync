@@ -41,7 +41,7 @@ from .catalog import abbreviations, catalog
 from .meaning import Meaning
 from .models import Course
 from .content import news, news_counts
-from .api import CanvasClient, CanvasError
+from .api import Auth, CanvasClient, CanvasError, parse_json, signed_out
 from .discover import FILE_REF
 from .config import (
     PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, add_titles, migrate, needs_migration, needs_titles,
@@ -93,6 +93,7 @@ class SyncJob:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     ed_error: str | None = None  # Ed went wrong (see ed.py); the rest synced anyway
+    expired: bool = False  # Canvas no longer takes the token or the browser sign-in
 
     @property
     def running(self) -> bool:
@@ -158,14 +159,26 @@ class PrefsRequest(BaseModel):
     select: str | None = None  # which courses to sync: active | favorites (in the folder's config.toml)
 
 
-class SetupRequest(BaseModel):
-    url: str                 # the Canvas site, e.g. bcourses.berkeley.edu
-    token: str
-    root: str | None = None  # the sync folder; default: the current one, or ~/Canvas
+class CredentialsRequest(BaseModel):
+    """One of: an access token, or the cookies of a sign-in in the app's Canvas window."""
+    token: str | None = None
+    cookies: dict[str, str] | None = None
+
+    def auth(self) -> Auth:
+        if self.cookies:
+            return Auth(cookies=self.cookies)
+        if self.token and self.token.strip():
+            return Auth(token=self.token.strip())
+        raise HTTPException(400, "token rejected")
 
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class SetupRequest(CredentialsRequest):
+    url: str                 # the Canvas site, e.g. bcourses.berkeley.edu
+    root: str | None = None  # the sync folder; default: the current one, or ~/Canvas
 
 
 class EdLinkRequest(BaseModel):
@@ -386,9 +399,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     def account_info() -> dict[str, Any]:
         if account is None:
-            return {"set_up": False, "signed_in": False, "base_url": None, "root": None, "user": None}
-        return {"set_up": True, "signed_in": bool(account.token()), "base_url": account.base_url,
-                "root": str(account.root), "user": account.user}
+            return {"set_up": False, "signed_in": False, "auth": None, "base_url": None, "root": None, "user": None}
+        auth = account.auth()
+        return {"set_up": True, "signed_in": auth is not None, "auth": auth.kind if auth else None,
+                "base_url": account.base_url, "root": str(account.root), "user": account.user}
 
     @api.get("/account")
     def get_account() -> dict[str, Any]:
@@ -396,9 +410,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     @api.get("/account/check")
     async def check_account() -> dict[str, Any]:
-        """Whether the saved token still works (it expires, or can be revoked on Canvas)."""
+        """Whether the saved token or browser sign-in still works (both expire; a token can be revoked)."""
         assert account is not None
-        if not (saved := account.token()):
+        if not (saved := account.auth()):
             return {"ok": False, "error": "not signed in"}
         try:
             me = await _who(account.base_url, saved)
@@ -416,16 +430,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         nonlocal account
         if job.running:
             raise HTTPException(409, "wait for the sync to finish")
-        url, new_token = _canvas_site(req.url), req.token.strip()
-        if not new_token:
-            raise HTTPException(400, "token rejected")
-        me = await _who(url, new_token)
+        url, new_auth = _canvas_site(req.url), req.auth()
+        me = await _who(url, new_auth)
         root = Path(req.root).expanduser() if req.root else (account.root if account else DEFAULT_ROOT.expanduser())
         new = Account(url, sync_folder(root, url), me.get("name") or None)
         if account and account.base_url != url:
             account.clear_token()  # signed out of the old site
         new.save()
-        new.set_token(new_token)
+        new.set_auth(new_auth)
         account = new
         update_files()
         if not choosing():  # (else the first sync starts once the courses are chosen)
@@ -498,20 +510,20 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         update_files()
         return {**account_info(), "left_behind": left_behind}
 
-    @api.post("/account/token")
-    async def replace_token(req: TokenRequest) -> dict[str, Any]:
-        """A new token for the same account (the old one expired, or was revoked)."""
+    @api.post("/account/credentials")
+    async def replace_credentials(req: CredentialsRequest) -> dict[str, Any]:
+        """A new token or browser sign-in for the same account (the old one expired, or was revoked)."""
         assert account is not None
-        new_token = req.token.strip()
-        me = await _who(account.base_url, new_token)
+        new_auth = req.auth()
+        me = await _who(account.base_url, new_auth)
         account.user = me.get("name") or account.user
         account.save()
-        account.set_token(new_token)
+        account.set_auth(new_auth)
         return account_info()
 
     @api.post("/account/signout")
     def sign_out() -> dict[str, Any]:
-        """Forget the token. Files, settings and what's been synced stay; signing in again resumes."""
+        """Forget the token or sign-in. Files, settings and what's been synced stay; signing in again resumes."""
         assert account is not None
         if job.running:
             raise HTTPException(409, "wait for the sync to finish")
@@ -646,10 +658,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """Your courses on Canvas, to choose which sync: each with its term's dates and its own,
         and whether it syncs now. `chosen`: the config already says which (not just `select`)."""
         assert account is not None
-        if not (token := account.token()):
+        if not (auth := account.auth()):
             raise HTTPException(400, "not signed in to Canvas")
         try:
-            async with CanvasClient(account.base_url, token) as client:
+            async with CanvasClient(account.base_url, auth) as client:
                 with Engine(account.root, client) as e:
                     out = []
                     for d in await e.course_data():
@@ -806,10 +818,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             return FileResponse(cache, media_type=cache.with_suffix(".type").read_text(encoding="utf-8"))
         try:
             if on_canvas:
-                token = account.token()
-                if not token:
+                auth = account.auth()
+                if not auth:
                     raise HTTPException(400, "no Canvas token")
-                async with CanvasClient(account.base_url, token) as client:
+                async with CanvasClient(account.base_url, auth) as client:
                     body, ctype = await client.fetch(target, MEDIA_MAX_BYTES)
             else:
                 async with httpx.AsyncClient(follow_redirects=True, timeout=20) as plain:
@@ -1149,9 +1161,9 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         else:
             raise HTTPException(400, "say which tool")
         target, signed_in = account.base_url + fallback, False
-        if token := account.token():
+        if auth := account.auth():
             try:
-                async with CanvasClient(account.base_url, token) as client:
+                async with CanvasClient(account.base_url, auth) as client:
                     got = await client.sessionless_launch(cid, params)
                 url = got.get("url") if isinstance(got, dict) else None
                 # Only ever a link on Canvas itself: it carries the sign-in.
@@ -1180,12 +1192,12 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(409, "a sync is already running")
         if moving:
             raise HTTPException(409, "moving the sync folder")
-        canvas_token = account.token()
-        if not canvas_token:
+        auth = account.auth()
+        if not auth:
             raise HTTPException(400, "not signed in to Canvas")
         scope_paths(req)
         job = SyncJob(phase="checking", started_at=_now(), scope=req.paths)
-        task = asyncio.create_task(_run_sync(account, canvas_token, req.courses, req.scope(), job, prefs_path))
+        task = asyncio.create_task(_run_sync(account, auth, req.courses, req.scope(), job, prefs_path))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
 
@@ -1311,18 +1323,18 @@ def _canvas_site(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-async def _who(url: str, token: str) -> dict[str, Any]:
-    """Your profile on that Canvas, if the token works there; else a 400 saying why. One try,
-    no retries: this is someone waiting on a sign-in form."""
+async def _who(url: str, auth: Auth) -> dict[str, Any]:
+    """Your profile on that Canvas, if the token or sign-in works there; else a 400 saying why.
+    One try, no retries: this is someone waiting on a sign-in form."""
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as http:
-            resp = await http.get(f"{url}/api/v1/users/self", headers={"Authorization": f"Bearer {token}"})
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True, **auth.client_args(url)) as http:
+            resp = await http.get(f"{url}/api/v1/users/self")
     except httpx.HTTPError:
         raise HTTPException(400, "can't reach the site")
-    if resp.status_code == 401:
-        raise HTTPException(400, "token rejected")
+    if resp.status_code == 401 or signed_out(resp):
+        raise HTTPException(400, "token rejected" if auth.kind == "token" else "sign-in rejected")
     try:
-        me = resp.json()
+        me = parse_json(resp)
     except ValueError:
         me = None
     if not resp.is_success or not isinstance(me, dict) or "id" not in me:
@@ -1330,36 +1342,45 @@ async def _who(url: str, token: str) -> dict[str, Any]:
     return me
 
 
-async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] | None, scope: Scope | None,
+async def _sync_canvas(account: Account, client: CanvasClient, course_ids: list[int] | None, scope: Scope | None,
+                       job: SyncJob) -> None:
+    with Engine(account.root, client) as e:
+        courses = None
+        if course_ids is not None:
+            courses = [c for c in await e.courses() if c.id in course_ids]
+        plan = await e.plan(courses, scope)
+        job.warnings = plan.warnings
+        work = [a for a in plan.actions if a.kind != Kind.SKIP]
+        for a in work:
+            if a.kind not in (Kind.LINK, Kind.UNLINK):
+                job.changes[a.kind.value] = job.changes.get(a.kind.value, 0) + 1
+        job.total = sum(a.kind in TRANSFERS for a in work)
+        job.phase = "downloading"
+
+        def on_event(a: Any, error: str | None) -> None:
+            if a.kind in TRANSFERS:
+                job.done += 1
+                job.current = a.path or a.name or ""
+            if error:
+                job.errors.append(f"{a.path or a.name}: {error}")
+
+        # Even with nothing to download: this is what stores new announcements,
+        # assignments, pages and modules.
+        await e.apply(plan, on_event)
+        if scope is None:
+            job.current = "Ed"
+            job.ed_error = await other_sources(e, account, [x.course.id for x in plan.snapshots])
+
+
+async def _run_sync(account: Account, auth: Auth, course_ids: list[int] | None, scope: Scope | None,
                     job: SyncJob, prefs_path: Path = PREFS_FILE) -> None:
     try:
-        async with CanvasClient(account.base_url, canvas_token) as client:
-            with Engine(account.root, client) as e:
-                courses = None
-                if course_ids is not None:
-                    courses = [c for c in await e.courses() if c.id in course_ids]
-                plan = await e.plan(courses, scope)
-                job.warnings = plan.warnings
-                work = [a for a in plan.actions if a.kind != Kind.SKIP]
-                for a in work:
-                    if a.kind not in (Kind.LINK, Kind.UNLINK):
-                        job.changes[a.kind.value] = job.changes.get(a.kind.value, 0) + 1
-                job.total = sum(a.kind in TRANSFERS for a in work)
-                job.phase = "downloading"
-
-                def on_event(a: Any, error: str | None) -> None:
-                    if a.kind in TRANSFERS:
-                        job.done += 1
-                        job.current = a.path or a.name or ""
-                    if error:
-                        job.errors.append(f"{a.path or a.name}: {error}")
-
-                # Even with nothing to download: this is what stores new announcements,
-                # assignments, pages and modules.
-                await e.apply(plan, on_event)
-                if scope is None:
-                    job.current = "Ed"
-                    job.ed_error = await other_sources(e, account, [x.course.id for x in plan.snapshots])
+        async with CanvasClient(account.base_url, auth) as client:
+            await _sync_canvas(account, client, course_ids, scope, job)
+            # Canvas renews a browser sign-in's cookies as it goes: keep the new ones (unless
+            # you signed in again meanwhile).
+            if (cookies := client.cookies()) and cookies != auth.cookies and account.token() == auth.secret():
+                account.set_auth(Auth(cookies=cookies))
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 
@@ -1373,8 +1394,9 @@ async def _run_sync(account: Account, canvas_token: str, course_ids: list[int] |
         await asyncio.to_thread(index)
         job.phase = "done"
     except CanvasError as err:
-        job.phase = "failed"
-        job.errors.append(str(err) + (" (Canvas token expired or revoked?)" if err.status == 401 else ""))
+        job.phase, job.expired = "failed", err.signed_out
+        hint = " (Canvas token expired or revoked?)" if auth.kind == "token" else " (signed out of Canvas)"
+        job.errors.append(str(err) + (hint if job.expired else ""))
     except Exception as err:  # surfaced to the UI rather than lost in a background task
         job.phase = "failed"
         job.errors.append(f"{type(err).__name__}: {err}")

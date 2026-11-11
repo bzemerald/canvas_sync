@@ -85,7 +85,7 @@ def test_sign_in_from_scratch(tmp_path, canvas, keychain):
         assert setup(root=str(tmp_path / "Documents")).json()["detail"] == "folder not empty"
 
         r = setup(url="https://canvas.test/courses/1/pages/intro")  # any page there will do
-        assert r.json() == {"set_up": True, "signed_in": True, "base_url": BASE, "root": str((tmp_path / "Canvas").resolve()),
+        assert r.json() == {"set_up": True, "signed_in": True, "auth": "token", "base_url": BASE, "root": str((tmp_path / "Canvas").resolve()),
                             "user": "Test"}
         assert keychain == {BASE: "good"}
         assert Account.load() == Account(BASE, (tmp_path / "Canvas").resolve(), "Test")
@@ -167,9 +167,9 @@ def test_sign_out_and_in_again(root, tmp_path, canvas, keychain):
     canvas.valid_tokens = {"new"}
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         assert api.get("/api/account/check").json() == {"ok": False, "error": "token rejected"}  # it expired
-        assert api.post("/api/account/token", json={"token": "nope"}).status_code == 400
+        assert api.post("/api/account/credentials", json={"token": "nope"}).status_code == 400
         assert keychain[BASE] == "old"
-        assert api.post("/api/account/token", json={"token": "new"}).json()["signed_in"]
+        assert api.post("/api/account/credentials", json={"token": "new"}).json()["signed_in"]
         assert api.get("/api/account/check").json() == {"ok": True, "user": "Test"}
 
         assert api.post("/api/account/signout").json()["signed_in"] is False
@@ -546,3 +546,76 @@ def test_the_folder_opens_in_the_file_manager(root, tmp_path, canvas, keychain, 
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         assert api.post("/api/open", json={"path": ""}).status_code == 200
     assert opened == [(root, {"reveal": False, "preview": False})]
+
+
+# -- signing in with a browser (for schools that don't let students make tokens) -------------------
+
+def test_auth_is_kept_as_one_string():
+    from canvas_sync import Auth
+    assert Auth.parse("abc~123") == Auth(token="abc~123")
+    session = Auth(cookies={"canvas_session": "s", "_csrf_token": "c"})
+    assert Auth.parse(session.secret()) == session and session.kind == "session"
+
+
+def test_sync_with_a_browser_sign_in(root, fake):
+    from canvas_sync import Auth, CanvasError
+    fake.valid_sessions = {"s1"}
+    fake.put(1, "notes.pdf", b"x")
+    fake.files[1]["url"] = "https://files.test/blob"  # (in file storage, elsewhere)
+
+    async def sync(auth: Auth) -> dict[str, str] | None:
+        async with CanvasClient(BASE, auth, transport=httpx.MockTransport(fake.handle)) as client:
+            with Engine(root, client) as e:
+                assert await e.apply(await e.plan()) == []
+            return client.cookies()
+
+    import asyncio
+    fake.renew_session, fake.valid_sessions = "s2", {"s1", "s2"}
+    assert asyncio.run(sync(Auth(cookies={"canvas_session": "s1"}))) == {"canvas_session": "s2"}  # (JSON after `while(1);`)
+    assert (root / "Fall 2026" / "MATH 221" / "Files" / "Lectures" / "notes.pdf").read_bytes() == b"stored:/blob"
+    assert fake.seen_cookies["files.test"] is None  # the cookies stay with Canvas
+
+    # Signed out (it expired): the sign-in page is an error, not a page of nothing.
+    with pytest.raises(CanvasError) as err:
+        asyncio.run(sync(Auth(cookies={"canvas_session": "old"})))
+    assert err.value.signed_out
+
+    # Even signed out halfway: a course's files aren't taken for deleted.
+    fake.renew_session, fake.valid_sessions = "gone", {"s1"}
+    with pytest.raises(CanvasError) as err:
+        asyncio.run(sync(Auth(cookies={"canvas_session": "s1"})))
+    assert err.value.signed_out
+    assert (root / "Fall 2026" / "MATH 221" / "Files" / "Lectures" / "notes.pdf").read_bytes() == b"stored:/blob"
+
+
+def test_sign_in_with_a_browser(tmp_path, canvas, keychain):
+    canvas.valid_sessions = {"s1", "s3"}
+    canvas.renew_session = "s2"
+    with client(None, tmp_path) as api:
+        def setup(cookies):
+            return api.post("/api/account/setup", json={"url": "canvas.test", "cookies": cookies, "root": str(tmp_path / "Canvas")})
+        assert setup({"canvas_session": "nope"}).json()["detail"] == "sign-in rejected"
+        assert setup({}).json()["detail"] == "token rejected"  # (neither given)
+        got = setup({"canvas_session": "s1"}).json()
+        assert (got["signed_in"], got["auth"], got["user"]) == (True, "session", "Test")
+        assert api.get("/api/account/check").json() == {"ok": True, "user": "Test"}
+
+        canvas.valid_sessions.add("s2")
+        assert api.put("/api/courses/choice", json={"sync": [1], "skip": []}).json()["running"]
+        assert wait_for_sync(api)["phase"] == "done"
+        assert keychain[BASE] == '{"cookies": {"canvas_session": "s2"}}'  # renewed on the way
+
+        # It expires: the sync says so, and signing in again picks up from there.
+        canvas.valid_sessions = {"s3"}
+        api.post("/api/sync", json={})
+        state = wait_for_sync(api)
+        assert (state["phase"], state["expired"]) == ("failed", True)
+        assert "signed out of Canvas" in state["errors"][0]
+        assert api.post("/api/account/credentials", json={"cookies": {"canvas_session": "s3"}}).json()["auth"] == "session"
+        canvas.renew_session = None
+        api.post("/api/sync", json={})
+        assert wait_for_sync(api)["phase"] == "done"
+
+        # Or a token, after all.
+        assert api.post("/api/account/credentials", json={"token": "t"}).json()["auth"] == "token"
+        assert keychain[BASE] == "t"

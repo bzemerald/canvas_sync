@@ -73,6 +73,8 @@ async def discover_course(client: CanvasClient, course: Course) -> CourseSnapsho
         try:
             return await call
         except CanvasError as e:
+            if e.signed_out:
+                raise  # (not a course with this turned off: everything would look deleted)
             if e.status in (401, 403, 404):
                 snap.unavailable.append(what)
             else:

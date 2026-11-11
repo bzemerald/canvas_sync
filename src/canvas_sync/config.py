@@ -26,6 +26,7 @@ import keyring
 import keyring.errors
 import tomlkit
 
+from .api import Auth
 from .things import (
     PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, parse_entry,
 )
@@ -752,13 +753,20 @@ class Account:
         ACCOUNT_FILE.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
     def token(self) -> str | None:
+        """What signs in to Canvas, as kept: a token, or a browser sign-in's cookies (see `auth`)."""
         return os.environ.get("CANVAS_TOKEN") or get_secret(self.base_url)
+
+    def auth(self) -> Auth | None:
+        return Auth.parse(saved) if (saved := self.token()) else None
 
     def set_token(self, token: str) -> None:
         set_secret(self.base_url, token)
 
+    def set_auth(self, auth: Auth) -> None:
+        self.set_token(auth.secret())
+
     def clear_token(self) -> None:
-        """Sign out: forget the token (the files stay)."""
+        """Sign out: forget the token or cookies (the files stay)."""
         delete_secret(self.base_url)
 
     def ed_token(self) -> str | None:

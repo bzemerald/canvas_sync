@@ -2,10 +2,10 @@
 
 __version__ = "0.2.0"
 
-from .api import CanvasClient, CanvasError
+from .api import Auth, CanvasClient, CanvasError
 from .engine import Engine, FileStatus, NotInitialized
 from .plan import Action, Kind, Plan
 
 __all__ = [
-    "Action", "CanvasClient", "CanvasError", "Engine", "FileStatus", "Kind", "NotInitialized", "Plan",
+    "Action", "Auth", "CanvasClient", "CanvasError", "Engine", "FileStatus", "Kind", "NotInitialized", "Plan",
 ]

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,10 +19,57 @@ RATE_LIMIT_FLOOR = 150
 
 
 class CanvasError(Exception):
-    def __init__(self, status: int, url: str, message: str = ""):
+    def __init__(self, status: int, url: str, message: str = "", signed_out: bool = False):
         super().__init__(f"HTTP {status} for {url}" + (f": {message}" if message else ""))
         self.status = status
         self.url = url
+        # Canvas no longer takes the token or sign-in (not: a course turned something off,
+        # which is a 401 too). Nothing fetched after it means anything.
+        self.signed_out = signed_out
+
+
+@dataclass(frozen=True)
+class Auth:
+    """How we sign in to Canvas: an access token, or the cookies of a sign-in in a browser window
+    (for schools that don't let students make tokens). Kept in the keychain as one string."""
+
+    token: str | None = None
+    cookies: dict[str, str] | None = None
+
+    @property
+    def kind(self) -> str:
+        return "session" if self.cookies is not None else "token"
+
+    def secret(self) -> str:
+        return json.dumps({"cookies": self.cookies}) if self.cookies is not None else self.token or ""
+
+    @classmethod
+    def parse(cls, secret: str) -> Auth:
+        if secret.startswith("{"):  # (a token never does)
+            return cls(cookies=dict(json.loads(secret).get("cookies") or {}))
+        return cls(token=secret)
+
+    def client_args(self, base_url: str) -> dict[str, Any]:
+        """For an httpx client of that Canvas: the token as a header, or the cookies, for its
+        host only (so they don't follow a download to file storage)."""
+        if self.cookies is None:
+            return {"headers": {"Authorization": f"Bearer {self.token}"}}
+        jar = httpx.Cookies()
+        host = httpx.URL(base_url).host
+        for name, value in self.cookies.items():
+            jar.set(name, value, domain=host)
+        return {"cookies": jar}
+
+
+def signed_out(resp: httpx.Response) -> bool:
+    """Sent to the sign-in page: a browser sign-in that has expired."""
+    return resp.url.path.startswith("/login")
+
+
+def parse_json(resp: httpx.Response) -> Any:
+    """Canvas starts JSON with `while(1);` for requests signed in with cookies."""
+    text = resp.text
+    return json.loads(text[len("while(1);"):] if text.startswith("while(1);") else text)
 
 
 class _Retry(Exception):
@@ -35,18 +84,22 @@ def _is_retryable(resp: httpx.Response) -> bool:
 
 
 def _raise_for(resp: httpx.Response) -> None:
+    if signed_out(resp):
+        raise CanvasError(401, str(resp.url), "signed out", signed_out=True)
     if resp.is_success:
         return
-    message = ""
+    message, status = "", None
     try:
-        errors = resp.json().get("errors")
+        body = parse_json(resp)
+        status, errors = body.get("status"), body.get("errors")
         if isinstance(errors, list) and errors:
             message = errors[0].get("message", "")
         elif isinstance(errors, dict):
             message = str(errors)
     except Exception:
         pass
-    raise CanvasError(resp.status_code, str(resp.url), message)
+    gone = resp.status_code == 401 and (status == "unauthenticated" or "invalid access token" in message.lower())
+    raise CanvasError(resp.status_code, str(resp.url), message, signed_out=gone)
 
 
 class CanvasClient:
@@ -59,17 +112,18 @@ class CanvasClient:
     def __init__(
         self,
         base_url: str,
-        token: str,
+        auth: Auth | str,  # (a str: a token)
         *,
         concurrency: int = 6,
         download_concurrency: int = 4,
         transport: httpx.AsyncBaseTransport | None = None,
     ):
         self.base_url = base_url.rstrip("/")
+        self.auth = Auth(token=auth) if isinstance(auth, str) else auth
         self._http = httpx.AsyncClient(
             base_url=self.base_url,
-            # httpx drops this header when a download redirects to another host (S3 etc.).
-            headers={"Authorization": f"Bearer {token}"},
+            # httpx drops the token's header when a download redirects to another host (S3 etc.).
+            **self.auth.client_args(self.base_url),
             follow_redirects=True,
             timeout=httpx.Timeout(60, connect=15),
             transport=transport,
@@ -86,6 +140,13 @@ class CanvasClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    def cookies(self) -> dict[str, str] | None:
+        """A browser sign-in's cookies as they are now (Canvas may have renewed them)."""
+        if self.auth.cookies is None:
+            return None
+        host = httpx.URL(self.base_url).host
+        return {c.name: c.value or "" for c in self._http.cookies.jar if c.domain.lstrip(".") == host}
 
     # -- plumbing ---------------------------------------------------------------
 
@@ -121,7 +182,7 @@ class CanvasClient:
     async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         resp = await self._request("GET", path, params=params)
         _raise_for(resp)
-        return resp.json()
+        return parse_json(resp)
 
     async def get_all(self, path: str, params: dict[str, Any] | None = None) -> list[Any]:
         """GET every page of a paginated endpoint (follows the `Link: rel=next` header)."""
@@ -131,7 +192,7 @@ class CanvasClient:
         while url:
             resp = await self._request("GET", url, params=query)
             _raise_for(resp)
-            items.extend(resp.json())
+            items.extend(parse_json(resp))
             url = resp.links.get("next", {}).get("url")
             query = None  # the next link already carries the query string
         return items
@@ -141,7 +202,7 @@ class CanvasClient:
         Follows redirects to file storage; refuses anything over `max_bytes`."""
         async with self._api_slots:
             async with self._http.stream("GET", url) as resp:
-                if not resp.is_success:
+                if not resp.is_success or signed_out(resp):
                     await resp.aread()
                     _raise_for(resp)
                 body = bytearray()
@@ -160,7 +221,7 @@ class CanvasClient:
                     async with self._http.stream("GET", url) as resp:
                         if resp.status_code == 429 or resp.status_code >= 500:
                             raise _Retry()
-                        if not resp.is_success:
+                        if not resp.is_success or signed_out(resp):  # (not the sign-in page, saved as the file)
                             await resp.aread()
                             _raise_for(resp)
                         with dest.open("wb") as fh:
