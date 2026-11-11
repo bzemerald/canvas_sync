@@ -7,6 +7,7 @@
 //! so that signing in again is often just loading a page (the school remembers you).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,7 +15,9 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tokio::sync::oneshot;
 
+/// Each window a label of its own: one being closed keeps its label for a moment.
 const LABEL: &str = "canvas-login";
+static NEXT: AtomicU32 = AtomicU32::new(0);
 /// Without you: if a page or two doesn't land on Canvas signed in, you're needed.
 const SILENT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Where the window keeps its cookies (macOS 14+; before that, with the app's own pages).
@@ -24,7 +27,8 @@ const STORE: [u8; 16] = *b"canvas-sync-lgin";
 type Reply = Arc<Mutex<Option<oneshot::Sender<Result<HashMap<String, String>, String>>>>>;
 
 fn window<'a>(app: &'a AppHandle, url: Url, title: &str, visible: bool) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
-    let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(url))
+    let label = format!("{LABEL}-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
         .title(title)
         .inner_size(520.0, 720.0)
         .center()
@@ -40,9 +44,12 @@ fn window<'a>(app: &'a AppHandle, url: Url, title: &str, visible: bool) -> tauri
     builder
 }
 
+/// One sign-in at a time: a new one (say, you click while a quiet one runs) ends the old.
 fn close_old(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.destroy();
+    for (label, w) in app.webview_windows() {
+        if label.starts_with(LABEL) {
+            let _ = w.destroy();
+        }
     }
 }
 

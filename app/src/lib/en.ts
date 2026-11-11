@@ -421,6 +421,7 @@ export const en: Record<string, string | [string, string]> = {
   "打开 Canvas 设置页": "Open Canvas settings",
   "更换令牌…": "Replace token…",
   "登录失败": "Couldn't sign in",
+  "正在重新登录 Canvas…": "Signing in to Canvas again…",
   "Canvas 登录已过期，点这里重新登录": "Signed out of Canvas. Click to sign in again",
   "重新登录…": "Sign in again…",
   "在登录窗口中登录…": "Sign in on the Canvas page…",

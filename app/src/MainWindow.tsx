@@ -581,14 +581,18 @@ export function MainWindow() {
   };
   /** The browser sign-in expired: sign in again (`silent`: only if the school still knows you),
    * then sync what failed again. Whether that worked. */
+  const [renewing, setRenewing] = useState(false); // quietly, in a hidden window
   const renewSignIn = async (silent: boolean): Promise<boolean> => {
     if (!account?.base_url || !sync) return false;
     const failed = sync;
+    if (silent) setRenewing(true);
     try {
       setAccount(await api.replaceCredentials({ cookies: await browserSignIn(account.base_url, silent) }));
     } catch (e) {
       if (!silent && !cancelled(e)) say(t("{what}：{why}", { what: t("登录失败"), why: friendly((e as Error).message) }));
       return false;
+    } finally {
+      if (silent) setRenewing(false);
     }
     void startSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel);
     return true;
@@ -1190,7 +1194,7 @@ export function MainWindow() {
           </button>
         ) : (
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })}
-            onSignIn={account?.auth === "session" ? () => void renewSignIn(false) : undefined} />
+            onSignIn={account?.auth === "session" ? () => void renewSignIn(false) : undefined} renewing={renewing} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onPress={pressSearchButton} onClick={clickSearchButton} title={t("搜索")} keys={keysLabel(launcherKeys)} />
@@ -1922,11 +1926,12 @@ function UpdateNotice() {
   );
 }
 
-function SyncStatus({ sync, label, onFix, onSignIn }: {
+function SyncStatus({ sync, label, onFix, onSignIn, renewing }: {
   sync: SyncState | null;
   label: string;
   onFix: () => void;
   onSignIn?: () => void; // signed in in the Canvas window: do it again
+  renewing?: boolean; // that, quietly, now
 }) {
   if (!sync || sync.phase === "idle") return null;
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
@@ -1951,7 +1956,9 @@ function SyncStatus({ sync, label, onFix, onSignIn }: {
       {sync.errors.slice(0, 3).map((e) => (
         <p key={e} className="mt-1 break-words text-danger">{e}</p>
       ))}
-      {(sync.expired || sync.errors.some((e) => /401|token/i.test(e))) && (onSignIn ? (
+      {(sync.expired || sync.errors.some((e) => /401|token/i.test(e))) && (renewing ? (
+        <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
+      ) : onSignIn ? (
         <button onClick={onSignIn} className="mt-1 text-accent hover:underline">{t("Canvas 登录已过期，点这里重新登录")}</button>
       ) : (
         <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌可能过期了，到设置里更换")}</button>
