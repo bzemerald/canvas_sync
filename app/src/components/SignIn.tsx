@@ -43,15 +43,16 @@ function stepOf(message: string): Step {
 }
 
 /** Signing in, a step at a time: the sync folder, the school's Canvas, how to sign in. */
-export function SignInForm({ another, folder, submitLabel, onDone, onCancel }: {
-  another?: boolean; // switching from the account there is: the address starts empty
+export function SignInForm({ another, folder, address, submitLabel, onDone, onCancel }: {
+  another?: boolean; // switching from the account there is
   folder?: string; // the sync folder to start with (switching: the current one)
+  address?: string; // the Canvas address to start with (switching: the current school's)
   submitLabel?: string;
   onDone: (account: AccountInfo) => void;
   onCancel?: () => void;
 }) {
   const [step, setStep] = useState<Step>("folder");
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(address?.replace(/^https:\/\//, "") ?? "");
   const [how, setHow] = useState<"browser" | "token">("browser");
   const [token, setToken] = useState("");
   const [root, setRoot] = useState(folder ?? "~/Canvas");
