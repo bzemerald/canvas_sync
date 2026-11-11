@@ -449,7 +449,7 @@ export const en: Record<string, string | [string, string]> = {
   "上一步": "Back",
   "下一步": "Next",
   "在登录窗口中登录": "Sign-in page",
-  "会打开学校的 Canvas 登录页，像在浏览器里一样登录。学校不允许生成令牌时用这个。登录过一段时间会过期，到时候应用会尽量自动续上，续不上会请你再登录一次。": "Opens your school's Canvas sign-in page: sign in as you would in a browser. Use this if your school doesn't allow access tokens. The sign-in expires after a while; the app renews it by itself when it can, and asks you to sign in again when it can't.",
+  "在新打开的浏览器窗口中完成登录。": "Complete sign-in in a new browser window.",
   "打开登录窗口…": "Open the sign-in page…",
   "Canvas 没有接受这次登录。请再登录一次。": "Canvas didn't accept this sign-in. Please sign in again.",
   "退出登录…": "Sign out…",

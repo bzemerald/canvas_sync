@@ -128,7 +128,7 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
           </div>
           {how === "browser" ? (
             <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-              {t("会打开学校的 Canvas 登录页，像在浏览器里一样登录。学校不允许生成令牌时用这个。登录过一段时间会过期，到时候应用会尽量自动续上，续不上会请你再登录一次。")}
+              {t("在新打开的浏览器窗口中完成登录。")}
             </span>
           ) : (
             <>
