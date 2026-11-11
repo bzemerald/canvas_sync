@@ -533,7 +533,7 @@ export const en: Record<string, string | [string, string]> = {
   "连不上 Canvas": "Can't reach Canvas",
 
   // -- signing in
-  "选择同步文件夹": "Choose sync folder",
+  "选择同步文件夹": "Choose a sync folder",
   "学校的 Canvas 网址": "Your school's Canvas address",
   "还没选": "None chosen yet",
   "例如 bcourses.berkeley.edu": "e.g. bcourses.berkeley.edu",
@@ -714,10 +714,7 @@ export const en: Record<string, string | [string, string]> = {
   "进行中": "Now",
   "{on}/{n} 门": "{on} of {n}",
   "已选 {n} 门课": ["1 course chosen", "{n} courses chosen"],
-  "没勾选的课不会下载。以后 Canvas 上新加的课程会自动同步；随时可以在设置里重新选。":
-    "Courses not ticked aren't downloaded. New courses on Canvas sync by themselves; you can choose again in Settings any time.",
-  "没勾选的课不会下载。以后你在 Canvas 上收藏的新课程会自动同步；随时可以在设置里重新选。":
-    "Courses not ticked aren't downloaded. New courses you star on Canvas sync by themselves; you can choose again in Settings any time.",
+  "随时可以在设置里重新选。": "You can choose again in Settings any time.",
   "重试": "Try again",
   "要同步的课程": "Courses to sync",
   "选择课程…": "Choose Courses…",

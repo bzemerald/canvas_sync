@@ -1,7 +1,7 @@
 // Connecting a Canvas account: the school's Canvas address, how to sign in (in a Canvas window
 // of the app's, or with an access token, which some schools don't allow), and where the files go. What a new user sees first; in 设置, how you switch account or school.
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo } from "../lib/api";
 import { friendly } from "../lib/errors";
@@ -33,6 +33,22 @@ function siteOf(url: string): string | null {
 export const inputClass = "w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent";
 
 type Step = "folder" | "site" | "auth";
+
+// The first sign-in, as far as it got: changing the language reloads the page. (Not the token.)
+const KEPT = "sign-in";
+type Kept = { step: Step; url: string; how: "browser" | "token"; root: string };
+function kept(): Partial<Kept> {
+  try {
+    return JSON.parse(sessionStorage.getItem(KEPT) ?? "{}") as Partial<Kept>;
+  } catch {
+    return {};
+  }
+}
+export function forgetSignIn() {
+  try {
+    sessionStorage.removeItem(KEPT);
+  } catch { /* (nothing to forget) */ }
+}
 const STEPS: Step[] = ["folder", "site", "auth"]; // (signing in last: it's what sets it all up)
 
 /** Which step a sign-in's error is about, to go back there. */
@@ -43,19 +59,29 @@ function stepOf(message: string): Step {
 }
 
 /** Signing in, a step at a time: the sync folder, the school's Canvas, how to sign in. */
-export function SignInForm({ another, folder, address, submitLabel, onDone, onCancel }: {
+export function SignInForm({ another, folder, address, auth, start = "folder", keep, submitLabel, onDone, onCancel }: {
   another?: boolean; // switching from the account there is
   folder?: string; // the sync folder to start with (switching: the current one)
   address?: string; // the Canvas address to start with (switching: the current school's)
+  auth?: "token" | "session" | null; // how you signed in (back from choosing the courses)
+  start?: Step;
+  keep?: boolean; // across a reload (the first sign-in, whose page has the language picker)
   submitLabel?: string;
   onDone: (account: AccountInfo) => void;
   onCancel?: () => void;
 }) {
-  const [step, setStep] = useState<Step>("folder");
-  const [url, setUrl] = useState(address?.replace(/^https:\/\//, "") ?? "");
-  const [how, setHow] = useState<"browser" | "token">("token");
+  const [was] = useState(() => (keep ? kept() : {}));
+  const [step, setStep] = useState<Step>(was.step ?? start);
+  const [url, setUrl] = useState(was.url ?? address?.replace(/^https:\/\//, "") ?? "");
+  const [how, setHow] = useState<"browser" | "token">(was.how ?? (auth === "session" ? "browser" : "token"));
   const [token, setToken] = useState("");
-  const [root, setRoot] = useState(folder ?? "~/Canvas");
+  const [root, setRoot] = useState(was.root ?? folder ?? "~/Canvas");
+  useEffect(() => {
+    if (!keep) return;
+    try {
+      sessionStorage.setItem(KEPT, JSON.stringify({ step, url, how, root } satisfies Kept));
+    } catch { /* (then a reload starts over) */ }
+  }, [keep, step, url, how, root]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const site = siteOf(url);
@@ -71,7 +97,9 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
     setError(null);
     try {
       const cred = how === "token" ? { token } : { cookies: await browserSignIn(site ?? "") };
-      onDone(await api.setUp(url, cred, root));
+      const done = await api.setUp(url, cred, root);
+      if (keep) forgetSignIn();
+      onDone(done);
     } catch (err) {
       if (cancelled(err)) return;
       const message = (err as Error).message;
@@ -164,13 +192,18 @@ export function SignInForm({ another, folder, address, submitLabel, onDone, onCa
 }
 
 /** The whole window, before there's an account. */
-export function SignInPage({ onDone }: { onDone: () => void }) {
+export function SignInPage({ onDone, again }: {
+  onDone: () => void;
+  again?: AccountInfo | null; // back from choosing the courses: as it was signed in, at the last step
+}) {
   return (
     <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
       <div className="w-full max-w-md">
         <h1 className="mb-5 text-xl font-semibold">{t("连接 Canvas")}</h1>
         <div className="rounded-xl border border-line bg-panel p-5">
-          <SignInForm onDone={onDone} />
+          <SignInForm keep onDone={onDone} {...again && {
+            folder: again.root ?? undefined, address: again.base_url ?? undefined, auth: again.auth, start: "auth" as const,
+          }} />
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
           <span>{t("语言")}</span>

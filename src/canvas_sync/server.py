@@ -458,8 +458,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(400, "not a sync folder")
         if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
             raise HTTPException(400, "folder not empty")
-        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url:
-            raise HTTPException(400, "folder belongs to another Canvas site")
+        if ours and account and account.root.resolve() == root.resolve() and account.base_url != url and not choosing():
+            raise HTTPException(400, "folder belongs to another Canvas site")  # (one that never synced is still free)
         return Engine.init_root(root)
 
     @api.post("/account/folder")

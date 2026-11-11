@@ -38,10 +38,11 @@ function terms(courses: CourseChoice[]): Term[] {
     });
 }
 
-export function ChooseCourses({ submitLabel, onDone, onCancel }: {
+export function ChooseCourses({ submitLabel, onDone, onCancel, onBack }: {
   submitLabel: string;
   onDone: (sync: SyncState, added: number[]) => void; // `added`: chosen, not syncing before
   onCancel?: () => void;
+  onBack?: () => void; // (after signing in: back to it)
 }) {
   const [list, setList] = useState<Awaited<ReturnType<typeof api.courseChoice>> | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -112,9 +113,7 @@ export function ChooseCourses({ submitLabel, onDone, onCancel }: {
       )}
       {list && (
         <p className="mt-2 text-xs leading-relaxed text-muted">
-          {list.select === "active"
-            ? t("没勾选的课不会下载。以后 Canvas 上新加的课程会自动同步；随时可以在设置里重新选。")
-            : t("没勾选的课不会下载。以后你在 Canvas 上收藏的新课程会自动同步；随时可以在设置里重新选。")}
+          {t("随时可以在设置里重新选。")}
         </p>
       )}
       {error && (
@@ -126,6 +125,7 @@ export function ChooseCourses({ submitLabel, onDone, onCancel }: {
       <div className="flex items-center justify-end gap-2 pt-4">
         {list && <span className="mr-auto text-xs text-muted">{t("已选 {n} 门课", { n: picked.size })}</span>}
         {onCancel && <Button onClick={onCancel}>{t("取消")}</Button>}
+        {onBack && <Button disabled={busy} onClick={onBack}>{t("上一步")}</Button>}
         <Button primary disabled={!list || busy || picked.size === 0} onClick={() => void save()}>{submitLabel}</Button>
       </div>
     </div>
@@ -141,13 +141,13 @@ function Check({ checked, mixed, onChange }: { checked: boolean; mixed?: boolean
 }
 
 /** The whole window, after signing in to a folder that has never synced. */
-export function ChooseCoursesPage({ onDone }: { onDone: () => void }) {
+export function ChooseCoursesPage({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   return (
     <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
       <div className="w-full max-w-lg">
         <h1 className="mb-5 text-xl font-semibold">{t("选择要同步的课程")}</h1>
         <div className="rounded-xl border border-line bg-panel p-5">
-          <ChooseCourses submitLabel={t("开始同步")} onDone={onDone} />
+          <ChooseCourses submitLabel={t("开始同步")} onDone={onDone} onBack={onBack} />
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
           <span>{t("语言")}</span>

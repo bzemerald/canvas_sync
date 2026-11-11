@@ -15,6 +15,7 @@ import { ownFrame } from "./lib/window";
 
 // One bundle serves both windows; the window's label picks the UI.
 const isLauncher = getCurrentWindow().label === "launcher";
+const BACK = "sign-in-back";
 document.documentElement.classList.toggle("launcher", isLauncher);
 
 export default function App() {
@@ -23,9 +24,27 @@ export default function App() {
   const [step, setStep] = useState<"sign in" | "folder" | "choose" | "app" | null>(null);
   const [root, setRoot] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const checkStep = () =>
+  // Back from choosing the courses to signing in (kept across a reload: changing the language).
+  const [again, setAgain] = useState<api.AccountInfo | null>(null);
+  const goBack = (on: boolean) => {
+    try {
+      if (on) sessionStorage.setItem(BACK, "1");
+      else sessionStorage.removeItem(BACK);
+    } catch { /* (then a reload goes to the courses again) */ }
+  };
+  const back = () => {
+    goBack(true);
+    void api.account().then((a) => (setAgain(a), setStep("sign in")), (e) => setError(String(e.message ?? e)));
+  };
+  const checkStep = (signedIn = false) =>
     void api.health().then((h) => {
       setRoot(h.root);
+      if (signedIn) goBack(false);
+      let backed = false;
+      try {
+        backed = sessionStorage.getItem(BACK) === "1";
+      } catch { /* (no) */ }
+      if (h.set_up && h.choosing && backed) return back();
       setStep(!h.set_up ? "sign in" : h.folder_missing ? "folder" : h.choosing ? "choose" : "app");
     }, (e) => setError(String(e.message ?? e)));
 
@@ -45,10 +64,10 @@ export default function App() {
   const page = () => {
     if (error) return <StartupError message={error} />;
     if (step === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
-    if (step === "sign in") return <SignInPage onDone={checkStep} />;
+    if (step === "sign in") return <SignInPage key={again ? "again" : "new"} again={again} onDone={() => checkStep(true)} />;
     if (step === "folder") return <MissingFolderPage root={root ?? ""} onDone={checkStep} />;
     // Choosing starts the first sync; the main window picks it up.
-    if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} />;
+    if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} onBack={back} />;
     return <MainWindow />;
   };
   return (

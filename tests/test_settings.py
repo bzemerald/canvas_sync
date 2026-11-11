@@ -163,6 +163,7 @@ def test_sync_folder_missing(root, tmp_path, canvas, keychain):
 
 
 def test_sign_out_and_in_again(root, tmp_path, canvas, keychain):
+    pull(root, canvas)
     keychain[BASE] = "old"
     canvas.valid_tokens = {"new"}
     with client(Account(BASE, root, "Test"), tmp_path) as api:
@@ -631,3 +632,13 @@ def test_a_file_that_fails_is_listed_apart(root, tmp_path, canvas, keychain):
         assert (state["phase"], state["errors"]) == ("done", [])
         assert [f["path"] for f in state["failed"]] == ["Fall 2026/MATH 221/Files/Lectures/locked.pdf"]
         assert "HTTP 404" in state["failed"][0]["error"]
+
+
+def test_another_school_into_a_folder_that_never_synced(tmp_path, canvas, keychain):
+    """Back from choosing the courses: the folder just made can go to another school."""
+    with client(None, tmp_path) as api:
+        root = str(tmp_path / "Canvas")
+        assert api.post("/api/account/setup", json={"url": "canvas.test", "token": "t", "root": root}).json()["set_up"]
+        assert api.get("/api/health").json()["choosing"] is True
+        got = api.post("/api/account/setup", json={"url": "other.test", "token": "t", "root": root}).json()
+        assert (got["signed_in"], got["base_url"]) == (True, "https://other.test")
