@@ -16,6 +16,7 @@ import { checkForUpdate, installUpdate, useUpdate } from "../lib/update";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
+import { updateSaying } from "./VersionLine";
 import { SignInForm, browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
@@ -394,18 +395,12 @@ function VersionRow() {
   const [version, setVersion] = useState("");
   const update = useUpdate();
   useEffect(() => void getVersion().then(setVersion, () => {}), []);
-  const status =
-    update.phase === "checking" ? t("正在检查…")
-      : update.phase === "latest" ? t("已是最新版本")
-        : update.phase === "available" ? t("有新版本 {v}", { v: update.version })
-          : update.phase === "downloading" ? t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
-            : update.phase === "installing" ? t("正在安装，马上重启…")
-              : null;
+  const status = update.phase === "failed" ? null : updateSaying(update);
   return (
     <Row label={t("版本")} hint={version ? <span className="tabular-nums">{version}</span> : undefined}>
       <span className="flex items-center gap-3 text-sm">
         {update.phase === "failed"
-          ? <span className="flex items-center gap-1 text-xs text-danger" title={update.error}><CircleAlert className="size-3.5" />{update.version ? t("更新失败") : t("检查失败")}</span>
+          ? <span className="flex items-center gap-1 text-xs text-danger" title={update.error}><CircleAlert className="size-3.5" />{updateSaying(update)}</span>
           : status && <span className={update.phase === "available" ? "text-accent" : "text-muted"}>{status}</span>}
         {update.phase === "available" || (update.phase === "failed" && update.version)
           ? <Button onClick={() => void installUpdate()}>{t("更新并重启")}</Button>

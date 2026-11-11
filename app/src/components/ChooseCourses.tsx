@@ -9,6 +9,7 @@ import { t } from "../lib/i18n";
 import { currentCourses, ongoing, termRank } from "../lib/terms";
 import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
+import { VersionLine } from "./VersionLine";
 
 interface Term {
   name: string | null;
@@ -150,6 +151,7 @@ export function ChooseCoursesPage({ onDone, onBack }: { onDone: () => void; onBa
           <ChooseCourses submitLabel={t("开始同步")} onDone={onDone} onBack={onBack} />
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
+          <VersionLine />
           <span>{t("语言")}</span>
           <LanguagePicker />
         </div>

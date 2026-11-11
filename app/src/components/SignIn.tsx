@@ -8,6 +8,7 @@ import { friendly } from "../lib/errors";
 import { t, tx } from "../lib/i18n";
 import { Button } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
+import { VersionLine } from "./VersionLine";
 
 /** How to make a Canvas token, when signing in and when replacing one. */
 export const tokenSteps = () => t("在 Canvas 里点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，把令牌粘贴到这里。过期后需要重新生成。");
@@ -206,6 +207,7 @@ export function SignInPage({ onDone, again }: {
           }} />
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
+          <VersionLine />
           <span>{t("语言")}</span>
           <LanguagePicker />
         </div>
