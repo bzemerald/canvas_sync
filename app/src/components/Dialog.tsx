@@ -1,6 +1,8 @@
+import { X } from "lucide-react";
 import { useEffect } from "react";
+import { t } from "../lib/i18n";
 
-/** A centered modal. Escape or clicking outside cancels. */
+/** A centered modal. Escape or its × cancels; clicking outside doesn't (what's half filled in stays). */
 export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }: {
   title: string;
   onClose: () => void;
@@ -18,7 +20,7 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
     <div
       role="dialog"
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-6"
-      onMouseDown={onClose}
+      onMouseDown={(e) => e.stopPropagation()} // (not to what's behind it, as with onContextMenu)
       onContextMenu={(e) => {
         // Not the menu of what's behind it (React passes events up to where the dialog was opened).
         e.stopPropagation();
@@ -29,10 +31,15 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
       <div
         role="dialog"
         aria-label={title}
-        onMouseDown={(e) => e.stopPropagation()}
         className={`flex max-h-full w-full ${width} flex-col rounded-xl border border-line bg-panel shadow-2xl`}
       >
-        <h2 className="px-5 pt-4 pb-2 text-base font-semibold">{title}</h2>
+        <div className="flex items-start gap-2 px-5 pt-4 pb-2">
+          <h2 className="min-w-0 flex-1 text-base font-semibold">{title}</h2>
+          <button onClick={onClose} title={t("关闭")} aria-label={t("关闭")}
+            className="-mr-2 shrink-0 rounded p-1 text-muted hover:bg-chip hover:text-fg">
+            <X className="size-4" />
+          </button>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2 text-sm">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
       </div>
