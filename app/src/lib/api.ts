@@ -249,8 +249,9 @@ export interface SyncState {
   done: number;
   current: string;
   changes: Record<string, number>;
-  errors: string[];
-  warnings: string[];
+  errors: string[]; // why it failed (phase "failed"), as the backend says it
+  failed?: { path: string; error: string }[]; // files that didn't sync (the rest did)
+  warnings: string[]; // what couldn't be read this time (tried again next time)
   finished_at: string | null;
   last_synced?: string | null; // when a sync last finished, this run of the app or before
   ed_error: EdError | null; // Ed went wrong (the rest synced anyway)

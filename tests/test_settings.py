@@ -619,3 +619,15 @@ def test_sign_in_with_a_browser(tmp_path, canvas, keychain):
         # Or a token, after all.
         assert api.post("/api/account/credentials", json={"token": "t"}).json()["auth"] == "token"
         assert keychain[BASE] == "t"
+
+
+def test_a_file_that_fails_is_listed_apart(root, tmp_path, canvas, keychain):
+    keychain[BASE] = "t"
+    canvas.put(2, "locked.pdf", b"x")
+    canvas.files[2]["url"] = f"{BASE}/files/2/gone"  # (404)
+    with client(Account(BASE, root, "Test"), tmp_path) as api:
+        api.post("/api/sync", json={})
+        state = wait_for_sync(api)
+        assert (state["phase"], state["errors"]) == ("done", [])
+        assert [f["path"] for f in state["failed"]] == ["Fall 2026/MATH 221/Files/Lectures/locked.pdf"]
+        assert "HTTP 404" in state["failed"][0]["error"]

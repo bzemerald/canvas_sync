@@ -51,7 +51,7 @@ import {
 import { ownFrame, useTrafficLights } from "./lib/window";
 import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
 import { shortDate } from "./lib/dates";
-import { edSaying, friendly } from "./lib/errors";
+import { edSaying, fileSaying, friendly, syncSaying } from "./lib/errors";
 import { browserSignIn, cancelled } from "./components/SignIn";
 import { locale, t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
@@ -1934,7 +1934,9 @@ function SyncStatus({ sync, label, onFix, onSignIn, renewing }: {
   onSignIn?: () => void; // signed in in the Canvas window: do it again
   renewing?: boolean; // that, quietly, now
 }) {
+  const [showFailed, setShowFailed] = useState(false);
   if (!sync || sync.phase === "idle") return null;
+  const failed = sync.failed ?? [];
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
   const finished = sync.finished_at ?? sync.last_synced; // when it ended
   const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t("，"));
@@ -1954,15 +1956,33 @@ function SyncStatus({ sync, label, onFix, onSignIn, renewing }: {
       )}
       {sync.running && sync.current && <p className="mt-1 truncate text-muted">{sync.current.split("/").pop()}</p>}
       {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || t("没有新内容")}</p>}
-      {sync.errors.slice(0, 3).map((e) => (
-        <p key={e} className="mt-1 break-words text-danger">{e}</p>
+      {!sync.expired && sync.errors.slice(0, 1).map((e) => (
+        <p key={e} className="mt-1 break-words text-danger" title={e}>{syncSaying(e)}</p>
       ))}
-      {(sync.expired || sync.errors.some((e) => /401|token/i.test(e))) && (renewing ? (
+      {failed.length > 0 && (
+        <button onClick={() => setShowFailed(!showFailed)} className="mt-1 block text-left text-danger hover:underline">
+          {t("{n} 个文件没能同步", { n: failed.length })}{showFailed ? " ▾" : " ›"}
+        </button>
+      )}
+      {showFailed && (
+        <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+          {failed.map((f) => (
+            <li key={f.path} title={`${f.path}\n${f.error}`}>
+              <span className="block truncate">{f.path.split("/").pop()}</span>
+              <span className="block text-muted">{fileSaying(f.error)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!sync.running && sync.warnings.length > 0 && (
+        <p className="mt-1 text-muted" title={sync.warnings.join("\n")}>{t("有些内容这次没读到，下次同步再试。")}</p>
+      )}
+      {sync.expired && (renewing ? (
         <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
       ) : onSignIn ? (
         <button onClick={onSignIn} className="mt-1 text-accent hover:underline">{t("Canvas 登录已过期，点这里重新登录")}</button>
       ) : (
-        <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌可能过期了，到设置里更换")}</button>
+        <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌已失效，到设置里更换")}</button>
       ))}
       {!sync.running && sync.ed_error && (
         <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>

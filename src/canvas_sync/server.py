@@ -90,8 +90,9 @@ class SyncJob:
     done: int = 0
     current: str = ""
     changes: dict[str, int] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)  # why it failed (phase "failed")
+    failed: list[dict[str, str]] = field(default_factory=list)  # files that didn't sync: path, error
+    warnings: list[str] = field(default_factory=list)  # what couldn't be read this time (tried again next)
     ed_error: str | None = None  # Ed went wrong (see ed.py); the rest synced anyway
     expired: bool = False  # Canvas no longer takes the token or the browser sign-in
 
@@ -1362,7 +1363,7 @@ async def _sync_canvas(account: Account, client: CanvasClient, course_ids: list[
                 job.done += 1
                 job.current = a.path or a.name or ""
             if error:
-                job.errors.append(f"{a.path or a.name}: {error}")
+                job.failed.append({"path": a.path or a.name or "", "error": error})
 
         # Even with nothing to download: this is what stores new announcements,
         # assignments, pages and modules.

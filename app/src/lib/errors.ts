@@ -43,6 +43,40 @@ export function friendly(message: string): string {
   return message;
 }
 
+// A sync: why it failed as a whole, and why a file didn't sync. (The backend's words stay in a
+// tooltip, for when someone has to look into it.)
+const SYNC_SAYINGS: [RegExp, string][] = [
+  [/ConnectError|ConnectTimeout|ReadTimeout|TimeoutException|NetworkError|RemoteProtocolError|nodename|Network is unreachable/,
+    t("连不上 Canvas。检查一下网络连接。")],
+  [/HTTP (5\d\d|429)\b|rate limit/i, t("Canvas 暂时出错了，过一会儿再试。")],
+  [/No space left|Errno 28/, t("磁盘空间不够了。")],
+  [/Permission denied|Errno 13|Operation not permitted/, t("没有权限写入同步文件夹。")],
+  [/database is locked/, t("应用还在忙别的事，过一会儿再试。")],
+  [/ConfigError/, t("配置文件（config.toml）有错，没能读懂。可以在设置里打开它看看。")],
+  [/sync folder missing/, t("找不到同步文件夹了。")],
+];
+
+export function syncSaying(message: string): string {
+  for (const [re, saying] of SYNC_SAYINGS) if (re.test(message)) return saying;
+  const known = friendly(message);
+  return known !== message ? known : t("同步出错了。");
+}
+
+const FILE_SAYINGS: [RegExp, string][] = [
+  [/HTTP 403/, t("老师还没开放，或者已经锁定")],
+  [/HTTP 404/, t("Canvas 上已经没有了")],
+  [/HTTP 401/, t("登录已过期")],
+  [/download failed|HTTP (0|5\d\d)\b/, t("没能下载，下次同步再试")],
+  [/not a symlink/, t("本地有同名的文件挡住了")],
+  [/Permission denied|Errno 13|used by another process/, t("文件正被别的应用占用")],
+  [/No space left|Errno 28/, t("磁盘空间不够")],
+];
+
+export function fileSaying(message: string): string {
+  for (const [re, saying] of FILE_SAYINGS) if (re.test(message)) return saying;
+  return t("没能同步");
+}
+
 const ED_SAYS: Record<string, string> = {
   "token rejected": t("Ed 不认这个令牌：可能填错了，或者已经被撤销。请在 Ed 上重新生成一个。"),
   "can't reach Ed": t("连不上 Ed。检查一下网络连接。"),
