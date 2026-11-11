@@ -254,6 +254,7 @@ export interface SyncState {
   finished_at: string | null;
   last_synced?: string | null; // when a sync last finished, this run of the app or before
   ed_error: EdError | null; // Ed went wrong (the rest synced anyway)
+  expired?: boolean; // Canvas no longer takes the token or the browser sign-in
 }
 
 /** The app's preferences (this computer's), and which courses the sync folder syncs. */
@@ -267,7 +268,8 @@ export interface Prefs {
 
 export interface AccountInfo {
   set_up: boolean; // false: show the sign-in
-  signed_in: boolean; // a token is saved
+  signed_in: boolean; // a token or a browser sign-in is saved
+  auth: "token" | "session" | null; // which (session: signed in in the app's Canvas window)
   base_url: string | null;
   root: string | null; // the sync folder
   user: string | null; // your name on Canvas
@@ -567,15 +569,27 @@ export const setPrefs = (changes: Partial<Prefs>) => post<Prefs>("/prefs", chang
 export const account = () => api<AccountInfo>("/account");
 /** Whether the saved token still works (asks Canvas). */
 export const checkAccount = () => api<{ ok: boolean; user?: string; error?: string }>("/account/check");
-/** Sign in (or switch account / school): checks the token, then starts a sync (a folder that has never synced: once its courses are chosen). */
-export const setUp = (url: string, token: string, root?: string) => post<AccountInfo>("/account/setup", { url, token, root });
+/** What signs in to Canvas: an access token, or the cookies of signing in in the app's Canvas window. */
+export type Credentials = { token: string } | { cookies: Record<string, string> };
+/** Sign in (or switch account / school): checks the sign-in, then starts a sync (a folder that has never synced: once its courses are chosen). */
+export const setUp = (url: string, cred: Credentials, root?: string) => post<AccountInfo>("/account/setup", { url, ...cred, root });
 /** The sync folder went missing: where it is now (`isNew` false), or an empty one to sync into anew. */
 export const moveFolder = (root: string, isNew: boolean) => post<AccountInfo>("/account/folder", { root, new: isNew });
 /** Everything in the sync folder, moved to an empty folder. `left_behind`: the old folder, if it
  * couldn't all be deleted. */
 export const moveWorkspace = (root: string) =>
   post<AccountInfo & { left_behind: string | null }>("/account/move", { root });
-export const replaceToken = (token: string) => post<AccountInfo>("/account/token", { token });
+/** A new token or browser sign-in for the same account. */
+export const replaceCredentials = (cred: Credentials) => post<AccountInfo>("/account/credentials", cred);
+/** Sign in to Canvas (`site`: its address) in a window of its own: the cookies it set.
+ * `silent`: in a hidden window, only if nothing needs typing (else "needs sign-in"); closing the
+ * window: "cancelled". */
+export const canvasLogin = (site: string, title: string, silent = false) =>
+  invoke<Record<string, string>>("canvas_login", { site, title, silent }).catch((e) => {
+    throw new Error(String(e));
+  });
+/** Forget what the Canvas window kept (signing out). */
+export const canvasLogout = () => invoke("canvas_logout").catch(() => {});
 export const signOut = () => post<AccountInfo>("/account/signout", {});
 /** What went wrong with Ed (see errors.ts: edSaying). */
 export type EdError = "token rejected" | "can't reach Ed" | "Ed changed";

@@ -52,6 +52,7 @@ import { ownFrame, useTrafficLights } from "./lib/window";
 import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
 import { shortDate } from "./lib/dates";
 import { edSaying, friendly } from "./lib/errors";
+import { browserSignIn, cancelled } from "./components/SignIn";
 import { locale, t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
 
@@ -578,6 +579,27 @@ export function MainWindow() {
       return false;
     }
   };
+  /** The browser sign-in expired: sign in again (`silent`: only if the school still knows you),
+   * then sync what failed again. Whether that worked. */
+  const renewSignIn = async (silent: boolean): Promise<boolean> => {
+    if (!account?.base_url || !sync) return false;
+    const failed = sync;
+    try {
+      setAccount(await api.replaceCredentials({ cookies: await browserSignIn(account.base_url, silent) }));
+    } catch (e) {
+      if (!silent && !cancelled(e)) say(t("{what}：{why}", { what: t("登录失败"), why: friendly((e as Error).message) }));
+      return false;
+    }
+    void startSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel);
+    return true;
+  };
+  // Once per sync that failed so: quietly first; the sidebar offers the window if that didn't do.
+  const renewedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sync?.expired || account?.auth !== "session" || renewedFor.current === sync.finished_at) return;
+    renewedFor.current = sync.finished_at;
+    void renewSignIn(true);
+  }, [sync?.expired, sync?.finished_at, account?.auth]);
   const syncBusy = !!sync?.running;
   const openMenu = (items: MenuItem[], x: number, y: number) => setMenu({ x, y, items });
   const reveal = (path: string) => void api.openPath(path, { reveal: true });
@@ -1167,7 +1189,8 @@ export function MainWindow() {
             {t("还没有登录 Canvas，不能同步。点这里登录。")}
           </button>
         ) : (
-          <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })} />
+          <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })}
+            onSignIn={account?.auth === "session" ? () => void renewSignIn(false) : undefined} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onPress={pressSearchButton} onClick={clickSearchButton} title={t("搜索")} keys={keysLabel(launcherKeys)} />
@@ -1899,7 +1922,12 @@ function UpdateNotice() {
   );
 }
 
-function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: string; onFix: () => void }) {
+function SyncStatus({ sync, label, onFix, onSignIn }: {
+  sync: SyncState | null;
+  label: string;
+  onFix: () => void;
+  onSignIn?: () => void; // signed in in the Canvas window: do it again
+}) {
   if (!sync || sync.phase === "idle") return null;
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
   const finished = sync.finished_at ?? sync.last_synced; // when it ended
@@ -1923,9 +1951,11 @@ function SyncStatus({ sync, label, onFix }: { sync: SyncState | null; label: str
       {sync.errors.slice(0, 3).map((e) => (
         <p key={e} className="mt-1 break-words text-danger">{e}</p>
       ))}
-      {sync.errors.some((e) => /401|token/i.test(e)) && (
+      {(sync.expired || sync.errors.some((e) => /401|token/i.test(e))) && (onSignIn ? (
+        <button onClick={onSignIn} className="mt-1 text-accent hover:underline">{t("Canvas 登录已过期，点这里重新登录")}</button>
+      ) : (
         <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌可能过期了，到设置里更换")}</button>
-      )}
+      ))}
       {!sync.running && sync.ed_error && (
         <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>
       )}

@@ -16,7 +16,7 @@ import { checkForUpdate, installUpdate, useUpdate } from "../lib/update";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
-import { SignInForm, inputClass, tokenSteps } from "./SignIn";
+import { SignInForm, browserSignIn, cancelled, inputClass, tokenSteps } from "./SignIn";
 
 const AUTO_SYNC: [number, string][] = [
   [0, t("不自动同步")], [30, t("每 30 分钟")], [60, t("每小时")], [180, t("每 3 小时")], [360, t("每 6 小时")], [1440, t("每天")],
@@ -62,16 +62,29 @@ export function Settings({ sync, onSync, onAccount }: {
   const saveToken = async () => {
     setTokenError(null);
     try {
-      changed(await api.replaceToken(newToken ?? ""));
+      changed(await api.replaceCredentials({ token: newToken ?? "" }));
       setNewToken(null);
       setCheck({ ok: true });
     } catch (e) {
       setTokenError(friendly((e as Error).message));
     }
   };
+  /** Signing in again in the Canvas window (or for the first time, instead of a token). */
+  const signInAgain = async () => {
+    if (!account?.base_url) return;
+    setError(null);
+    try {
+      changed(await api.replaceCredentials({ cookies: await browserSignIn(account.base_url) }));
+      setNewToken(null);
+      setCheck({ ok: true });
+    } catch (e) {
+      if (!cancelled(e)) setError(friendly((e as Error).message));
+    }
+  };
   const signOut = async () => {
     setConfirmSignOut(false);
     try {
+      if (account?.auth === "session") await api.canvasLogout(); // (the next sign-in asks who you are)
       changed(await api.signOut());
     } catch (e) {
       setError(friendly((e as Error).message));
@@ -115,7 +128,12 @@ export function Settings({ sync, onSync, onAccount }: {
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
-                  <Button onClick={() => setNewToken("")}>{account.signed_in ? t("更换令牌…") : t("登录…")}</Button>
+                  {account.auth !== "token" && (
+                    <Button onClick={() => void signInAgain()}>{account.signed_in ? t("重新登录…") : t("在登录窗口中登录…")}</Button>
+                  )}
+                  {account.auth !== "session" && (
+                    <Button onClick={() => setNewToken("")}>{account.signed_in ? t("更换令牌…") : t("用令牌登录…")}</Button>
+                  )}
                   {account.signed_in && <Button onClick={() => setConfirmSignOut(true)}>{t("退出登录…")}</Button>}
                   <Button onClick={() => setSwitching(true)} disabled={!!sync?.running}>{t("切换账号或学校…")}</Button>
                 </div>
@@ -197,7 +215,9 @@ export function Settings({ sync, onSync, onAccount }: {
             </>
           }
         >
-          <p className="text-fg-soft">{t("这台电脑上保存的令牌会被删除，之后不能再同步或打开外部工具。已经下载的文件、置顶和设置都会保留，重新登录后接着用。")}</p>
+          <p className="text-fg-soft">{account?.auth === "session"
+            ? t("这台电脑上保存的 Canvas 登录会被删除，之后不能再同步或打开外部工具。已经下载的文件、置顶和设置都会保留，重新登录后接着用。")
+            : t("这台电脑上保存的令牌会被删除，之后不能再同步或打开外部工具。已经下载的文件、置顶和设置都会保留，重新登录后接着用。")}</p>
         </Dialog>
       )}
       {choosing && (
@@ -240,7 +260,7 @@ function AccountStatus({ account, check }: { account: AccountInfo; check: { ok: 
   return (
     <span className="flex shrink-0 items-center gap-1 text-xs text-danger" title={friendly(check.error ?? "")}>
       <CircleAlert className="size-3.5" />
-      {/token/.test(check.error ?? "") ? t("令牌已失效") : t("连不上 Canvas")}
+      {/sign-in rejected/.test(check.error ?? "") ? t("登录已过期") : /token/.test(check.error ?? "") ? t("令牌已失效") : t("连不上 Canvas")}
     </span>
   );
 }

@@ -21,6 +21,7 @@ const SAYINGS: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
   [/can't be renamed/, t("这个文件夹不能重命名")],
   // signing in
   [/token rejected/, t("令牌无效或已经过期。请在 Canvas 上重新生成一个。")],
+  [/sign-in rejected/, t("Canvas 没有接受这次登录。请再登录一次。")],
   [/can't reach the site/, t("连不上这个网址。检查一下网址和网络连接。")],
   [/not a Canvas site/, t("这个网址不是 Canvas。请填学校 Canvas 的网址。")],
   [/not a web address/, t("网址不对。例如 bcourses.berkeley.edu")],

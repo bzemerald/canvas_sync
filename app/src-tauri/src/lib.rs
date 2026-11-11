@@ -14,6 +14,7 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod dragout;
+mod login;
 #[cfg(target_os = "macos")]
 mod panel;
 #[cfg(windows)]
@@ -395,6 +396,8 @@ pub fn run() {
             set_launcher_keys,
             show_ghost,
             dragout::drag_out,
+            login::canvas_login,
+            login::canvas_logout,
             #[cfg(windows)]
             tray::set_tray_labels,
             #[cfg(target_os = "macos")]

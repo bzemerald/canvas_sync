@@ -1,5 +1,5 @@
-// Connecting a Canvas account: the school's Canvas address, an access token, and where the
-// files go. What a new user sees first; in 设置, how you switch account or school.
+// Connecting a Canvas account: the school's Canvas address, how to sign in (in a Canvas window
+// of the app's, or with an access token, which some schools don't allow), and where the files go. What a new user sees first; in 设置, how you switch account or school.
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import * as api from "../lib/api";
@@ -12,7 +12,13 @@ import { LanguagePicker } from "./LanguagePicker";
 /** How to make a Canvas token, when signing in and when replacing one. */
 export const tokenSteps = () => t("在 Canvas 里点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，把令牌粘贴到这里。过期后需要重新生成。");
 
-/** "bcourses.berkeley.edu" -> "https://bcourses.berkeley.edu" (for the link to the token page). */
+/** Sign in in the app's Canvas window: its cookies (an error "cancelled" if it was closed). */
+export const browserSignIn = (site: string, silent = false) => api.canvasLogin(site, t("登录 Canvas"), silent);
+
+/** Closing the sign-in window isn't an error to show. */
+export const cancelled = (e: unknown) => /cancelled/.test(String((e as Error)?.message ?? e));
+
+/** "bcourses.berkeley.edu" -> "https://bcourses.berkeley.edu". */
 function siteOf(url: string): string | null {
   const u = url.trim();
   if (!u) return null;
@@ -33,6 +39,7 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
   onCancel?: () => void;
 }) {
   const [url, setUrl] = useState("");
+  const [how, setHow] = useState<"browser" | "token">("browser");
   const [token, setToken] = useState("");
   const [root, setRoot] = useState(another ? "" : "~/Canvas");
   const [busy, setBusy] = useState(false);
@@ -48,9 +55,10 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
     setBusy(true);
     setError(null);
     try {
-      onDone(await api.setUp(url, token, root));
+      const cred = how === "token" ? { token } : { cookies: await browserSignIn(site ?? "") };
+      onDone(await api.setUp(url, cred, root));
     } catch (err) {
-      setError(friendly((err as Error).message));
+      if (!cancelled(err)) setError(friendly((err as Error).message));
     } finally {
       setBusy(false);
     }
@@ -63,19 +71,35 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("例如 bcourses.berkeley.edu")} autoFocus
           spellCheck={false} autoCapitalize="off" className={inputClass} />
       </label>
-      <label className="block">
-        <span className="mb-1 block font-medium">{t("访问令牌")}</span>
-        <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("粘贴令牌")}
-          autoComplete="off" spellCheck={false} className={inputClass} />
-        <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-          {tokenSteps()}
-          {site && (
-            <button type="button" onClick={() => void api.openExternal(`${site}/profile/settings`)} className="ml-1 text-accent hover:underline">
-              {t("打开 Canvas 设置页")}
+      <div>
+        <span className="mb-1 block font-medium">{t("登录方式")}</span>
+        <div className="flex rounded-md border border-line p-0.5" role="radiogroup">
+          {([["browser", t("在登录窗口中登录")], ["token", t("访问令牌")]] as const).map(([k, label]) => (
+            <button key={k} type="button" role="radio" aria-checked={how === k} onClick={() => setHow(k)}
+              className={`flex-1 rounded px-2 py-1 text-xs ${how === k ? "bg-selected font-medium text-accent" : "text-muted hover:text-fg"}`}>
+              {label}
             </button>
-          )}
-        </span>
-      </label>
+          ))}
+        </div>
+        {how === "browser" ? (
+          <span className="mt-1.5 block text-xs leading-relaxed text-muted">
+            {t("会打开学校的 Canvas 登录页，像在浏览器里一样登录。学校不允许生成令牌时用这个。登录过一段时间会过期，到时候应用会尽量自动续上，续不上会请你再登录一次。")}
+          </span>
+        ) : (
+          <>
+            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("粘贴令牌")}
+              autoComplete="off" spellCheck={false} className={`${inputClass} mt-2`} />
+            <span className="mt-1.5 block text-xs leading-relaxed text-muted">
+              {tokenSteps()}
+              {site && (
+                <button type="button" onClick={() => void api.openExternal(`${site}/profile/settings`)} className="ml-1 text-accent hover:underline">
+                  {t("打开 Canvas 设置页")}
+                </button>
+              )}
+            </span>
+          </>
+        )}
+      </div>
       <div>
         <span className="mb-1 block font-medium">{t("同步文件夹")}</span>
         <div className="flex gap-2">
@@ -93,8 +117,8 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
       {error && <p className="text-danger">{error}</p>}
       <div className="flex justify-end gap-2 pt-1">
         {onCancel && <Button type="button" onClick={onCancel}>{t("取消")}</Button>}
-        <Button primary type="submit" disabled={busy || !url.trim() || !token.trim() || !root}>
-          {busy ? t("正在登录…") : submitLabel ?? t("登录")}
+        <Button primary type="submit" disabled={busy || !site || (how === "token" && !token.trim()) || !root}>
+          {busy ? t("正在登录…") : how === "browser" ? t("打开登录窗口…") : submitLabel ?? t("登录")}
         </Button>
       </div>
     </form>
