@@ -31,7 +31,8 @@ from .things import (
     PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, parse_entry,
 )
 
-KEYRING_SERVICE = "canvas-sync"
+# Another home (CANVAS_SYNC_HOME: trying the app out as someone new) keeps its sign-ins apart too.
+KEYRING_SERVICE = "canvas-sync" + (f" ({os.environ['CANVAS_SYNC_HOME']})" if os.environ.get("CANVAS_SYNC_HOME") else "")
 ACCOUNT_FILE = Path(os.environ.get("CANVAS_SYNC_HOME", "~/.config/canvas-sync")).expanduser() / "config.toml"
 PREFS_FILE = ACCOUNT_FILE.parent / "app.toml"
 
