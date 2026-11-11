@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
+import { useGlideHeight } from "../lib/flip";
 import { t } from "../lib/i18n";
 
 /** A centered modal. Escape or its × cancels; clicking outside doesn't (what's half filled in stays). */
@@ -10,6 +11,7 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
   footer?: React.ReactNode; // (a form inside may bring its own buttons)
   width?: string;
 }) {
+  const [box, content] = useGlideHeight(); // (going to the next step, say)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -40,7 +42,9 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
             <X className="size-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2 text-sm">{children}</div>
+        <div ref={box} className="min-h-0 shrink overflow-y-hidden">
+          <div ref={content} className="px-5 pb-2 text-sm">{children}</div>
+        </div>
         {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
       </div>
     </div>

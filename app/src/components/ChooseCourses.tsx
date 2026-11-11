@@ -8,8 +8,6 @@ import { friendly } from "../lib/errors";
 import { t } from "../lib/i18n";
 import { currentCourses, ongoing, termRank } from "../lib/terms";
 import { Button } from "./Dialog";
-import { LanguagePicker } from "./LanguagePicker";
-import { VersionLine } from "./VersionLine";
 
 interface Term {
   name: string | null;
@@ -139,23 +137,4 @@ function Check({ checked, mixed, onChange }: { checked: boolean; mixed?: boolean
     if (ref.current) ref.current.indeterminate = !!mixed;
   }, [mixed]);
   return <input ref={ref} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="shrink-0 accent-accent" />;
-}
-
-/** The whole window, after signing in to a folder that has never synced. */
-export function ChooseCoursesPage({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
-  return (
-    <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
-      <div className="w-full max-w-lg">
-        <h1 className="mb-5 text-xl font-semibold">{t("选择要同步的课程")}</h1>
-        <div className="rounded-xl border border-line bg-panel p-5">
-          <ChooseCourses submitLabel={t("开始同步")} onDone={onDone} onBack={onBack} />
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
-          <VersionLine />
-          <span>{t("语言")}</span>
-          <LanguagePicker />
-        </div>
-      </div>
-    </div>
-  );
 }

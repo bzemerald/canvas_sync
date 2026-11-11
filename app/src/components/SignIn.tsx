@@ -7,8 +7,6 @@ import type { AccountInfo } from "../lib/api";
 import { friendly } from "../lib/errors";
 import { t, tx } from "../lib/i18n";
 import { Button } from "./Dialog";
-import { LanguagePicker } from "./LanguagePicker";
-import { VersionLine } from "./VersionLine";
 
 /** How to make a Canvas token, when signing in and when replacing one. */
 export const tokenSteps = () => t("在 Canvas 里点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，把令牌粘贴到这里。过期后需要重新生成。");
@@ -189,29 +187,5 @@ export function SignInForm({ another, folder, address, auth, start = "folder", k
         </Button>
       </div>
     </form>
-  );
-}
-
-/** The whole window, before there's an account. */
-export function SignInPage({ onDone, again }: {
-  onDone: () => void;
-  again?: AccountInfo | null; // back from choosing the courses: as it was signed in, at the last step
-}) {
-  return (
-    <div data-tauri-drag-region className="flex h-screen items-center justify-center overflow-y-auto bg-bg p-8 text-fg">
-      <div className="w-full max-w-md">
-        <h1 className="mb-5 text-xl font-semibold">{t("连接 Canvas")}</h1>
-        <div className="rounded-xl border border-line bg-panel p-5">
-          <SignInForm keep onDone={onDone} {...again && {
-            folder: again.root ?? undefined, address: again.base_url ?? undefined, auth: again.auth, start: "auth" as const,
-          }} />
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
-          <VersionLine />
-          <span>{t("语言")}</span>
-          <LanguagePicker />
-        </div>
-      </div>
-    </div>
   );
 }

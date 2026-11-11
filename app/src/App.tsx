@@ -4,9 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { Launcher } from "./Launcher";
 import { MainWindow, StartupError } from "./MainWindow";
-import { ChooseCoursesPage } from "./components/ChooseCourses";
+import { ChooseCourses } from "./components/ChooseCourses";
 import { MissingFolderPage } from "./components/MissingFolder";
-import { SignInPage } from "./components/SignIn";
+import { SignInForm } from "./components/SignIn";
+import { Welcome } from "./components/Welcome";
 import { WindowControls } from "./components/WindowControls";
 import * as api from "./lib/api";
 import { applyLanguage, t, type LangPref } from "./lib/i18n";
@@ -64,10 +65,21 @@ export default function App() {
   const page = () => {
     if (error) return <StartupError message={error} />;
     if (step === null) return <div data-tauri-drag-region className="h-screen bg-bg" />;
-    if (step === "sign in") return <SignInPage key={again ? "again" : "new"} again={again} onDone={() => checkStep(true)} />;
+    // (One Welcome for both: from signing in to the courses, its box glides.)
+    if (step === "sign in") return (
+      <Welcome title={t("连接 Canvas")}>
+        <SignInForm key={again ? "again" : "new"} keep onDone={() => checkStep(true)} {...again && {
+          folder: again.root ?? undefined, address: again.base_url ?? undefined, auth: again.auth, start: "auth" as const,
+        }} />
+      </Welcome>
+    );
     if (step === "folder") return <MissingFolderPage root={root ?? ""} onDone={checkStep} />;
     // Choosing starts the first sync; the main window picks it up.
-    if (step === "choose") return <ChooseCoursesPage onDone={() => setStep("app")} onBack={back} />;
+    if (step === "choose") return (
+      <Welcome title={t("选择要同步的课程")}>
+        <ChooseCourses submitLabel={t("开始同步")} onDone={() => setStep("app")} onBack={back} />
+      </Welcome>
+    );
     return <MainWindow />;
   };
   return (

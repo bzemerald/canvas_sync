@@ -12,7 +12,7 @@ import type { Course, DocKind, Hit, Module, NewsView, Overview } from "../lib/ap
 import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
-import { useFlip } from "../lib/flip";
+import { GLIDE, useFlip } from "../lib/flip";
 import { Settling, lineIn, slotInColumn } from "../lib/slot";
 import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
@@ -432,7 +432,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         <div
           ref={setGrid}
           className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
-          style={{ height: Math.max(48, height), transition: placed ? "height 220ms cubic-bezier(0.2, 0, 0, 1)" : undefined }}
+          style={{ height: Math.max(48, height), transition: placed ? `height ${GLIDE}` : undefined }}
         >
           {inserting && (
             <div aria-hidden className="pointer-events-none z-10 h-0.5 rounded-full bg-accent"
