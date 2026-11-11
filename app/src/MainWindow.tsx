@@ -1195,7 +1195,8 @@ export function MainWindow() {
           </button>
         ) : (
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })}
-            onSignIn={account?.auth === "session" ? () => void renewSignIn(false) : undefined} renewing={renewing} />
+            session={account?.auth === "session"} renewing={renewing}
+            onSignIn={() => (account?.auth === "session" ? void renewSignIn(false) : setSigningIn(true))} />
         )}
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <NavItem icon={<Search className="size-4" />} active={false} onPress={pressSearchButton} onClick={clickSearchButton} title={t("搜索")} keys={keysLabel(launcherKeys)} />
@@ -1446,7 +1447,12 @@ export function MainWindow() {
       )}
       {showingKeys && <KeysDialog onClose={() => setShowingKeys(false)} />}
       {signingIn && account && (
-        <SignInDialog account={account} onClose={() => setSigningIn(false)} onDone={(a) => (setSigningIn(false), setAccount(a), refresh())} />
+        <SignInDialog account={account} onClose={() => setSigningIn(false)} onDone={(a) => {
+          setSigningIn(false);
+          setAccount(a);
+          refresh();
+          if (sync?.expired) void startSync(sync.scope.length ? { paths: sync.scope } : {}, syncLabel); // (what failed for it)
+        }} />
       )}
       {restoring && (
         <RestoreDialog
@@ -1931,11 +1937,12 @@ function UpdateNotice() {
   );
 }
 
-function SyncStatus({ sync, label, onFix, onSignIn, renewing }: {
+function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: {
   sync: SyncState | null;
   label: string;
   onFix: () => void;
-  onSignIn?: () => void; // signed in in the Canvas window: do it again
+  onSignIn: () => void; // signed out of Canvas: sign in again
+  session: boolean; // signed in in the Canvas window (else with a token)
   renewing?: boolean; // that, quietly, now
 }) {
   const [showFailed, setShowFailed] = useState(false);
@@ -1983,10 +1990,10 @@ function SyncStatus({ sync, label, onFix, onSignIn, renewing }: {
       )}
       {sync.expired && (renewing ? (
         <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
-      ) : onSignIn ? (
-        <button onClick={onSignIn} className="mt-1 text-accent hover:underline">{t("Canvas 登录已过期，点这里重新登录")}</button>
       ) : (
-        <button onClick={onFix} className="mt-1 text-accent hover:underline">{t("Canvas 令牌已失效，到设置里更换")}</button>
+        <button onClick={onSignIn} className="mt-1 text-accent hover:underline">
+          {session ? t("Canvas 登录已过期，点这里重新登录") : t("Canvas 令牌已失效，点这里更换")}
+        </button>
       ))}
       {!sync.running && sync.ed_error && (
         <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>

@@ -135,7 +135,7 @@ export const en: Record<string, string | [string, string]> = {
   "删除了 {n} 个": ["1 deleted", "{n} deleted"],
   "，": ", ",
   "没有新内容": "Nothing new",
-  "Canvas 令牌已失效，到设置里更换": "Canvas token expired. Replace it in Settings",
+  "Canvas 令牌已失效，点这里更换": "Canvas token expired. Click to replace it",
   "{n} 个文件没能同步": ["1 file didn't sync", "{n} files didn't sync"],
   "有些内容这次没读到，下次同步再试。": "Some things couldn't be read this time; the next sync tries again.",
   "连不上 Canvas。检查一下网络连接。": "Can't reach Canvas. Check your internet connection.",
