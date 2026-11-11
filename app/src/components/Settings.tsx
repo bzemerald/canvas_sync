@@ -237,6 +237,7 @@ export function Settings({ account, sync, onSync, onAccount }: {
           <div className="pb-3">
             <SignInForm
               another
+              folder={account.root ?? undefined}
               submitLabel={t("切换")}
               onCancel={() => setSwitching(false)}
               onDone={() => location.reload()} // everything is someone else's now

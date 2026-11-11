@@ -43,8 +43,9 @@ function stepOf(message: string): Step {
 }
 
 /** Signing in, a step at a time: the sync folder, the school's Canvas, how to sign in. */
-export function SignInForm({ another, submitLabel, onDone, onCancel }: {
-  another?: boolean; // switching from the account there is: address and folder start empty
+export function SignInForm({ another, folder, submitLabel, onDone, onCancel }: {
+  another?: boolean; // switching from the account there is: the address starts empty
+  folder?: string; // the sync folder to start with (switching: the current one)
   submitLabel?: string;
   onDone: (account: AccountInfo) => void;
   onCancel?: () => void;
@@ -53,7 +54,7 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
   const [url, setUrl] = useState("");
   const [how, setHow] = useState<"browser" | "token">("browser");
   const [token, setToken] = useState("");
-  const [root, setRoot] = useState(another ? "" : "~/Canvas");
+  const [root, setRoot] = useState(folder ?? "~/Canvas");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const site = siteOf(url);
@@ -101,7 +102,7 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
           </div>
           <span className="mt-1.5 block text-xs text-muted">
             {another
-              ? t("换成另一所学校时，请选一个新的同步文件夹：两所学校的课程不能放在同一个文件夹里。现在这个文件夹里的文件会原样保留。")
+              ? t("换成另一所学校时，请选一个新的同步文件夹。")
               : t("课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。")}
           </span>
         </div>
@@ -146,12 +147,8 @@ export function SignInForm({ another, submitLabel, onDone, onCancel }: {
       )}
       {error && <p className="text-danger">{error}</p>}
       <div className="flex justify-end gap-2 pt-1">
-        {at > 0 ? (
-          <Button type="button" disabled={busy} onClick={() => go(STEPS[at - 1])} className="mr-auto">{t("上一步")}</Button>
-        ) : onCancel && (
-          <Button type="button" onClick={onCancel} className="mr-auto">{t("取消")}</Button>
-        )}
-        {at > 0 && onCancel && <Button type="button" onClick={onCancel}>{t("取消")}</Button>}
+        {onCancel && <Button type="button" onClick={onCancel} className="mr-auto">{t("取消")}</Button>}
+        {at > 0 && <Button type="button" disabled={busy} onClick={() => go(STEPS[at - 1])}>{t("上一步")}</Button>}
         <Button primary type="submit" disabled={busy || !ready}>
           {busy ? t("正在登录…") : step !== "auth" ? t("下一步") : how === "browser" ? t("打开登录窗口…") : submitLabel ?? t("登录")}
         </Button>
