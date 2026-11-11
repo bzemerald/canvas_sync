@@ -197,7 +197,7 @@ export function MainWindow() {
 
   // -- data ------------------------------------------------------------------------
   useEffect(() => {
-    api.courses().then(setCourseList, (e) => setStartupError(String(e.message ?? e)));
+    api.courses().then(setCourseList, (e) => api.isFolderMissing(e) || setStartupError(String(e.message ?? e)));
   }, [version, seenTick]);
   useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
   useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);

@@ -300,6 +300,13 @@ export class ApiError extends Error {
   }
 }
 
+// The sync folder went missing (moved, renamed or deleted while the app runs): any call can be
+// the first to find out. The window then asks where it went (App.tsx).
+const MISSING = "sync folder missing";
+const folderGone = new Set<() => void>();
+export const onFolderMissing = (f: () => void) => (folderGone.add(f), () => void folderGone.delete(f));
+export const isFolderMissing = (e: unknown) => e instanceof ApiError && e.message === MISSING;
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const { port, token } = await getBackend();
   const res = await fetch(`http://127.0.0.1:${port}/api${path}`, {
@@ -308,6 +315,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (res.status === 409 && body.detail === MISSING) folderGone.forEach((f) => f());
     throw new ApiError(body.detail ?? `${res.status} ${res.statusText}`, res.status);
   }
   return res.json();

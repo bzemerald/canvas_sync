@@ -53,12 +53,17 @@ export default function App() {
     // The language this window loaded with was remembered here; the backend's is the one chosen.
     void api.prefs().then((p) => applyLanguage(p.language), () => {});
     const off = listen<{ language: LangPref }>("prefs-changed", ({ payload }) => applyLanguage(payload.language));
+    let forget: (() => void) | undefined;
     if (!isLauncher) {
       checkStep();
+      forget = api.onFolderMissing(() => checkStep()); // (gone while the app runs: ask where)
       void loadLauncherKeys().catch(() => {});
       void invoke("set_tray_labels", { open: t("打开主窗口"), quit: t("退出") }).catch(() => {}); // (Windows has one)
     }
-    return () => void off.then((f) => f());
+    return () => {
+      void off.then((f) => f());
+      forget?.();
+    };
   }, []);
 
   if (isLauncher) return <Launcher />;
