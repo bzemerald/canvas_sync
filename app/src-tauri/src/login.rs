@@ -24,6 +24,18 @@ const SILENT_TIMEOUT: Duration = Duration::from_secs(20);
 #[cfg(target_os = "macos")]
 const STORE: [u8; 16] = *b"canvas-sync-lgin";
 
+/// Whether the window's cookies are kept apart (`STORE`), not with the app's own pages.
+fn store_apart() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
+        let v14 = NSOperatingSystemVersion { majorVersion: 14, minorVersion: 0, patchVersion: 0 };
+        NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(v14)
+    }
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
 type Reply = Arc<Mutex<Option<oneshot::Sender<Result<HashMap<String, String>, String>>>>>;
 
 fn window<'a>(app: &'a AppHandle, url: Url, title: &str, visible: bool) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
@@ -128,7 +140,14 @@ pub async fn canvas_logout(app: AppHandle) -> Result<(), String> {
     close_old(&app);
     let blank = Url::parse("about:blank").unwrap();
     let w = window(&app, blank, "", false).build().map_err(|e| e.to_string())?;
-    let cleared = w.clear_all_browsing_data().map_err(|e| e.to_string());
+    let cleared = if store_apart() {
+        w.clear_all_browsing_data().map_err(|e| e.to_string())
+    } else {
+        // With the app's own pages: only the cookies, not what the app keeps (localStorage).
+        w.cookies().map_err(|e| e.to_string()).map(|all| all.into_iter().for_each(|c| {
+            let _ = w.delete_cookie(c);
+        }))
+    };
     let _ = w.destroy();
     cleared
 }
