@@ -1325,6 +1325,7 @@ export function MainWindow() {
               <Breadcrumb
                 path={filesTab ? cv.path : course.dir}
                 root={{ path: course.dir, label: course.label, icon: <CourseIcon course={course} /> }}
+                onRootMenu={(x, y) => openMenu(course.hidden ? hiddenCourseMenu(course) : courseMenu(course), x, y)} // (its sidebar row's)
                 inline={inlineOf(course, cv.blank ? null : tab)}
                 onGo={(p) => (p === course.dir && !filesTab ? openCourse(course) : goPath(p))}
               />
@@ -1733,11 +1734,12 @@ function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocu
 }
 
 /** Where you are. In a course it starts at the course (its name, not where its files live). */
-function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inline, onGo }: {
+function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inline, onGo, onRootMenu }: {
   path: string;
   root?: { path: string; label: string; icon?: React.ReactNode };
   inline?: string; // a folder shown as the root itself (a course's Files, in 文件): not a step
   onGo: (p: string) => void;
+  onRootMenu?: (x: number, y: number) => void; // the root, right-clicked
 }) {
   const rest = path.slice(root.path.length).replace(/^\//, "");
   const prefix = root.path ? root.path + "/" : "";
@@ -1745,7 +1747,7 @@ function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inlin
     .filter((p) => p.path !== inline);
   return (
     <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
-      <button onClick={() => onGo(root.path)} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
+      <button onClick={() => onGo(root.path)} onContextMenu={onRootMenu && ((e) => (e.preventDefault(), onRootMenu(e.clientX, e.clientY)))} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
         {root.icon}
         {root.label}
       </button>
