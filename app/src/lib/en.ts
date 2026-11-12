@@ -371,6 +371,11 @@ export const en: Record<string, string | [string, string]> = {
   "只要填命令的应用用这个：": "For apps that ask only for a command:",
   "复制": "Copy",
   "已复制": "Copied",
+  "拷贝": "Copy",
+  "已拷贝 {what}": "Copied {what}",
+  "已复制 {what}": "Copied {what}",
+  "没能拷贝 {what}": "Couldn't copy {what}",
+  "没能复制 {what}": "Couldn't copy {what}",
   "完成": "Done",
   "用一个英文小模型（约 125 MB，打开时下载）改善搜索，允许按意思找正文。":
     "Makes searching smarter by using a small language model (125 MB, downloaded when you turn this on).",

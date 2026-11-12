@@ -16,7 +16,7 @@ export const primary = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMac ? e
 
 type Key = { key: string; code?: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean };
 
-export type FileCommand = "open" | "rename" | "preview" | "delete" | "parent" | "selectAll";
+export type FileCommand = "open" | "rename" | "preview" | "delete" | "parent" | "selectAll" | "copy";
 
 /** What a key means in a file list or grid (arrows are handled by the list itself). */
 export function fileCommand(e: Key): FileCommand | null {
@@ -26,6 +26,7 @@ export function fileCommand(e: Key): FileCommand | null {
     if (e.metaKey && k === "ArrowUp") return "parent";
     if (e.metaKey && k === "Backspace") return "delete";
     if (e.metaKey && k === "a") return "selectAll";
+    if (e.metaKey && k === "c" && !e.shiftKey && !e.altKey) return "copy";
     if (k === "Enter" && !e.metaKey && !e.ctrlKey) return "rename";
     if (k === " ") return "preview";
     return null;
@@ -35,6 +36,7 @@ export function fileCommand(e: Key): FileCommand | null {
   if (k === "Delete") return "delete";
   if (e.altKey && k === "ArrowUp") return "parent";
   if (e.ctrlKey && k === "a") return "selectAll";
+  if (e.ctrlKey && k === "c" && !e.shiftKey && !e.altKey) return "copy";
   return null;
 }
 
@@ -84,15 +86,17 @@ export function tabCommand(e: Key): TabCommand | null {
 /** How to write each shortcut in menus and tooltips. */
 export const shortcut = isMac
   ? {
-      open: "⌘O", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
+      open: "⌘O", copy: "⌘C", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
       toggleChanges: "⌘⇧.", settings: "⌘,", sync: "⌘R", prevCourse: "⌥⌘↑", nextCourse: "⌥⌘↓", shortcuts: "⌘/",
       tab: "⌘1…9", newTab: "⌘T", nextTab: "⌃⇥ / ⌘⇧]", prevTab: "⌃⇧⇥ / ⌘⇧[", up: "↑", down: "↓",
     }
   : {
-      open: "Enter", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
+      open: "Enter", copy: "Ctrl+C", rename: "F2", preview: "", delete: "Delete", parent: "Alt+↑", back: "Alt+←", forward: "Alt+→", search: "Ctrl+F",
       toggleChanges: platform === "linux" ? "Ctrl+H" : "", settings: "Ctrl+,", sync: "Ctrl+R", prevCourse: "Ctrl+Shift+↑",
       nextCourse: "Ctrl+Shift+↓", shortcuts: "Ctrl+/", tab: "Ctrl+1…9", newTab: "Ctrl+T", nextTab: "Ctrl+Tab", prevTab: "Ctrl+Shift+Tab", up: "↑", down: "↓",
     };
 
+/** What Finder and Explorer call copying. */
+export const copyName = isMac ? t("拷贝") : t("复制");
 export const trashName = isMac ? t("废纸篓") : t("回收站");
 export const fileManager = isMac ? "Finder" : platform === "windows" ? t("文件资源管理器") : t("文件管理器");

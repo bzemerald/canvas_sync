@@ -15,7 +15,7 @@ import { ContentDivider, KIND, ResultBody, baseName, firstContentMatch, hitKey }
 import { Thumb } from "./Thumb";
 import { t } from "../lib/i18n";
 
-export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, onMenu, onDelete }: {
+export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, onMenu, onDelete, onCopy }: {
   hits: Hit[];
   mode: ViewMode;
   showCourse: boolean;
@@ -24,6 +24,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
   onReveal: (hit: Hit) => void; // a file: show it in its folder, in the app
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void; // only files that are on disk are passed
+  onCopy: (hits: Hit[]) => void; // to the clipboard; the same
 }) {
   const dragThing = useDragThing(); // (置顶 is in their menu)
   const scroller = useRef<HTMLDivElement>(null);
@@ -57,6 +58,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
     if (command === "open") picked.forEach(onOpen);
     else if (command === "selectAll") sel.all();
     else if (command === "delete" && picked.some((h) => h.path)) onDelete(picked.filter((h) => h.path));
+    else if (command === "copy" && picked.some((h) => h.path)) onCopy(picked.filter((h) => h.path));
     else if (command === "preview") void preview("toggle");
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
     else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);

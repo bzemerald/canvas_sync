@@ -37,7 +37,8 @@ import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
 import { type Reading, read } from "./lib/query";
-import { appCommand, fileManager, isMac, shortcut, trashName } from "./lib/keys";
+import { appCommand, copyName, fileManager, isMac, shortcut, trashName } from "./lib/keys";
+import { copyFiles } from "./lib/copyFiles";
 import { clickSearchButton, keysLabel, pressSearchButton, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
@@ -613,6 +614,13 @@ export function MainWindow() {
 
   const say = (message: string, action?: NoticeAction) => setNotice({ text: message, action });
   const fail = (what: string) => (e: unknown) => say(t("{what}：{why}", { what, why: friendly((e as Error).message) }));
+  /** Files and folders to the clipboard, to paste in Finder / Explorer or another app. */
+  const copy = (paths: string[], names: string[]) =>
+    void copyFiles(paths).then((ok) => {
+      const what = countLabel(names);
+      say(ok ? (isMac ? t("已拷贝 {what}", { what }) : t("已复制 {what}", { what })) : isMac ? t("没能拷贝 {what}", { what }) : t("没能复制 {what}", { what }));
+    });
+  const copyItem = (paths: string[], names: string[]): Exclude<MenuItem, "separator"> => ({ label: copyName, hint: shortcut.copy, onSelect: () => copy(paths, names) });
   const undo = (run: () => void): NoticeAction => ({ label: t("撤销"), run });
 
   // -- places: 置顶, and the open course's tabs, overview and 工具与链接 ---------------------------
@@ -782,6 +790,7 @@ export function MainWindow() {
         ...markRead({ type: "folder", path: e.path }, e.new_inside),
         "separator",
         pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
+        copyItem([e.path], [e.name]),
         { label: t("重命名"), hint: shortcut.rename, onSelect: () => setRenaming(e.path) },
         ...(e.renamed_from ? [{ label: t("恢复原名"), onSelect: () => void renameFolder(e.path, "") }] : []),
         "separator",
@@ -802,7 +811,7 @@ export function MainWindow() {
     ];
     if (e.url) items.push({ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(e.url!) });
     if (e.link) items.push({ label: t("显示原始文件"), onSelect: () => goPath(parentOf(e.link!), e.link!) });
-    items.push("separator", pinOf({ type: "file", path: e.path }));
+    items.push("separator", pinOf({ type: "file", path: e.path }), copyItem([e.path], [e.name]));
     if (notSynced(e)) {
       items.push("separator", { label: t("恢复同步"), disabled: syncBusy, onSelect: () => void track([e.path], [e.name]) });
     } else if (e.file_id !== null) {
@@ -847,6 +856,8 @@ export function MainWindow() {
       { label: t("打开 {n} 个文件", { n: files.length }), disabled: !files.length, onSelect: () => files.slice(0, 20).forEach((f) => void api.openPath(f.path)) },
       ...markSeveralRead(files.filter((e) => e.new).map((e) => e.path), live.filter((e) => e.type === "dir" && e.new_inside > 0).map((e) => e.path)),
       "separator",
+      { ...copyItem(live.map((e) => e.path), live.map((e) => e.name)), disabled: !live.length },
+      "separator",
       ...(synced.length ? [{ label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync(scope, label) }] : []),
       { label: t("恢复原版…"), onSelect: () => setRestoring({ scope, label }) },
       ...(resume.length
@@ -874,6 +885,8 @@ export function MainWindow() {
         { label: t("打开 {n} 项", { n: hs.length }), onSelect: () => hs.slice(0, 20).forEach(openHere) },
         ...markSeveralRead(onDisk.map((h) => h.path!).filter((p) => newFiles?.includes(p))),
         "separator",
+        { ...copyItem(onDisk.map((h) => h.path!), onDisk.map((h) => h.title)), disabled: !onDisk.length },
+        "separator",
         del,
       ];
     }
@@ -890,7 +903,9 @@ export function MainWindow() {
         : []),
       ...(h.url ? [{ label: onTheWeb(h.url), onSelect: () => void api.openUrl(h.url!) }] : []),
       ...(h.path ? markRead({ type: "file", path: h.path }) : []),
-      ...(x ? ["separator" as const, pinOf({ ...x, name: h.title })] : []),
+      ...(x || h.path ? ["separator" as const] : []),
+      ...(x ? [pinOf({ ...x, name: h.title })] : []),
+      ...(h.path ? [copyItem([h.path], [h.title])] : []),
       ...(h.path ? ["separator" as const, del] : []),
     ];
   };
@@ -1155,6 +1170,7 @@ export function MainWindow() {
           const live = es.filter((e) => !e.deleted);
           if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
         }}
+        onCopy={(es) => copy(es.map((e) => e.path), es.map((e) => e.name))}
         renaming={renaming}
         onStartRename={(e) => canRename(e) && setRenaming(e.path)}
         onRename={(e, name) => void renameFolder(e.path, name)}
@@ -1385,6 +1401,7 @@ export function MainWindow() {
               const live = es.filter((e) => !e.deleted);
               if (!syncBusy) askDelete(live.map((e) => e.path), live.map((e) => e.name));
             }}
+            onCopy={(es) => copy(es.map((e) => e.path), es.map((e) => e.name))}
             renaming={renaming}
             onStartRename={(e) => canRename(e) && setRenaming(e.path)}
             onRename={(e, name) => void renameFolder(e.path, name)}
@@ -1405,6 +1422,7 @@ export function MainWindow() {
             onReveal={(h) => h.path && goPath(parentOf(h.path), h.path, foundBy(h))}
             onMenu={(hs, x, y) => openMenu(hitsMenu(hs), x, y)}
             onDelete={(hs) => !syncBusy && askDelete(hs.map((h) => h.path!), hs.map((h) => h.title))}
+            onCopy={(hs) => copy(hs.map((h) => h.path!), hs.map((h) => h.title))}
           />
         )}
         </Marked>
@@ -1632,7 +1650,7 @@ function Notice({ notice, onDone }: { notice: NoticeState | null; onDone: () => 
   );
 }
 
-function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReveal, onMenu, onDelete }: {
+function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReveal, onMenu, onDelete, onCopy }: {
   view: View;
   mode: ViewMode;
   query: string;
@@ -1644,6 +1662,7 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
   onOpen: (hit: Hit) => void;
   onMenu: (hits: Hit[], x: number, y: number) => void;
   onDelete: (hits: Hit[]) => void;
+  onCopy: (hits: Hit[]) => void;
 }) {
   const [kind, setKind] = useState<Kind | null>(null);
   const { hits, error, loading } = results;
@@ -1672,7 +1691,7 @@ function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReve
       {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
     </>
   );
-  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} />;
+  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} onCopy={onCopy} />;
 }
 
 function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus, completion }: {

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+mod clipboard;
 mod dragout;
 mod login;
 #[cfg(target_os = "macos")]
@@ -396,6 +397,7 @@ pub fn run() {
             set_launcher_keys,
             show_ghost,
             dragout::drag_out,
+            clipboard::copy_files,
             login::canvas_login,
             login::canvas_logout,
             #[cfg(windows)]

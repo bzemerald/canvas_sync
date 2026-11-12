@@ -1,5 +1,5 @@
 import { t } from "../lib/i18n";
-import { isMac, shortcut, trashName } from "../lib/keys";
+import { copyName, isMac, shortcut, trashName } from "../lib/keys";
 import { keysLabel, useLauncherKeys } from "../lib/launcherKeys";
 import { Button, Dialog } from "./Dialog";
 
@@ -28,6 +28,7 @@ export function KeysDialog({ onClose }: { onClose: () => void }) {
       [t("选择"), "↑ ↓ ← →"],
       [t("打开"), shortcut.open],
       ...(isMac ? [[t("快速预览"), shortcut.preview] as [string, string]] : []),
+      [copyName, shortcut.copy],
       [t("重命名"), shortcut.rename],
       [t("上一级文件夹"), shortcut.parent],
       [t("移到{trash}", { trash: trashName }), shortcut.delete],

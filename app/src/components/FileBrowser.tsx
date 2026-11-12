@@ -34,6 +34,7 @@ interface Props {
   onMenu: (entries: Entry[], x: number, y: number) => void; // the selection, right-clicked
   onFolderMenu: (x: number, y: number) => void; // the folder itself: right-clicked where nothing is
   onDelete: (entries: Entry[]) => void;
+  onCopy: (entries: Entry[]) => void; // to the clipboard
   renaming: string | null; // path of the folder being renamed in place
   onStartRename: (e: Entry) => void;
   onRename: (e: Entry, name: string) => void;
@@ -74,7 +75,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete,
+  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete, onCopy,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const dragThing = useDragThing(); // (置顶 is in their menus)
@@ -213,6 +214,7 @@ export function FileBrowser({
     else if (command === "parent") path !== root && path && onNavigate(parentOf(path) === inline ? root : parentOf(path));
     else if (command === "selectAll") sel.all();
     else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
+    else if (command === "copy") picked.some((e) => !e.deleted) ? onCopy(picked.filter((e) => !e.deleted)) : (handled = false);
     else if (command === "rename") focused && canRename(focused) ? onStartRename(focused) : (handled = false);
     else if (command === "preview") void preview("toggle");
     else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
