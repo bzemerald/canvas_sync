@@ -62,6 +62,7 @@ def test_restore_discards_edits(root, fake):
     assert (root / MOD).read_bytes() == b"v1"
 
 
+@pytest.mark.links
 @pytest.mark.parametrize("save", ["unchanged", "in place", "safely"])
 def test_a_file_moved_in_finder_counts_as_deleted(root, fake, save):
     """However it's saved afterwards: apps that save safely give the file a new inode."""

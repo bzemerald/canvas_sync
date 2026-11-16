@@ -65,6 +65,7 @@ def ok(root: Path, name: str, **args: Any) -> Any:
     return said
 
 
+@pytest.mark.links
 def test_finding_and_reading(root, course):
     pull(root, course)
     with Engine(root) as e:
@@ -118,6 +119,7 @@ def test_whats_new(root, course):
     assert ok(root, "list_courses")["courses"][0]["new"] == 1
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="time.tzset is Unix's")
 def test_times_also_in_the_students_zone(root, course, monkeypatch):
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     time.tzset()

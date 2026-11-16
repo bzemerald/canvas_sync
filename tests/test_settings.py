@@ -309,6 +309,7 @@ def assert_moved(api, old, new, files):
     assert [c["id"] for c in api.get("/api/courses").json()] == [1]
 
 
+@pytest.mark.links
 def test_move_folder_keeps_everything(root, tmp_path, canvas, keychain):
     keychain[BASE] = "t"
     canvas.put(1, "lec.pdf", b"lecture")
@@ -328,6 +329,7 @@ def test_move_folder_keeps_everything(root, tmp_path, canvas, keychain):
         assert not [p for p in new.rglob("*") if "updated" in p.name or "mine)" in p.name]
 
 
+@pytest.mark.links
 def test_move_folder_to_another_disk(root, tmp_path, canvas, keychain, monkeypatch):
     keychain[BASE] = "t"
     canvas.put(1, "lec.pdf", b"lecture")
@@ -351,6 +353,7 @@ def test_move_folder_to_another_disk(root, tmp_path, canvas, keychain, monkeypat
         assert not [p for p in new.rglob("*") if "updated" in p.name or "mine)" in p.name]
 
 
+@pytest.mark.links
 def test_move_folder_fails_leaving_it_as_it_was(root, tmp_path, canvas, keychain, monkeypatch):
     import errno
     import shutil
@@ -404,6 +407,7 @@ def test_move_folder_fails_leaving_it_as_it_was(root, tmp_path, canvas, keychain
         check(400, "not enough room")
 
 
+@pytest.mark.links
 def test_move_folder_only_to_an_empty_folder(root, tmp_path, canvas, keychain):
     keychain[BASE] = "t"
     with client(Account(BASE, root, "Test"), tmp_path) as api:
@@ -430,6 +434,7 @@ def test_move_folder_only_to_an_empty_folder(root, tmp_path, canvas, keychain):
         assert move(tidy).json()["root"] == str(tidy)
 
 
+@pytest.mark.links
 def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keychain, monkeypatch):
     keychain[BASE] = "t"
     seen = {}
@@ -451,6 +456,7 @@ def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keych
     assert not (tmp_path / "Other").exists()
 
 
+@pytest.mark.links
 def test_a_move_waits_for_what_is_being_answered(root, tmp_path, canvas, keychain, monkeypatch):
     keychain[BASE] = "t"
     order: list[str] = []
@@ -485,6 +491,7 @@ def test_a_move_waits_for_what_is_being_answered(root, tmp_path, canvas, keychai
     assert order == ["answered", "moved"] and moved == [200]
 
 
+@pytest.mark.links
 def test_a_move_that_cannot_go_back_says_where_things_are(root, tmp_path, canvas, keychain, monkeypatch):
     import os as real_os
 
@@ -508,6 +515,7 @@ def test_a_move_that_cannot_go_back_says_where_things_are(root, tmp_path, canvas
     assert Account.load() is None or Account.load().root == root
 
 
+@pytest.mark.links
 def test_a_move_to_a_disk_without_links_says_so(root, tmp_path, canvas, keychain, monkeypatch):
     import errno
 

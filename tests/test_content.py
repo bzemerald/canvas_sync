@@ -284,6 +284,7 @@ def test_new_files_in_the_file_browser(root, fake):
     assert term["MATH 221"].new_inside == 1  # the file and its view link are one file
 
 
+@pytest.mark.links
 def test_a_file_marked_read_at_one_of_its_paths_is_read_at_all(root, fake):
     pull(root, fake)
     fake.put(102, "lec2.pdf", b"l2")
@@ -298,6 +299,7 @@ def test_a_file_marked_read_at_one_of_its_paths_is_read_at_all(root, fake):
         assert {x.name: x for x in e.list_dir(COURSE)}["Files"].new_inside == 0
 
 
+@pytest.mark.links
 def test_only_files_that_count_as_new_can_be_marked_read(root, fake):
     pull(root, fake)
     fake.put(102, "lec2.pdf", b"l2")
