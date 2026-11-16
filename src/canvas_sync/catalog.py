@@ -5,7 +5,7 @@ what it's called and when it's from; the text inside is the index's (search.py).
 aren't in it, nor anything of theirs.
 
 Names are what Canvas or the sync folder calls things (`name`), or None for what the app names
-(a view, a link, a note); `title` is a name you gave it in a place (置顶, a course's page), and
+(a view, a link, a note); `title` is a name you gave it in a place (Pinned, a course's page), and
 `aliases` are the other names it answers to. `canvas_url`: where it is on Canvas (relative; a
 folder's is the course's files; a link, a note, a smart folder are nowhere there).
 A course's `keys` are what it is as one word of a query ("cs70", "53", a name you gave it: what
@@ -130,7 +130,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             add(Thing("folder", path=folder), course=cid, name=title or own, aliases=[own] if title else None,
                 canvas_url=view_url(cid, "files"))
 
-    # What you put in places: 置顶, and each course's tabs, overview and 工具与链接. What's there
+    # What you put in places: Pinned, and each course's tabs, overview and Tools and links. What's there
     # answers to the names you gave it; links, notes and smart folders are only there.
     placed: list[tuple[Entry, int | None]] = [(x, None) for x in e.settings.pinned]
     for cid, layout in e.settings.course_layouts.items():

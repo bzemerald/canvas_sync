@@ -6,11 +6,11 @@
 import type { DocKind } from "./api";
 import { type Shown, type Thing, type ThingOf, type ViewName, fromEd, isView, opensElsewhere, same, thingKey, thingOf, view as viewOf } from "./things";
 
-// A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually), or
+// A course is its own kind of place, not "a folder": it opens on its first tab (Overview, usually), or
 // where you last were in it.
 // `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
-// `path` is the folder 文件 (or a folder tab) is in; `item` the announcement / assignment / page
-// being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
+// `path` is the folder Files (or a folder tab) is in; `item` the announcement / assignment / page
+// being read, or the module open in Modules. A search is a smart folder (a saved search) shown.
 // `found`: what's marked there, having come from search (lib/marks.ts).
 // `blank`: a new tab is showing (`tab` is the one before it, to go back to when it's closed).
 export type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean; found?: string; blank?: boolean };
@@ -53,7 +53,7 @@ export function replaced(h: History, v: View): History {
 export const listed = (tabs: Shown[], x: Thing) => tabs.some((e) => same(e, x) && !e.hidden);
 
 /** Going to one of the course's tabs (or showing something there). `dir`: the course's folder. A
- * folder tab is at its folder; 文件 starts at the course's, and so does clicking it again. */
+ * folder tab is at its folder; Files starts at the course's, and so does clicking it again. */
 export function toTab(v: CourseView, x: Thing, dir: string | undefined): CourseView {
   const fresh = v.tab.type === "folder" || x.type === "folder" || (same(v.tab, x) && !v.blank);
   return { ...v, tab: x, item: undefined, select: undefined, first: false, found: undefined, blank: false, path: x.type === "folder" ? x.path : fresh ? dir ?? v.path : v.path };
@@ -63,8 +63,8 @@ export function toTab(v: CourseView, x: Thing, dir: string | undefined): CourseV
 export const firstTab = (tabs: Shown[], id: number): Thing => thingOf(tabs.find((e) => !e.hidden && !opensElsewhere(e)) ?? viewOf(id, "overview"));
 
 /** Where the course's page is, once its tabs are known: a thing it has a tab for is that tab; a
- * document, a module, a folder is in the view that has it (the reader with it picked, 模块 at it,
- * 文件 or a folder tab at it), if that's one of its tabs. Else it shows on a tab for now (`spareOf`). */
+ * document, a module, a folder is in the view that has it (the reader with it picked, Modules at it,
+ * Files or a folder tab at it), if that's one of its tabs. Else it shows on a tab for now (`spareOf`). */
 export function settle(v: CourseView, tabs: Shown[], dir: string | undefined): CourseView {
   if (v.first) return { ...toTab(v, firstTab(tabs, v.id), dir), found: v.found };
   const x = v.tab;
@@ -105,11 +105,11 @@ export function withoutSpare(v: CourseView, tabs: Shown[], last: Thing | undefin
 
 // -- what's on screen -------------------------------------------------------------------------------
 
-/** Whether files are showing: all files, or a course's 文件 (or a folder that's a tab). */
+/** Whether files are showing: all files, or a course's Files (or a folder that's a tab). */
 export const showsFiles = (v: View) => v.kind === "browse" || (v.kind === "course" && !v.blank && (isView(v.tab, "files") || v.tab.type === "folder"));
 
 /** Whether a thing is what's on screen: a course's tab, the announcement or page being read, the
- * module open in 模块, the folder 文件 is in, the smart folder. */
+ * module open in Modules, the folder Files is in, the smart folder. */
 export function showing(v: View, x: Thing): boolean {
   if (v.kind === "search") return same(x, v.search);
   if (x.type === "folder") return showsFiles(v) && (v.kind === "browse" || v.kind === "course") && v.path === x.path;

@@ -1,5 +1,5 @@
 // Each kind of thing (lib/things.ts), as both windows show it: its icon, what one is called when it
-// has no name of its own, what they're called together (a query's chip: "作业"). A document is
+// has no name of its own, what they're called together (a query's chip: "Assignments"). A document is
 // of its kind (announcement, assignment...); a course's views each have their own (`VIEWS`).
 import {
   AppWindow, Award, BookOpen, ClipboardList, ExternalLink, FileText, Folder, FolderOpen, GraduationCap, LayoutDashboard,
@@ -28,7 +28,7 @@ export const KINDS: Record<KindId, { icon: LucideIcon; one: string; all: string 
 export const kindOf = (x: Thing): KindId | null => (x.type === "doc" ? x.kind : x.type === "view" ? null : x.type);
 
 /** A course's views: the icon, the name as a tab, as a card on its overview, as a row (in the
- * sidebar, in 工具与链接): a card or a row without its own is called as the tab. */
+ * sidebar, in Tools and links): a card or a row without its own is called as the tab. */
 export const VIEWS: Record<ViewName, { icon: LucideIcon; tab: string; card?: string; row?: string }> = {
   overview: { icon: LayoutDashboard, tab: t("Overview") },
   modules: { icon: ListChecks, tab: t("Modules"), card: t("This week's module") },

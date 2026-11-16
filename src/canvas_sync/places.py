@@ -1,9 +1,9 @@
-"""The places things are put: 置顶 in the sidebar, and each course's tabs, overview and 工具与链接
-(its links). Each is a list of entries (see things.py).
+"""The places things are put: Pinned in the sidebar, and each course's tabs, overview and Tools
+and links (its links). Each is a list of entries (see things.py).
 
 Within a course anything goes anywhere; between courses there's a border. A course's places hold
 only its things: its views, documents, modules, tools and notes, the folders and files in its
-folder, searches of just that course; and web links, which are no course's. 置顶 is where things
+folder, searches of just that course; and web links, which are no course's. Pinned is where things
 of different courses meet.
 
 A course's places have things of their own, which can be hidden but not taken away: its views
@@ -11,7 +11,7 @@ are its tabs, and its overview's cards; its tools, its syllabus and the course o
 links. The rest are what you put there. A course's tabs and overview follow the default
 arrangement (app.toml; any course's can be made it) unless arranged for the course: then what's
 stored for them has their own things in it, in their order. Its links are in the order Canvas
-has them, unless arranged too. 置顶 has nothing of its own.
+has them, unless arranged too. Pinned has nothing of its own.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ class Place:
 
 
 def course_place(e: Engine, prefs: AppPrefs, course_id: int, name: str) -> Place:
-    """One of a course's places as it is now: with the course's tools (工具与链接), the default
+    """One of a course's places as it is now: with the course's tools (Tools and links), the default
     arrangement (app.toml's; the usual, until it has one) and the course's folder."""
     tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
     default = (getattr(prefs, name) or usual(name)) if name in ("tabs", "overview") else []
@@ -103,7 +103,7 @@ def course_place(e: Engine, prefs: AppPrefs, course_id: int, name: str) -> Place
 
 
 def course_layout(e: Engine, prefs: AppPrefs, course_id: int) -> dict[str, Any]:
-    """A course's page: its tabs, overview and 工具与链接, each with all it holds, in order, as
+    """A course's page: its tabs, overview and Tools and links, each with all it holds, in order, as
     the app shows them (`describe`). `own`: which of them are arranged for the course (the others
     follow the default)."""
     own = e.settings.course_layouts.get(course_id) or CourseLayout()
@@ -148,7 +148,7 @@ def describe(entries: list[Entry], e: Engine, place: Place | None = None) -> lis
     """Entries as the app shows them: each with what its thing is called now (`name`: what Canvas
     or the sync folder calls it; None for what the app names), whether it's still there, the
     course it's in, and whether it's one of `place`'s own things (`own`: hidden, never taken
-    away; 置顶, no place of a course's, has none)."""
+    away; Pinned, no place of a course's, has none)."""
     courses = {c.id: c for c in e.state.courses()}
     dirs = e.layout.course_dirs(courses.values())
     tools: dict[int, dict[int, str | None]] = {}
@@ -188,7 +188,7 @@ def describe(entries: list[Entry], e: Engine, place: Place | None = None) -> lis
 
 def as_course(entries: list[Entry], dirs: dict[str, int]) -> list[Entry]:
     """A course's own folder, pinned, is the course (pinned before courses could be, or dragged
-    from 全部文件)."""
+    from All files)."""
     return once(
         Entry(course_thing(dirs[x.thing.path]), x.title, x.hidden) if x.thing.type == "folder" and x.thing.path in dirs else x
         for x in entries

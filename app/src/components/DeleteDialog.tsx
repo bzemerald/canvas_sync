@@ -8,7 +8,7 @@ import { t, tn } from "../lib/i18n";
 /** Confirms a delete: says what goes to the Trash and what stops syncing. */
 export function DeleteDialog({ paths, label, onClose, onDone }: {
   paths: string[];
-  label: string; // "lec1.pdf", or "3 项"
+  label: string; // "lec1.pdf", or "3 items"
   onClose: () => void;
   onDone: (deleted: string[]) => void;
 }) {

@@ -6,7 +6,7 @@
 // What's typed is read first (query.ts): a course, a time, where you are with an assignment narrow
 // it down; the rest is matched against names, match-sorter's way, part by part: each has to match
 // what a thing is called (its own names) or what it's in (its course, its kind, its folders), and
-// at least one its own names. A kind word names what's of that kind ("cs70 公告": CS 70's
+// at least one its own names. A kind word names what's of that kind ("cs70 announcements": CS 70's
 // announcements); one of a series, what's numbered so in that series by any of its names ("hw3":
 // Homework 3, HW03.pdf, Problem Set 3); a word, also what it's an abbreviation of ("mt": midterm).
 //

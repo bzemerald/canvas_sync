@@ -2,7 +2,7 @@
 //   npm run release -- 0.2.0
 // Pushing the tag (git push origin main v0.2.0) is what builds it: .github/workflows/release.yml
 // makes the Mac and Windows apps and a draft release on GitHub; publishing that draft is what
-// the apps' 检查更新 sees.
+// the apps' Check for updates sees.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ if (git("tag", "--list", `v${version}`)) {
 
 // Where the version is written: each pattern's first group is what comes before it.
 const files = [
-  ["app/src-tauri/tauri.conf.json", /^(\s*"version": ")[^"]+/m], // (what 检查更新 compares)
+  ["app/src-tauri/tauri.conf.json", /^(\s*"version": ")[^"]+/m], // (what Check for updates compares)
   ["app/package.json", /^(\s*"version": ")[^"]+/m],
   ["app/package-lock.json", /^(\s*"version": ")[^"]+/m], // (the top, then the root package's)
   ["app/package-lock.json", /("packages": \{\s*"": \{\s*"name": "canvas-desktop",\s*"version": ")[^"]+/],

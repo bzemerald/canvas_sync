@@ -1,4 +1,4 @@
-// Things that change place glide there: the overview's cards, 工具与链接's links. After each
+// Things that change place glide there: the overview's cards, Tools and links' links. After each
 // render, whatever moved starts from where it was on screen (mid-glide, if it was gliding) and
 // slides to its new place. One motion for everything: dragging, dropping, a card added or
 // hidden, a card growing as its content comes in. And boxes that change size (useGlideHeight).

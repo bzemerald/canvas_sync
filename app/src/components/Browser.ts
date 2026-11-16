@@ -24,7 +24,7 @@ export function useBrowser<T>({ items, keyOf, mode, onOpen, onMenu, onDelete, on
   thing: (item: T) => Shown | null | undefined; // dragged to a place
   files?: (items: T[]) => string[]; // dragged out of the window: the files that go
 }) {
-  const dragThing = useDragThing(); // (置顶 is in their menus)
+  const dragThing = useDragThing(); // (Pin is in their menus)
   const scroller = useRef<HTMLDivElement>(null);
   const keys = useMemo(() => items.map(keyOf), [items, keyOf]);
   const byKey = useMemo(() => new Map(items.map((x) => [keyOf(x), x])), [items, keyOf]);

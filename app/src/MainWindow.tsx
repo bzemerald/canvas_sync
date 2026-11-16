@@ -77,7 +77,7 @@ const VIEW_FINDS: Partial<Record<ViewName, Pick<Where, "kind" | "source">>> = {
   announcements: { kind: "announcement" }, assignments: { kind: "assignment" }, pages: { kind: "page" }, ed: { source: "ed" },
   modules: { kind: "module" }, files: { kind: "file" },
 };
-// A course's 文件 shows its Files folder as itself (what Canvas's Files has), and the folders of
+// A course's Files shows its Files folder as itself (what Canvas's Files has), and the folders of
 // what's from elsewhere in the course first, saying what they are.
 const inlineOf = (c: Course, tab: Thing | null) => (tab && isView(tab, "files") ? c.source_dirs.files : undefined);
 const marks = new WeakMap<Course, React.ComponentProps<typeof FileBrowser>["marked"]>(); // (one per course loaded: the list keeps its order)
@@ -201,7 +201,7 @@ export function MainWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -- the open course's page: its tabs, overview and 工具与链接, arranged for it or as every course's --
+  // -- the open course's page: its tabs, overview and Tools and links, arranged for it or as every course's --
   const courseById = (id: number) => courseList.find((c) => c.id === id) ?? null;
   const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
   const layoutId = raw.kind === "course" ? raw.id : null;
@@ -263,20 +263,20 @@ export function MainWindow() {
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
   const browsing = filesView ? view.path : null; // (a course's other tabs remember a folder, but don't show it)
 
-  /** Go to a folder: inside a course, that's the course's page (in 文件, or a folder tab that has
+  /** Go to a folder: inside a course, that's the course's page (in Files, or a folder tab that has
    * it); elsewhere, a plain folder. */
   const goPath = (path: string, select?: string, found?: string) => {
     const c = courseAt(path);
     if (!c) return go({ kind: "browse", path, select, found });
-    // (In 文件, or a folder tab that has it: it stays there.)
+    // (In Files, or a folder tab that has it: it stays there.)
     const stay = cv && cv.id === c.id && tab && (isView(tab, "files") || (tab.type === "folder" && under(path, tab.path)));
     if (stay && path === inlineOf(c, tab)) path = c.dir; // (it's shown as the course's own)
     go({ kind: "course", id: c.id, tab: stay ? tab : { type: "folder", path }, path, select, found });
   };
-  /** Go into a folder from the one showing: 全部文件 stays 全部文件, even in a course's folder. */
+  /** Go into a folder from the one showing: All files stays All files, even in a course's folder. */
   const goFolder = (path: string) => (view.kind === "browse" ? go({ kind: "browse", path }) : goPath(path));
   /** A course opens where you last were in it; the first time, or from inside it, on its first
-   * tab (概览, unless that course's 概览 is hidden). */
+   * tab (Overview, unless that course's Overview is hidden). */
   const openCourse = (c: Course, found?: string) => {
     const last = cv?.id === c.id ? null : lastIn.current.get(c.id);
     go(last ? { ...last, select: undefined, found } : { kind: "course", id: c.id, tab: viewOf(c.id, "overview"), path: c.dir, first: true, found });
@@ -356,10 +356,10 @@ export function MainWindow() {
     return courseList.filter((c) => under(c.dir, browsing) || under(browsing, c.dir)).map((c) => c.id);
   }, [browsing, courseList]);
 
-  // What the search box searches. In a course, what the tab shows: 公告 / 作业 / 页面 / 模块 / 成绩
-  // narrow their own lists as you type, 文件 (or a folder tab) searches the folder you're in;
-  // anything else, the course. Elsewhere, the folder you're in (in 全部文件, any: still only files).
-  // "搜索整门课" widens it to the course.
+  // What the search box searches. In a course, what the tab shows: Announcements / Assignments / Pages / Modules / Grades
+  // narrow their own lists as you type, Files (or a folder tab) searches the folder you're in;
+  // anything else, the course. Elsewhere, the folder you're in (in All files, any: still only files).
+  // "Search the whole course" widens it to the course.
   const filtering = !!tab && !cv?.blank && !wide && isView(tab) && tab.course === cv?.id && FILTERS_ITSELF.includes(tab.view);
   const folderScope = !wide && ((cv && filesTab) || view.kind === "browse") ? browsing : null;
   const courseWide = !!cv && !filesTab && (!!cv.blank || !(isView(tab) && FILTERS_ITSELF.includes(tab.view)));
@@ -483,15 +483,15 @@ export function MainWindow() {
     });
   const copyItem = (paths: string[], names: string[]): Exclude<MenuItem, "separator"> => ({ label: copyName, hint: shortcut.copy, onSelect: () => copy(paths, names) });
 
-  // -- places: 置顶, and the open course's tabs, overview and 工具与链接 ---------------------------
-  /** 置顶 as it should be. */
+  // -- places: Pinned, and the open course's tabs, overview and Tools and links -------------------
+  /** Pinned as it should be. */
   const savePinned = (next: Shown[]) => {
     setPinned(next);
     api.arrangePinned(next).then(setPinned, fail(t("That didn't work")));
   };
   const nameOf = (x: Shown) => thingName(x, courseList);
-  // 置顶 is a place like a course's, with nothing of its own. A smart folder is only here: taken
-  // away, it's gone (撤销 brings it back).
+  // Pinned is a place like a course's, with nothing of its own. A smart folder is only here: taken
+  // away, it's gone (Undo brings it back).
   const pins = usePlace({
     entries: pinned, onArrange: savePinned, onSay: say, name: nameOf,
     taken: (name, e) => (e.type === "search" ? t("Deleted the smart folder “{name}”", { name }) : t("Unpinned “{name}”", { name })),
@@ -522,7 +522,7 @@ export function MainWindow() {
     else if (place === "tabs" && cv && !cv.blank && listed(courseLayout.tabs, cv.tab) && !listed(next, cv.tab)) replaceView(toTab(cv, firstTab(next, id)));
   };
 
-  /** 全部标为已读: for a course, one of its views with a count, a folder; 标为已读: a new file
+  /** Mark all as read: for a course, one of its views with a count, a folder; Mark read: a new file
    * (see Things.markRead). */
   const markRead = (x: Thing, count?: number): MenuItem[] => {
     const item = (n: number | undefined, run: () => Promise<unknown>, label = t("Mark all as read")): MenuItem[] =>
@@ -536,7 +536,7 @@ export function MainWindow() {
     if (x.type === "file") return item(newFiles?.includes(x.path) ? undefined : 0, () => api.markPathsSeen([x.path]), t("Mark read"));
     return [];
   };
-  /** 标为已读, for several selected: new files, and folders with new files in them. */
+  /** Mark read, for several selected: new files, and folders with new files in them. */
   const markSeveralRead = (files: string[], folders: string[] = []): MenuItem[] => {
     const n = files.length + folders.length;
     if (!n) return [];
@@ -652,7 +652,7 @@ export function MainWindow() {
         { label: t("Show in {app}", { app: fileManager }), onSelect: () => reveal(e.path) },
         ...markRead({ type: "folder", path: e.path }, e.new_inside),
         "separator",
-        pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in 全部文件: the course)
+        pinOf(thingOfEntry(e, courseList)), // (a course's own folder, seen in All files: the course)
         copyItem([e.path], [e.name]),
         { label: t("Rename"), hint: shortcut.rename, onSelect: () => setRenaming(e.path) },
         ...(e.renamed_from ? [{ label: t("Restore original name"), onSelect: () => void renameFolder(e.path, "") }] : []),
@@ -849,7 +849,7 @@ export function MainWindow() {
     );
   };
 
-  /** What's showing here, as a thing: to pin it from 置顶's +. */
+  /** What's showing here, as a thing: to pin it from Pinned's +. */
   const shownThing: Shown | null = cv && course
     ? filesTab ? (cv.path === course.dir ? { type: "course", course: course.id } : { type: "folder", path: cv.path })
       : cv.blank || isView(tab, "overview") ? { type: "course", course: course.id } : tabEntry
@@ -897,7 +897,7 @@ export function MainWindow() {
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
-  const showing = (x: Thing) => isShowing(view, x); // (what's on screen: highlighted in 置顶)
+  const showing = (x: Thing) => isShowing(view, x); // (what's on screen: highlighted in Pinned)
   const pinnedHere = pinned.some(showing); // highlight that, not also its course
   /** The sidebar's row `row`, if it's the one being renamed: its name, as an input. */
   const nameEditor = (row: string, initial: string, submit: (name: string) => void, hint?: string, className = "h-5 text-sm") =>

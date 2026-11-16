@@ -33,7 +33,7 @@ def routes(b: Backend) -> APIRouter:
     @r.get("/search")
     def search(q: str = "", limit: int = 50, course: list[int] = Query(default=[]),
                kind: list[str] = Query(default=[]), names_only: bool = False, under: str = "") -> list[dict[str, Any]]:
-        """`under`: only files in that folder (the app's search box, on a course's 文件 tab)."""
+        """`under`: only files in that folder (the app's search box, on a course's Files tab)."""
         if under:
             b.inside(under)
         with b.engine() as e:
@@ -47,7 +47,7 @@ def routes(b: Backend) -> APIRouter:
         """The app's search as you type (its find.ts), in the index: `q` is only words to find
         (what was typed, read: no courses in it; "quoted" ones as they are); `course`, `kind`,
         `since`/`until` and `source` (ed): what the app read as narrowing it down; `under`: only
-        files in that folder ("": any folder; searching from a course's 文件 or 全部文件). `corrected`: words taken for
+        files in that folder ("": any folder; searching from a course's Files or All files). `corrected`: words taken for
         others, misspelled ("midtrem": midterm)."""
         if under:
             b.inside(under)
@@ -103,7 +103,7 @@ def routes(b: Backend) -> APIRouter:
                         mj.phase, mj.done, mj.total = "indexing", 0, items - covered
                         m.sync(meaning.embedder(home), lambda done, total: (setattr(mj, "done", done), setattr(mj, "total", total)))
             mj.phase, mj.error = "idle", ""
-        except Exception as err:  # (offline, say: shown in 设置)
+        except Exception as err:  # (offline, say: shown in Settings)
             mj.phase, mj.error = "failed", f"{type(err).__name__}: {err}"
 
     @r.post("/meaning")

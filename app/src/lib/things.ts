@@ -1,7 +1,7 @@
 // What the app can put somewhere (as the backend has it: src/canvas_sync/things.py): a course, a
 // folder or a file, an announcement / assignment / page, a module, a tool, a web link, a saved
-// search, a note, or one of a course's views (its overview, files, grades...). Places (置顶; a
-// course's tabs, overview and 工具与链接) are lists of entries: a thing, what you call it there,
+// search, a note, or one of a course's views (its overview, files, grades...). Places (Pinned; a
+// course's tabs, overview and Tools and links) are lists of entries: a thing, what you call it there,
 // whether it's hidden there. Anything can go anywhere; each place shows it its own way.
 import type { DocKind, Hit, Kind, ModuleItem } from "./api";
 
@@ -38,7 +38,7 @@ export type ThingOf<T extends Thing["type"]> = Extract<Thing, { type: T }>;
  * hidden there; what it's called by itself now (what Canvas or the sync folder calls it; null for
  * what the app names), whether it's still there, the course it's in. `own`: one of the place's own
  * things (a course's views are its tabs' and its overview's; its tools, syllabus and Canvas its
- * 工具与链接's: places.py): hidden, never taken away. The rest was put there, and can be taken away. */
+ * Tools and links': places.py): hidden, never taken away. The rest was put there, and can be taken away. */
 export type Placed = Thing & { title: string; hidden: boolean; name: string | null; exists: boolean; in_course: number | null; own: boolean };
 /** A thing in a place, or on its way there (just put there, or dragged: what's known of it). */
 export type Shown = Thing & Partial<Omit<Placed, keyof Thing>>;
@@ -91,7 +91,7 @@ export const courseOf = (t: Thing): number | null => ("course" in t ? t.course :
 /** Whether a thing is a course's own: its views, documents, modules, tools and notes, the folders
  * and files in its folder, a search of just that course. Within a course anything goes anywhere;
  * between courses there's a border: a course's places take only its things (and web links, which
- * are no course's). 置顶 is where things of different courses meet. */
+ * are no course's). Pinned is where things of different courses meet. */
 export function ofCourse(t: Thing, course: { id: number; dir: string }): boolean {
   switch (t.type) {
     case "link": return true;

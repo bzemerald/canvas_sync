@@ -111,12 +111,12 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # "Fall 2026/MATH 221/Modules/01 Week 1" = "Week 1 - Vectors"
 
 # A course's page in the app, arranged for it: its tabs, the cards on its overview, and what's in
-# its 工具与链接. Each is a list of the course's things (written as in [[pinned]] below, leaving
+# its Tools and links. Each is a list of the course's things (written as in [[pinned]] below, leaving
 # out `course`; folders and files in its folder; web links too), each with a `title` of your own
 # if you like, and `hidden = true` to hide it. A course's views are its own (overview, modules,
 # announcements, ed (what it has on Ed), assignments, grades, files, syllabus, pages; on the
-# overview also tools, which is 工具与链接), and so are its tools and Canvas (view "canvas") in
-# 工具与链接: they're hidden, never taken away. A list without any of them follows the default
+# overview also tools, which is Tools and links), and so are its tools and Canvas (view "canvas")
+# in Tools and links: they're hidden, never taken away. A list without any of them follows the default
 # arrangement (in app.toml), with what's in it after.
 # [course_layouts.12345]
 # tabs = [
@@ -134,7 +134,7 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # term_order = ["Fall 2026", "Spring 2026"]
 # course_order = [12345, 67890]
 
-# The app's sidebar: what's pinned (置顶), in order, each with a `title` of your own if you like.
+# The app's sidebar: what's pinned (Pinned), in order, each with a `title` of your own if you like.
 # Anything can be:
 #   type = "course", course = 12345
 #   type = "folder", path = "Fall 2026/MATH 221/Modules"         (relative to this folder)
@@ -162,7 +162,7 @@ ICON_KEYS = ("icon", "color", "emoji")
 @dataclass
 class CourseLayout:
     """A course's places in the app, as stored for it (see places.py): its tabs, its overview,
-    its 工具与链接 (links)."""
+    its Tools and links (links)."""
     tabs: list[Entry] = field(default_factory=list)
     overview: list[Entry] = field(default_factory=list)
     links: list[Entry] = field(default_factory=list)
@@ -217,7 +217,7 @@ class Settings:
     course_icons: dict[int, dict[str, str]] = field(default_factory=dict)  # {icon, color} or {emoji}
     course_layouts: dict[int, CourseLayout] = field(default_factory=dict)  # courses' pages, as arranged
     abbreviations: dict[str, list[str]] = field(default_factory=dict)
-    pinned: list[Entry] = field(default_factory=list)  # 置顶
+    pinned: list[Entry] = field(default_factory=list)  # Pinned
     folder_titles: dict[str, str] = field(default_factory=dict)
     skip_folders: list[str] = field(default_factory=list)
     term_order: list[str] = field(default_factory=list)   # the sidebar, as you arranged it
@@ -302,7 +302,7 @@ def _editing(path: Path, *, spaced: bool = False) -> Iterator[Any]:
 
 
 def _pinned(data: dict[str, Any]) -> list[Entry]:
-    """置顶. ([[smart_folders]] is where smart folders were before anything could be pinned.)"""
+    """Pinned. ([[smart_folders]] is where smart folders were before anything could be pinned.)"""
     tables = [x for x in [*data.get("pinned", []), *data.get("smart_folders", [])] if isinstance(x, dict)]
     return once(old_pinned(x) if is_old(x) else parse_entry(x) for x in tables)
 
@@ -333,7 +333,7 @@ def _rows(items: list[Entry], home: int | None = None) -> Any:
 
 
 def save_pinned(path: Path, items: list[Entry]) -> None:
-    """置顶, in order."""
+    """Pinned, in order."""
     with _editing(path, spaced=True) as doc:
         for key in ("pinned", "smart_folders"):
             if key in doc:
@@ -348,8 +348,8 @@ def save_pinned(path: Path, items: list[Entry]) -> None:
 
 
 def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
-    """Every thing in every place (置顶, courses' pages) as `change` makes it."""
-    with _writing:  # (the courses' pages, then 置顶: as one change)
+    """Every thing in every place (Pinned, courses' pages) as `change` makes it."""
+    with _writing:  # (the courses' pages, then Pinned: as one change)
         s = Settings.load(path)
         pinned = [Entry(change(e.thing), e.title, e.hidden) for e in s.pinned]
         with _editing(path, spaced=True) as doc:
@@ -571,7 +571,7 @@ def needs_migration(path: Path) -> bool:
 def migrate(path: Path, tools: Callable[[int], list[int]] | None = None) -> bool:
     """Write what config.toml has the old way the new way. `tools`: a course's tools, in Canvas's
     order. True if there was any."""
-    with _writing:  # (置顶, then the courses' pages: as one change)
+    with _writing:  # (Pinned, then the courses' pages: as one change)
         if not needs_migration(path):
             return False
         data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
@@ -671,7 +671,7 @@ class AppPrefs:
         path = path or PREFS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
-        doc.add(tomlkit.comment("The canvas-sync desktop app's preferences (set in its 设置 / Settings)."))
+        doc.add(tomlkit.comment("The canvas-sync desktop app's preferences (set in its Settings)."))
         doc["language"] = self.language
         doc["auto_sync"] = self.auto_sync
         doc["sync_on_launch"] = self.sync_on_launch

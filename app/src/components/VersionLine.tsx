@@ -1,5 +1,5 @@
-// The app's version and 检查更新, in a line: under the sign-in and the first choice of courses,
-// where there's no 设置 yet. (设置 has its own row: VersionRow.)
+// The app's version and Check for updates, in a line: under the sign-in and the first choice of courses,
+// where there's no Settings yet. (Settings has its own row: VersionRow.)
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 import { t } from "../lib/i18n";

@@ -1,7 +1,7 @@
-// The message at the bottom of the window: what just happened, and 撤销 where it can be undone.
+// The message at the bottom of the window: what just happened, and Undo where it can be undone.
 import { useEffect, useRef } from "react";
 
-/** What to do about a notice, from it: 撤销, say. */
+/** What to do about a notice, from it: Undo, say. */
 export type NoticeAction = { label: string; run: () => void };
 export type NoticeState = { text: string; action?: NoticeAction };
 

@@ -123,7 +123,7 @@ def test_choose_courses(root, tmp_path, canvas, keychain):
         got = api.get("/api/courses/choice").json()
         assert got["chosen"] and [c["syncing"] for c in got["courses"]] == [True, False]
 
-        # Chosen again later (in 设置): it's saved, and nothing starts by itself.
+        # Chosen again later (in Settings): it's saved, and nothing starts by itself.
         api.post("/api/prefs", json={"select": "favorites"})
         assert not api.put("/api/courses/choice", json={"sync": [1, 2], "skip": []}).json()["running"]
         s = Settings.load(config)

@@ -1,5 +1,5 @@
 // Reordering short lists by dragging: the sidebar, a course's tabs, the overview's cards, the
-// rows of 工具与链接. What's dragged follows the pointer (see drag.ts); in a row or a column the
+// rows of Tools and links. What's dragged follows the pointer (see drag.ts); in a row or a column the
 // others slide aside to open a gap where it will land; among cards, the list is drawn as it
 // would be if let go now (`preview`), the dragged card's place a slot, and the cards glide to make
 // room (flip.ts). Let go, the copy lands in its place. What's in a list is a thing, so it can be

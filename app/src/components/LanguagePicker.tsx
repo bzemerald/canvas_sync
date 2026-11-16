@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import { applyLanguage, t, type LangPref } from "../lib/i18n";
 
-/** Language, in 设置 and on the sign-in page. Changing it reloads the windows. */
+/** Language, in Settings and on the sign-in page. Changing it reloads the windows. */
 export function LanguagePicker() {
   const [value, setValue] = useState<LangPref | null>(null);
   useEffect(() => void api.prefs().then((p) => setValue(p.language), () => setValue("system")), []);

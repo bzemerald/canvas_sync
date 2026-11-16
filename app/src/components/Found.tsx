@@ -141,7 +141,7 @@ const ALL_FILES: Scope = { under: "" };
  * typed names a course. */
 export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabulary, usage: Usage, actions: Action[], scope: Scope = NOWHERE) {
   const typed = useMemo(() => read(query, vocab), [query, vocab]);
-  // (Naming a course leaves a folder; from 全部文件, it's that course's files.)
+  // (Naming a course leaves a folder; from All files, it's that course's files.)
   const where = typed.parts.some((p) => p.role === "course") ? (scope.under === "" ? ALL_FILES : NOWHERE) : scope;
   const asked = useMemo(() => {
     const q = indexQuery(typed, catalog?.abbreviations ?? {});
@@ -158,7 +158,7 @@ export function useFinding(query: string, catalog: Catalog | null, vocab: Vocabu
   );
   const lately = useMemo(() => (catalog ? recent(catalog, usage) : []), [catalog, usage]);
   const due = useMemo(() => {
-    const opened = new Set(lately.map((f) => f.key)); // (once: in 最近打开)
+    const opened = new Set(lately.map((f) => f.key)); // (once: in Recently opened)
     return catalog ? dueSoon(catalog).filter((f) => !opened.has(f.key)) : [];
   }, [catalog, lately]);
   const listed = useMemo(() => {
@@ -408,7 +408,7 @@ const KIND_THING: Record<KindId, Thing> = {
   file: { type: "view", course: -1, view: "files" }, folder: { type: "folder", path: "" },
 };
 
-/** When, in a few words: 今天, 本周, 10月, 截止 · 本周. */
+/** When, in a few words: Today, This week, October, Due · This week. */
 function whenLabel(p: PartOf<"when">): string {
   const l = p.when.label;
   if ("later" in l) return p.when.due ? t("Not due yet") : t("From now on");
@@ -604,7 +604,7 @@ function FoundRow({ f, courses, names, top }: { f: Found; courses: Course[]; nam
 function describeKind(e: CatalogEntry): string {
   switch (e.type) {
     case "course": case "module": case "tool": case "search": return KINDS[e.type].one;
-    case "doc": return KIND[e.kind].label; // (as search results say it: "Ed 帖子")
+    case "doc": return KIND[e.kind].label; // (as search results say it: "Ed post")
     case "link": return e.url.replace(/^https?:\/\/(www\.)?/, "");
     case "note": return e.text || KINDS.note.one;
     case "file": case "folder": return titlesAlong(e.path, 2, -1).join(" / ");

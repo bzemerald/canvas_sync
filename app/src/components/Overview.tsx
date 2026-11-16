@@ -1,10 +1,10 @@
 // A course's overview: cards, arranged for the course. Its own: what's due, what was said, this
-// week's modules, new files, grades, its tools and links (工具与链接), its syllabus. And anything
+// week's modules, new files, grades, its tools and links (Tools and links), its syllabus. And anything
 // of the course you put there: a folder, a file, a note, a page, a module, a search... wherever
-// the instructor keeps what matters. Drag a card by its title to move it (or onto 置顶, or the
+// the instructor keeps what matters. Drag a card by its title to move it (or onto Pinned, or the
 // tabs); drag something of the course onto the overview and it's a card where you let go (a tool
-// or a link goes into 工具与链接). Right-click a card to rename it, hide it or take it away;
-// right-click between the cards (or 自定义概览) for the overview as a whole.
+// or a link goes into Tools and links). Right-click a card to rename it, hide it or take it away;
+// right-click between the cards (or Add a card) for the overview as a whole.
 import { FolderOpen, Pin, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
@@ -47,7 +47,7 @@ function saveColumns(course: number, columns: Record<string, number>) {
     /* not remembered */
   }
 }
-const DROP = "drop"; // the slot that opens for something dropped from elsewhere (工具与链接's)
+const DROP = "drop"; // the slot that opens for something dropped from elsewhere (Tools and links')
 const SETTLE = 120; // ms a new place to go holds before the cards move for it
 
 /** Cards in order, each down the column it's in (`was`: where you put it), so that a card put in
@@ -81,13 +81,13 @@ function nearest(boxes: { left: number; top: number; width: number; height: numb
 }
 const LOADING = "px-2 py-3 text-sm"; // (as Empty)
 
-/** Things with a card of their own; the rest (a tool, a link, a course...) go into 工具与链接. */
+/** Things with a card of their own; the rest (a tool, a link, a course...) go into Tools and links. */
 const hasCard = (e: Thing) =>
   e.type === "view" ? !["overview", "pages", "canvas"].includes(e.view) : !["tool", "link", "course"].includes(e.type);
 
 type Say = (message: string, action?: { label: string; run: () => void }) => void;
 
-/** 工具与链接 as a place: the course's tools, its syllabus (if it has one) and Canvas, which can
+/** Tools and links as a place: the course's tools, its syllabus (if it has one) and Canvas, which can
  * be hidden; and what you put there. */
 function useLinks(links: Shown[], syllabus: boolean, onArrange: (next: Shown[]) => void, onSay: Say) {
   const things = useThings();
@@ -101,7 +101,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
   course: Course;
   overview: Overview | null;
   cards: Shown[] | null; // the overview's, in order, hidden ones too
-  links: Shown[]; // 工具与链接's
+  links: Shown[]; // Tools and links'
   onArrange: (place: "overview" | "links", entries: Shown[]) => void;
   onSay: Say;
   onMarkSeen: (of: NewsView) => void;
@@ -175,7 +175,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
               : true;
   const shown = all.filter((e) => !e.hidden && available(e));
   const titleOf = (e: Shown) => e.title || (isView(e, "tools") && !overview?.tools.length ? t("Links") : thingName(e, things.courses, "card"));
-  // The two places here: the cards, and 工具与链接 (one of the cards; a tool or a link goes there).
+  // The two places here: the cards, and Tools and links (one of the cards; a tool or a link goes there).
   const cardPlace = usePlace({
     entries: all, shown, onArrange: (next) => onArrange("overview", next), onSay, name: titleOf, taken: (name) => t("Removed “{name}”", { name }),
   });
@@ -212,7 +212,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     const { spots } = stack(rest, heights, columns, was.current.cols);
     return { slot: slotInColumn(rest.map((k) => ({ ...spots[k], height: heights[k] ?? 0 })), col, y - r.top), col };
   };
-  // Dragged in from elsewhere: a line shows where it'd go (a tool or a link: 工具与链接). The cards
+  // Dragged in from elsewhere: a line shows where it'd go (a tool or a link: Tools and links). The cards
   // stay where they are, so it can follow the pointer at once.
   const slotAt = (x: number, y: number) => {
     const { slot, col } = slotFor(keys, x, y);
@@ -260,7 +260,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     );
   }
 
-  /** The overview, right-clicked between the cards. (Hidden cards come back through 添加卡片.) */
+  /** The overview, right-clicked between the cards. (Hidden cards come back through Add a card.) */
   const overviewMenu = (): MenuItem[] => [
     { label: t("Add a card…"), onSelect: () => setAdding(true) },
   ];
@@ -515,7 +515,7 @@ function Card({ cardKey, style, flash, title, editor, icon, more, action, cardRe
   );
 }
 
-/** 工具与链接's rows: the course's tools, its syllabus, Canvas, and what you put there. Drag them
+/** Tools and links' rows: the course's tools, its syllabus, Canvas, and what you put there. Drag them
  * into your order, or anything in among them; drag one you put there off to take it away.
  * Right-click one to rename it, hide it (the course's own) or delete it (what you put there). */
 function LinksList({ course, place, onAdd }: {
@@ -596,7 +596,7 @@ function LinksList({ course, place, onAdd }: {
   );
 }
 
-/** 工具与链接 right-clicked where there's no link: add one, show the hidden ones again. */
+/** Tools and links right-clicked where there's no link: add one, show the hidden ones again. */
 function linksMenu(place: Place, onAdd: () => void, courses: Course[]): MenuItem[] {
   return sections(
     [{ label: t("Add a link…"), onSelect: onAdd }],
@@ -611,7 +611,7 @@ function keepsOwnMenu(e: React.MouseEvent) {
   return !!el.closest("input, textarea, [contenteditable]") || (!!sel?.toString() && sel.containsNode(el, true));
 }
 
-/** 工具与链接 as a tab of its own. */
+/** Tools and links as a tab of its own. */
 export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   course: Course;
   links: Shown[];

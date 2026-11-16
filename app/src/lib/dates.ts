@@ -7,7 +7,7 @@ function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-/** "今天" / "明天" / "周四" / "10月20日", plus the time if it isn't midnight. */
+/** "Today" / "Tomorrow" / "Thu" / "Oct 20", plus the time if it isn't midnight. */
 export function shortDate(iso: string | null | undefined, withTime = true): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -23,7 +23,7 @@ export function shortDate(iso: string | null | undefined, withTime = true): stri
   return day + time;
 }
 
-/** "还有 2 天" / "还有 5 小时" / "已截止 3 天". */
+/** "in 2 days" / "in 5 hours" / "3 days ago". */
 export function untilDue(iso: string | null | undefined): { text: string; urgent: boolean; past: boolean } | null {
   if (!iso) return null;
   const ms = new Date(iso).getTime() - Date.now();

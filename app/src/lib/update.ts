@@ -1,6 +1,6 @@
-// 检查更新: new versions come from GitHub's releases (tauri.conf.json's updater endpoint, a
+// Check for updates: new versions come from GitHub's releases (tauri.conf.json's updater endpoint, a
 // latest.json the release workflow writes), signed with the key whose public half is there.
-// One state for the whole window: 设置 and the sidebar show the same check.
+// One state for the whole window: Settings and the sidebar show the same check.
 import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";

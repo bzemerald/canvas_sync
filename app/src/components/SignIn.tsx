@@ -1,5 +1,5 @@
 // Connecting a Canvas account: the school's Canvas address, how to sign in (in a Canvas window
-// of the app's, or with an access token, which some schools don't allow), and where the files go. What a new user sees first; in 设置, how you switch account or school.
+// of the app's, or with an access token, which some schools don't allow), and where the files go. What a new user sees first; in Settings, how you switch account or school.
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";

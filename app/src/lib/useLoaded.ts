@@ -1,6 +1,6 @@
 // What a view loads from the backend, remembered: coming back to it draws what it had at once,
 // and reloading it (after a sync, or the window coming back to the front) keeps that on screen
-// until the new answer is in, instead of a flash of 正在加载….
+// until the new answer is in, instead of a flash of Loading….
 //
 // What changed is said with `reload(...)`: what follows it (`useReloads`, or `useLoaded` with
 // `follow`) loads again, by key: "overview" is every `overview:<id>`; nothing named is everything.

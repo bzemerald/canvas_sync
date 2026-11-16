@@ -265,7 +265,7 @@ fn launcher_shortcut() -> Shortcut {
 }
 
 /// Makes `keys` ("Super+Shift+KeyK"; "": the usual) open the search window instead of what
-/// did; None: nothing, while new keys are being pressed in 设置. Keys that can't be had (taken
+/// did; None: nothing, while new keys are being pressed in Settings. Keys that can't be had (taken
 /// by another app, or not keys) leave the old ones.
 #[tauri::command]
 fn set_launcher_keys(app: AppHandle, keys: Option<String>) -> Result<(), String> {
@@ -295,7 +295,7 @@ fn set_launcher_keys(app: AppHandle, keys: Option<String>) -> Result<(), String>
     Ok(())
 }
 
-/// What opens the search window now (None while 设置 is listening for new keys).
+/// What opens the search window now (None while Settings is listening for new keys).
 #[derive(Default)]
 struct LauncherKeys(Mutex<Option<Shortcut>>);
 
@@ -310,7 +310,7 @@ pub fn run() {
         .manage(BackendState::default())
         .manage(LauncherKeys::default())
         .plugin(tauri_plugin_dialog::init()) // choosing the sync folder
-        .plugin(tauri_plugin_updater::Builder::new().build()) // 检查更新, from GitHub's releases
+        .plugin(tauri_plugin_updater::Builder::new().build()) // Check for updates, from GitHub's releases
         .plugin(tauri_plugin_process::init()) // restarting after an update
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()

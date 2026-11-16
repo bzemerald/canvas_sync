@@ -39,7 +39,7 @@ class CourseSnapshot:
     documents: list[Document] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)  # features the course has turned off
-    # The course's modules as Canvas lists them (with items), for the app's 模块 tab.
+    # The course's modules as Canvas lists them (with items), for the app's Modules tab.
     # None if they couldn't be fetched this time: keep what was stored before.
     modules: list[dict[str, Any]] | None = None
     # Your grade in the course as Canvas computes it; None if it couldn't be fetched.

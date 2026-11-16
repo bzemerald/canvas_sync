@@ -1,7 +1,7 @@
 // Dragging files out of the app: a file, a folder or a course (its folder), dragged past the
 // window's edge, becomes the system's own drag of it (src-tauri/src/dragout.rs), which the
 // desktop, Finder and other apps (a chat's message box) take, as a copy. Brought back over the
-// window, it can still be put in a place (置顶, a course's tabs...), as if it had never left.
+// window, it can still be put in a place (Pinned, a course's tabs...), as if it had never left.
 import { invoke } from "@tauri-apps/api/core";
 import { once } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";

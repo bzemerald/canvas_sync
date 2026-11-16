@@ -1,5 +1,5 @@
 // Which courses sync, ticked in a list of all your courses on Canvas, by term. Before the first
-// sync (Canvas leaves most past courses "active", so all of them would come), and in 设置.
+// sync (Canvas leaves most past courses "active", so all of them would come), and in Settings.
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CourseChoice, SyncState } from "../lib/api";

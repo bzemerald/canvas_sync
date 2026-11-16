@@ -1,4 +1,4 @@
-// 设置: the account, syncing, language. Preferences are this computer's (app.toml, via the
+// Settings: the account, syncing, language. Preferences are this computer's (app.toml, via the
 // backend); which courses sync is the sync folder's (its config.toml), shared with the CLI.
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -362,7 +362,7 @@ function Row({ label, hint, children }: { label: React.ReactNode; hint?: React.R
   );
 }
 
-/** 版本: this one, and 检查更新 (which the app also does by itself now and then). */
+/** Version: this one, and Check for updates (which the app also does by itself now and then). */
 function VersionRow() {
   const [version, setVersion] = useState("");
   const update = useUpdate();

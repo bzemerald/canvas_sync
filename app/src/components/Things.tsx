@@ -1,6 +1,6 @@
 // Things on screen (see lib/things.ts): what each is called and its icon, how it opens, and what
-// you can do with it wherever it shows: press and drag it to a place (置顶, a course's tabs, its
-// overview, 工具与链接), or right-click it. The main window provides the doing (ThingsContext).
+// you can do with it wherever it shows: press and drag it to a place (Pinned, a course's tabs, its
+// overview, Tools and links), or right-click it. The main window provides the doing (ThingsContext).
 import { FileText, GraduationCap } from "lucide-react";
 import { createContext, createElement, useContext } from "react";
 import type { Course } from "../lib/api";
@@ -20,10 +20,10 @@ export interface Things {
   openIn: (doc: Thing, list: ViewName) => void;
   showInFolder: (path: string) => void; // a file, selected in its folder (in the app)
   opening: string | null; // what's on its way (a tool: Canvas is making a link), by thingKey
-  /** What can be done with it, besides placing it: 打开, 在文件夹中显示, 在 Canvas 中打开... */
+  /** What can be done with it, besides placing it: Open, Show in folder, Open in Canvas... */
   ways: (thing: Thing) => MenuItem[];
-  /** 全部标为已读, for what shows how many new things are in it (a course, a view, a folder) and has
-   * some, or 标为已读 for a new file; `count`: how many, if known. (`ways` has it too.) */
+  /** Mark all as read, for what shows how many new things are in it (a course, a view, a folder) and has
+   * some, or Mark read for a new file; `count`: how many, if known. (`ways` has it too.) */
   markRead: (thing: Thing, count?: number) => MenuItem[];
   isPinned: (thing: Thing) => boolean;
   pin: (entry: Shown) => void;
@@ -34,7 +34,7 @@ export interface Things {
 export const ThingsContext = createContext<Things | null>(null);
 export const useThings = () => useContext(ThingsContext)!;
 
-/** 置顶, or 取消置顶 if it is. */
+/** Pin, or Unpin if it is. */
 export function pinItem(things: Things, entry: Shown): MenuItem {
   return things.isPinned(entry)
     ? { label: t("Unpin"), onSelect: () => things.unpin(entry) }
@@ -44,7 +44,7 @@ export function pinItem(things: Things, entry: Shown): MenuItem {
 const noDrag = (e: React.PointerEvent) => !!(e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]");
 
 /** `thing(entry, more)`: props for an element that shows a thing: press and drag it to a place;
- * right-click it for what can be done with it, then `more`, then 置顶. No entry: nothing. */
+ * right-click it for what can be done with it, then `more`, then Pin. No entry: nothing. */
 export function useThing() {
   const things = useContext(ThingsContext);
   return (entry: Shown | null | undefined, more: MenuItem[] = []) => {
@@ -67,7 +67,7 @@ export function thingOfEntry(e: { type: "dir" | "file"; path: string }, courses:
   return c ? { type: "course", course: c.id } : { type: "folder", path: e.path };
 }
 
-/** Just the dragging, for things with menus of their own (that offer 置顶 themselves). `files`:
+/** Just the dragging, for things with menus of their own (that offer Pin themselves). `files`:
  * what goes out of the window to other apps, if not just its own (what's selected with it). */
 export function useDragThing() {
   return (entry: Shown | null | undefined, files?: () => string[]) =>

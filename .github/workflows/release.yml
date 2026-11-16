@@ -1,6 +1,6 @@
 # Builds the Mac and Windows apps when a version tag is pushed (npm run release -- <version>, in
 # app/, makes the tag), and puts them in a draft release with latest.json, which the apps'
-# 检查更新 reads once the draft is published. Run by hand (Actions → release → Run workflow) it
+# Check for updates reads once the draft is published. Run by hand (Actions → release → Run workflow) it
 # only builds, to try the build: the apps are kept with the run, no release is made.
 #
 # Needs the secret TAURI_SIGNING_PRIVATE_KEY (Settings → Secrets and variables → Actions): the

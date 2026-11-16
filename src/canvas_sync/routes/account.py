@@ -1,4 +1,4 @@
-"""设置: the preferences, the account and its sync folder, Ed, AI apps."""
+"""Settings: the preferences, the account and its sync folder, Ed, AI apps."""
 
 from __future__ import annotations
 

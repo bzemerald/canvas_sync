@@ -1,4 +1,4 @@
-// The keys that open the search window from anywhere: chosen in 设置, saved in app.toml
+// The keys that open the search window from anywhere: chosen in Settings, saved in app.toml
 // (`launcher_key`), registered with the system by the shell (`set_launcher_keys`).
 // Written as the shell reads them: modifiers, then the key's KeyboardEvent.code ("Super+Shift+KeyK");
 // "": the usual (⌘⇧Space, Ctrl+Shift+Space).

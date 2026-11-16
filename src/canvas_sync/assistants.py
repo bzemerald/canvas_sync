@@ -166,5 +166,5 @@ def repair(command: str, args: list[str], backups: Path, home: Path | None = Non
             add(app, command, args, backups)
             changed.append(app.id)
         except (AssistantError, OSError):
-            pass  # (shown as not this program in 设置, to add again)
+            pass  # (shown as not this program in Settings, to add again)
     return changed

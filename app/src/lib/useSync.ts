@@ -1,5 +1,5 @@
 // The sync, as the main window follows it: where it's got to (asked often while one runs, now and
-// then otherwise: the backend syncs by itself too, 设置 → 自动同步), starting one, and signing in
+// then otherwise: the backend syncs by itself too, Settings → Sync automatically), starting one, and signing in
 // again quietly when a browser sign-in has expired.
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api";

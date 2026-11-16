@@ -2,7 +2,7 @@
 
 Ed has no documented API. What it serves its own pages is used, as smartspot2/edapi found it,
 read-only, with a token you make in Ed's settings. Each Ed course belongs to one Canvas course
-(matched by its code and term; changeable in 设置): what's on it is that course's.
+(matched by its code and term; changeable in Settings): what's on it is that course's.
 """
 
 from __future__ import annotations

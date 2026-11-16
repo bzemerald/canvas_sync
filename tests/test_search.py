@@ -122,7 +122,7 @@ def test_api_find_takes_words_and_what_narrows_them(client):
     assert find(q="eigen", course=[1]) == ["Lecture 3.pdf"] and find(q="eigen", course=[2]) == []
     assert find(q="公告") == ["考试安排"]  # (a kind of thing, as the index has it)
     assert find(q="late", kind=["assignment"]) == ["Problem Set 4"] and find(q="late", kind=["page"]) == []
-    # From a course's 文件: only the files in the folder you're in.
+    # From a course's Files: only the files in the folder you're in.
     def paths(**params):
         return [h["path"] for h in client.get("/api/find", params=params).json()["hits"]]
 
@@ -291,7 +291,7 @@ def test_names_first_then_content_and_names_only(root, course):
 
 @pytest.mark.links
 def test_search_within_a_folder(root, fake):
-    """The search box on a course's 文件 tab keeps to the folder you're in, counting files that
+    """The search box on a course's Files tab keeps to the folder you're in, counting files that
     are there as view links (stored in another view)."""
     fake.put(101, "lec2.pdf", b"w2")
     fake.module(2, "Week 2", [{"type": "File", "content_id": 101}])

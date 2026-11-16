@@ -49,7 +49,7 @@ export function SearchInput({ inputRef, value, onChange, placeholder, compact, a
 export function Breadcrumb({ path, root = { path: "", label: t("All files") }, inline, onGo, onRootMenu }: {
   path: string;
   root?: { path: string; label: string; icon?: React.ReactNode };
-  inline?: string; // a folder shown as the root itself (a course's Files, in 文件): not a step
+  inline?: string; // a folder shown as the root itself (a course's Files, in Files): not a step
   onGo: (p: string) => void;
   onRootMenu?: (x: number, y: number) => void; // the root, right-clicked
 }) {

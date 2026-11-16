@@ -1,5 +1,5 @@
-// A course's page: its tabs (概览 first), and its views: the overview, readers for
-// announcements, assignments, pages and the syllabus, modules, grades. The 文件 tab is the file
+// A course's page: its tabs (Overview first), and its views: the overview, readers for
+// announcements, assignments, pages and the syllabus, modules, grades. The Files tab is the file
 // browser, rendered by the main window. A blue dot marks what's new to you; opening it clears it.
 import {
   Check, ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Link, ListChecks, Lock, MessageCircle, MessagesSquare, Paperclip, Pin,
@@ -82,9 +82,9 @@ function tabsShown(entries: Shown[], overview: Overview | null, current?: Thing 
  * module, a tool, a note, a search; or a web link). Drag them into your order; drag something of
  * the course onto them and it's a tab where you let go; drag one you put there off, and it's
  * gone. Right-click to rename any of them, hide the course's own, take away what you put there.
- * Views with nothing in them aren't shown; 概览 and 文件 always are, unless you hid them.
+ * Views with nothing in them aren't shown; Overview and Files always are, unless you hid them.
  * At the end, one more (`spare`), with its ×: a new tab ("+", `blank`, and `NewTab`), or, in its
- * place, something shown that isn't a tab (a page, when 页面 is hidden). "+" only when it's empty. */
+ * place, something shown that isn't a tab (a page, when Pages is hidden). "+" only when it's empty. */
 export function CourseTabs({
   course, tab, blank, spare, overview, entries: loaded, onTab, onNewTab, onCloseSpare, onArrange, onSay,
 }: {
@@ -271,7 +271,7 @@ export function CourseTabs({
 }
 
 /** A new tab: where to go next in the course: a box to search it, and its views (hidden ones too,
- * to bring them back) and 工具与链接; what else is hidden there. What's picked is shown instead of
+ * to bring them back) and Tools and links; what else is hidden there. What's picked is shown instead of
  * it; not yet a tab, it's one now, the last. Nothing typed: the box and the views, in the middle;
  * typing: the box at the top, what's found below. */
 export function NewTab({ course, overview, entries, box, typing, found, onOpen, onShow }: {
@@ -325,7 +325,7 @@ export function NewTab({ course, overview, entries, box, typing, found, onOpen, 
 
 export const fmt = (x: number) => String(Math.round(x * 100) / 100);
 
-/** A grade the way the assignment is graded: "8.5 / 10", "A-", "通过". */
+/** A grade the way the assignment is graded: "8.5 / 10", "A-", "Pass". */
 export function scoreText(a: ItemSummary): string | null {
   if (a.status !== "graded") return null;
   switch (a.grading_type) {
@@ -370,7 +370,7 @@ export function TotalLine({ total, big = false }: { total: Total; big?: boolean 
   );
 }
 
-// -- 概览 --------------------------------------------------------------------------------
+// -- Overview ---------------------------------------------------------------------------
 
 /** A row in a card or list; `thing`: what it is, to drag somewhere or right-click. */
 export function Row({ onClick, thing, children }: { onClick: () => void; thing?: Shown | null; children: React.ReactNode }) {
@@ -438,7 +438,7 @@ function FilterNote({ n, box, narrowing }: { n: number; box: SearchBox; narrowin
   );
 }
 
-// -- 模块 ----------------------------------------------------------------------------------
+// -- Modules -------------------------------------------------------------------------------
 
 const ITEM_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   Page: BookOpen, Assignment: ClipboardList, Quiz: ListChecks, Discussion: MessagesSquare,
@@ -458,7 +458,7 @@ const itemEntry = (course: number, m: api.Module, it: ModuleItem, i: number): Ca
  * (newest upload, next deadline); what you expand or collapse is remembered per course. */
 export function CourseModules({ course, focus, only, box }: {
   course: Course;
-  focus?: number; // a module to show: opened, and scrolled to (as from 置顶)
+  focus?: number; // a module to show: opened, and scrolled to (as from Pinned)
   only?: number; // just this module, open (a tab of its own)
   box: SearchBox; // only the modules, or items, matching what's typed
 }) {
@@ -590,7 +590,7 @@ export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; co
   );
 }
 
-// -- 公告 / 作业 / 页面 / 大纲 --------------------------------------------------------------
+// -- Announcements / Assignments / Pages / Syllabus -----------------------------------------
 
 /** One announcement, assignment or page (or the syllabus) as a tab of its own. */
 export function CourseDoc({ course, kind, id, onSeen }: {
@@ -954,7 +954,7 @@ function ItemView({ course, kind, id, onLoaded }: {
   );
 }
 
-// -- 成绩 ----------------------------------------------------------------------------------
+// -- Grades --------------------------------------------------------------------------------
 
 /** Your total as Canvas computes it, and every assignment's grade, latest due first. */
 export function CourseGrades({ course, box }: {

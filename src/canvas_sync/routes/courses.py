@@ -1,5 +1,5 @@
 """The courses: which sync, what each has (content.py), how they're called and arranged
-(places.py), 置顶, the sidebar."""
+(places.py), Pinned, the sidebar."""
 
 from __future__ import annotations
 
@@ -235,7 +235,7 @@ def routes(b: Backend) -> APIRouter:
 
     @r.get("/pinned")
     def pinned() -> list[dict[str, Any]]:
-        """置顶: what's pinned, in order, each as it's called now."""
+        """Pinned: what's pinned, in order, each as it's called now."""
         with b.engine() as e:
             items = as_course(e.settings.pinned, e.layout.course_dirs(e.state.courses()))
             if items != e.settings.pinned:
@@ -244,7 +244,7 @@ def routes(b: Backend) -> APIRouter:
 
     @r.put("/pinned")
     def arrange_pinned(req: PlaceRequest) -> list[dict[str, Any]]:
-        """置顶 as it should be: anything, in this order."""
+        """Pinned as it should be: anything, in this order."""
         items = place_entries(req)
         with b.engine() as e:
             save_pinned(b.config(), as_course(items, e.layout.course_dirs(e.state.courses())))
@@ -256,7 +256,7 @@ def routes(b: Backend) -> APIRouter:
 
     @r.get("/courses/{course_id}/layout")
     def layout_of(course_id: int) -> dict[str, Any]:
-        """The course's page: its tabs, overview and 工具与链接, each with all it holds, in order."""
+        """The course's page: its tabs, overview and Tools and links, each with all it holds, in order."""
         with b.engine() as e:
             return course_layout(e, b.prefs(), course_id)
 

@@ -19,11 +19,11 @@ const skippedHint = (e: Entry) =>
 /** In a folder that isn't synced, and doesn't say so already (a file you deleted says that). */
 const quietlySkipped = (e: Entry) => e.skipped && !e.states.includes("untracked") && !(e.type === "file" && e.deleted);
 // Shown always: what Canvas did, and what isn't synced (that's how it is now, not a change to
-// undo). The rest is what you did, shown only with 显示改动.
+// undo). The rest is what you did, shown only with Show modifications.
 const ALWAYS = new Set(["remote_deleted", "untracked"]);
 
 /** Badges for what changed. A file from Canvas that nobody touched shows nothing; what you
- * changed shows only when `showChanges` (but 不再同步 always). */
+ * changed shows only when `showChanges` (but Not synced always). */
 export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges: boolean }) {
   const states = [...new Set(entry.states.map((s) => (s === "missing" ? "ignored" : s)))]
     .filter((s) => showChanges || ALWAYS.has(s));
@@ -121,7 +121,7 @@ export function NewDot({ label = t("New") }: { label?: string }) {
   return <span title={label} aria-label={label} className="size-1.5 shrink-0 rounded-full bg-accent" />;
 }
 
-/** 正在加载…, said only if it takes a while: usually the answer is in before anyone could read it,
+/** Loading…, said only if it takes a while: usually the answer is in before anyone could read it,
  * and a flash of text would just make the page jump. It takes its place from the start. */
 export function Loading({ className = "px-6 py-8 text-sm" }: { className?: string }) {
   const [slow, setSlow] = useState(false);

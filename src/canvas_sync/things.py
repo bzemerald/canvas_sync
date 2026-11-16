@@ -2,8 +2,8 @@
 
 A *thing* is a course; a folder or a file in the sync folder; one of a course's announcements,
 assignments or pages; a module; an external tool; a web link; a saved search; a note; or one of
-a course's views (its overview, its files, its grades...). Places in the app (置顶 in the
-sidebar; a course's tabs, its overview, its 工具与链接) are lists of *entries*: a thing, the name
+a course's views (its overview, its files, its grades...). Places in the app (Pinned in the
+sidebar; a course's tabs, its overview, its Tools and links) are lists of *entries*: a thing, the name
 you gave it there (if any), and whether it's hidden there.
 
 A thing is written down the same way in config.toml and by the app: its `type`, and the fields
@@ -20,8 +20,8 @@ from urllib.parse import urlsplit
 
 from .paths import under
 
-# A course's views: what its built-in tabs and cards show. `tools` is its tools and links (工具与
-# 链接); `canvas` the course on Canvas.
+# A course's views: what its built-in tabs and cards show. `tools` is its tools and links (Tools
+# and links); `canvas` the course on Canvas.
 # `ed` is what it has on Ed: its posts and announcements there.
 VIEWS = ("overview", "modules", "announcements", "ed", "assignments", "grades", "files", "syllabus", "pages",
          "tools", "canvas")
@@ -44,7 +44,7 @@ FIELDS: dict[str, tuple[str, ...]] = {
 }
 IN_A_COURSE = ("doc", "module", "tool", "note", "view")  # a course's own things (`course` says whose)
 TITLE_MAX = 200
-PLACES = ("tabs", "overview", "links")  # a course's (see places.py); and 置顶
+PLACES = ("tabs", "overview", "links")  # a course's (see places.py); and Pinned
 
 
 @dataclass(frozen=True)
@@ -290,7 +290,7 @@ def old_layout(d: dict[str, Any], course: int, tools: list[int] | None = None) -
     """A [course_layouts.<id>] table from then: `tabs` as names (and "x:<id>" for `tab_items`),
     `hidden_tabs`, `cards` (shown ones; or `extra_cards` after the default ones), `hidden_links`
     and `links`. As places (see places.py): arranged ones have the course's own things in them;
-    else just what was added. `tools`: the course's, in Canvas's order (which 工具与链接 had)."""
+    else just what was added. `tools`: the course's, in Canvas's order (which Tools and links had)."""
     out: dict[str, list[Entry]] = {}
     items = {f"x:{x.get('id')}": _old_tab_item(x, course) for x in d.get("tab_items", []) or [] if isinstance(x, dict)}
     if "tabs" in d or "hidden_tabs" in d:
@@ -307,7 +307,7 @@ def old_layout(d: dict[str, Any], course: int, tools: list[int] | None = None) -
                                    if all(e.thing != view(course, v) for e in shown)]
     else:
         out["overview"] = once([_old_card(c, course) for c in d.get("extra_cards") or []])
-    # 工具与链接: the course's tools, its syllabus and Canvas, hidden by name; then links you added.
+    # Tools and links: the course's tools, its syllabus and Canvas, hidden by name; then links you added.
     hidden = [str(x) for x in d.get("hidden_links") or []]
     order = tools or []
     hidden_tools = sorted((int(m[1]) for key in hidden if (m := re.fullmatch(r"tool:(\d+)", key))),

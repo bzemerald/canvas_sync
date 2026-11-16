@@ -1,4 +1,4 @@
-"""Places in the app (置顶; a course's tabs, overview and 工具与链接), and the things in them."""
+"""Places in the app (Pinned; a course's tabs, overview and Tools and links), and the things in them."""
 
 from __future__ import annotations
 
@@ -154,7 +154,7 @@ overview_hidden = ["upcoming", "modules", "grades"]
 
 
 def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
-    """config.toml and app.toml from before things had a type: each course's page, 置顶 and the
+    """config.toml and app.toml from before things had a type: each course's page, Pinned and the
     default arrangement come out as they were."""
     fake.tabs = [{"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3}]
     pull(root, fake)
@@ -171,7 +171,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
                 for e in r[place] if not e["hidden"]]
     assert shown("tabs") == [("view", "overview", ""), ("folder", f"{COURSE}/Modules", "files"), ("view", "files", ""),
                              ("view", "assignments", ""), ("view", "announcements", ""), ("view", "ed", ""),
-                             ("view", "syllabus", ""), ("view", "pages", "")]  # (Ed, new since: after 公告, as by default)
+                             ("view", "syllabus", ""), ("view", "pages", "")]  # (Ed, new since: after Announcements, as by default)
     assert shown("overview") == [("view", "files", ""), ("note", "n1", ""), ("doc", "course-policies", "Course Policies"),
                                  ("search", None, ""), ("view", "tools", ""), ("view", "ed", "")]
     assert [e["courses"] for e in r["overview"] if e["type"] == "search"] == [[1]]  # (it searched this course)
@@ -181,7 +181,7 @@ def test_older_config_and_prefs_are_rewritten(root, tmp_path, fake: FakeCanvas):
     assert [(e["view"], e["hidden"]) for e in other["overview"]] == [
         ("files", False), ("announcements", False), ("ed", False), ("tools", False), ("assignments", True),
         ("modules", True), ("grades", True), ("syllabus", False)]
-    # 置顶: a pinned page's old title was what it was called then; links' and smart folders' are names.
+    # Pinned: a pinned page's old title was what it was called then; links' and smart folders' are names.
     assert [(p["type"], p["title"]) for p in pinned] == [
         ("search", "Midterm"), ("folder", ""), ("doc", ""), ("link", "Course website"), ("search", "Old")]
 
@@ -207,8 +207,8 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
         assert usual_["own"] == {"tabs": False, "overview": False, "links": False}
         assert usual_["tabs"][0] == {"type": "view", "course": 1, "view": "overview", "title": "", "hidden": False,
                                      "name": None, "exists": True, "in_course": 1, "own": True}
-        # Each place says which things are its own (the rest were put there): 工具与链接's are the
-        # course's tools, its syllabus and Canvas; 工具与链接 itself is a card's, not a tab's.
+        # Each place says which things are its own (the rest were put there): Tools and links' are
+        # the course's tools, its syllabus and Canvas; Tools and links itself is a card's, not a tab's.
         assert [e["own"] for e in usual_["links"]] == [True, True, True]
         assert {e["view"]: e["own"] for e in usual_["overview"] if e["type"] == "view"}["tools"] is True
         assert all(e["own"] for e in usual_["tabs"]) and all(e["view"] != "tools" for e in usual_["tabs"])
@@ -235,7 +235,7 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
                       {"type": "course", "course": 2}, {"type": "search", "query": "mt"}):
             assert api.put("/api/courses/1/layout/overview", json={"entries": [other]}).status_code == 400, other
 
-        # The overview and 工具与链接 are places too.
+        # The overview and Tools and links are places too.
         note, link = {"type": "note", "id": "n1"}, {"type": "link", "url": "https://math.test", "title": "Site"}
         r = api.put("/api/courses/1/layout/overview", json={"entries": [*r["overview"], note, page]}).json()
         assert [e["type"] for e in r["overview"]][-2:] == ["note", "doc"] and not r["own"]["overview"]
@@ -248,7 +248,7 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
 
 
 def test_pinning_anything(root, tmp_path, fake: FakeCanvas):
-    """置顶 holds anything: each listed as it's called now, and whether it's still there."""
+    """Pinned holds anything: each listed as it's called now, and whether it's still there."""
     fake.pages["schedule"] = {"url": "schedule", "title": "Schedule", "body": "<p>x</p>"}
     fake.tabs = [{"id": "context_external_tool_5", "label": "Gradescope", "type": "external", "position": 3}]
     pull(root, fake)

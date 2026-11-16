@@ -150,7 +150,7 @@ export interface Module {
   position: number;
   unlock_at: string | null;
   state: string | null; // Canvas's: locked / unlocked / started / completed
-  folder: string | null; // its folder in 文件, if there is one
+  folder: string | null; // its folder in Files, if there is one
   current: boolean; // has the newest upload or the next deadline
   items: ModuleItem[];
 }
@@ -216,7 +216,7 @@ export interface FileStatus {
   states: string[];
 }
 
-/** A course's places: its tabs, its overview's cards, its 工具与链接 (links); each with all it
+/** A course's places: its tabs, its overview's cards, its Tools and links (links); each with all it
  * holds, in order. `own`: arranged for the course (else it follows the default). */
 export type Place = "tabs" | "overview" | "links";
 export interface CourseLayout {
@@ -435,7 +435,7 @@ export const startSync = (scope: Scope = {}) => post<SyncState>("/sync", scope);
 export const restorePreview = (scope: Scope) => post<{ files: FileStatus[] }>("/restore", { ...scope, dry_run: true });
 export const restore = (scope: Scope) => post<{ restored: string[] }>("/restore", scope);
 
-/** 置顶: what's pinned, in order (smart folders are searches pinned). */
+/** Pinned: what's pinned, in order (smart folders are searches pinned). */
 export const pinned = () => api<Placed[]>("/pinned");
 export const arrangePinned = (entries: Shown[]) => put<Placed[]>("/pinned", { entries });
 

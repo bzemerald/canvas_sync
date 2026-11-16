@@ -211,7 +211,7 @@ Doc = tuple[str, str, str, dict[str, Any]]  # kind, id, title, what Canvas (or E
 class CourseContent:
     """A course's content as the app shows it. Each part of what the last pull stored (its
     documents, files, what's new) is read once, when first needed: make one per request.
-    `layout` is needed for modules (and the overview's 当前模块 card)."""
+    `layout` is needed for modules (and the overview's This week's module card)."""
 
     def __init__(self, state: State, root: Path, course_id: int, layout: Layout | None = None):
         self.state, self.root, self.id, self.layout = state, root, course_id, layout
@@ -316,7 +316,7 @@ class CourseContent:
 
     def overview(self, now: datetime | None = None) -> dict[str, Any]:
         """What a course page opens with: what's due, what was said, what's new, how you're doing;
-        with a layout, this week's modules too (the 当前模块 card)."""
+        with a layout, this week's modules too (the This week's module card)."""
         now = now or datetime.now(timezone.utc)
         docs, new = self.docs, self.news
         count = {k: sum(d[0] == k and not canvas_copy(k, d[3]) for d in docs) for k in KINDS}

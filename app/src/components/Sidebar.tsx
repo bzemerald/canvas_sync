@@ -1,4 +1,4 @@
-// The sidebar's pieces: 置顶's list, a term and its courses, a row, a section's header; the sync
+// The sidebar's pieces: Pinned's list, a term and its courses, a row, a section's header; the sync
 // status at its top and the update notice at its foot. What they show and do is the main window's.
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
@@ -46,10 +46,10 @@ export function arrange(list: Course[], order: SidebarOrder): TermGroup[] {
     .map(({ label, key, courses }) => ({ label, key, courses }));
 }
 
-/** 置顶: what's pinned, in the order you put it in. Anything dropped on it is pinned where you let
+/** Pinned: what's pinned, in the order you put it in. Anything dropped on it is pinned where you let
  * go (a line shows where); dragged off it, it's unpinned. */
 export function PinnedSection({ place, collapsed, header, empty, render, onPin, onUnpin }: {
-  place: Place; // 置顶
+  place: Place; // Pinned
   collapsed: boolean;
   header: React.ReactNode;
   empty: React.ReactNode;

@@ -1,6 +1,6 @@
-// Where dragged things can be put: 置顶, a course's tabs, its overview, its 工具与链接. While
+// Where dragged things can be put: Pinned, a course's tabs, its overview, its Tools and links. While
 // something is dragged, the places that take it show it; the one under the pointer takes it on
-// drop, at the place in its list the pointer points to. Of places inside one another (工具与链接
+// drop, at the place in its list the pointer points to. Of places inside one another (Tools and links
 // is on the overview), the innermost takes it; neither takes what's dragged out of the other.
 // Let go back where it came from (a row, on its own card: an element marked `data-home`), it
 // isn't put anywhere.
@@ -30,7 +30,7 @@ const area = (z: Zone) => {
 const takes = (z: Zone, entry: Shown, from?: ZoneId) => z !== from && !(from && nested(z, from as Zone)) && z.accepts(entry);
 
 // Where places (and the home of what's dragged) were when the drag began, and what they scroll
-// in. A place makes room for what's dragged over it, which moves what's in it (工具与链接 on the
+// in. A place makes room for what's dragged over it, which moves what's in it (Tools and links on the
 // overview, the card a row is dragged out of): judged by where things are drawn now, that would
 // change which place it's over, which would undo the room, and so on.
 interface Box {

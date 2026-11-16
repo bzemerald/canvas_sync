@@ -1,7 +1,7 @@
-// A place, in the app: a list of entries you arrange (置顶; a course's tabs, its overview's cards,
-// its 工具与链接: see lib/things.ts). What can be done in one is the same wherever it is: put
+// A place, in the app: a list of entries you arrange (Pinned; a course's tabs, its overview's cards,
+// its Tools and links: see lib/things.ts). What can be done in one is the same wherever it is: put
 // something there, move it, rename it there, hide what's the place's own, take away what was put
-// there (with 撤销). `usePlace` is that, over the place's list and whoever saves it; `usePlaceDrag`
+// there (with Undo). `usePlace` is that, over the place's list and whoever saves it; `usePlaceDrag`
 // makes its items things to drag (among themselves, to other places, off it) and the place
 // somewhere to drop them. How it's drawn, and what else its menus offer, is each place's own.
 import { useState } from "react";
@@ -21,7 +21,7 @@ export function usePlace({ entries, shown = entries, onArrange, onSay, name, tak
 }) {
   const [renaming, setRenaming] = useState<Shown | null>(null);
   const change = (e: Shown, to: { title?: string; hidden?: boolean }) => onArrange(changed(entries, e, to));
-  /** What was put there, gone again (撤销 brings the place back as it was). */
+  /** What was put there, gone again (Undo brings the place back as it was). */
   const takeAway = (e: Shown) => {
     onArrange(without(entries, e));
     onSay(taken(name(e), e), { label: t("Undo"), run: () => onArrange(entries) });

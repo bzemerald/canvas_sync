@@ -4,7 +4,7 @@ announcement about Flextensions; "Ohm's law", the problem that uses it. A small 
 and a query, into vectors; a query finds the passages nearest to it. English only: what's typed in
 Chinese is found by its words.
 
-Off unless turned on in 设置 (AppPrefs.meaning). Then the model is downloaded to the app's folder
+Off unless turned on in Settings (AppPrefs.meaning). Then the model is downloaded to the app's folder
 (`models/`), and every item's text is cut into passages, kept with their vectors in index.db
 (`passages`), made again for an item only when it changes (`meant`: what they were made from).
 """

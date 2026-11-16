@@ -10,7 +10,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { Springs } from "./spring";
 
-/** Where a drag is, for how the copy looks: over a place that takes it (置顶, a course's tabs, its
+/** Where a drag is, for how the copy looks: over a place that takes it (Pinned, a course's tabs, its
  * overview): it shrinks out of the way of what shows there; dragged off its list to take it away:
  * faded, with a minus. */
 export type DragOver = "zone" | "remove" | void;
@@ -340,7 +340,7 @@ class Ghost {
     return this.small;
   }
 
-  /** Over a place that shows where it'll go (置顶, a course's tabs): after a moment there, smaller,
+  /** Over a place that shows where it'll go (Pinned, a course's tabs): after a moment there, smaller,
    * and below and right of the pointer, so that shows. Away from it: back at once. */
   compact(on: boolean) {
     if (on) {

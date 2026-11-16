@@ -1,7 +1,7 @@
 // Getting to the app: signing in, finding a sync folder that went missing, choosing the courses.
 // One flow, a stack of screens: going on pushes the next, Back pops back to the one before (there
 // is one only if the stack has one). Where it starts comes from the backend (`firstScreen`), or
-// from switching account in 设置 (`switchAccount`: signed out first, so there's no way back);
+// from switching account in Settings (`switchAccount`: signed out first, so there's no way back);
 // after that the flow knows where it's been.
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
@@ -24,7 +24,7 @@ export function firstScreen(h: { set_up: boolean; folder_missing: boolean; choos
   return null;
 }
 
-// Switching account: 设置 signs out, then the window shows the flow (App.tsx listens). An event on
+// Switching account: Settings signs out, then the window shows the flow (App.tsx listens). An event on
 // the window, not a list here: a module reloaded while developing would start a list of its own.
 const SWITCH = "switch-account";
 export function onSwitchAccount(f: (start: Screen[]) => void) {
