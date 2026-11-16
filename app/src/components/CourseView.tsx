@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, Overview, Reply, Total } from "../lib/api";
 import { courseUrl, fileUrl } from "../lib/canvas";
+import type { Spare } from "../lib/navigation";
 import { usePref } from "../lib/prefs";
 import { useLoaded } from "../lib/useLoaded";
 import { shortDate, untilDue } from "../lib/dates";
@@ -27,15 +28,6 @@ import { RichText } from "./RichText";
 import { SourceTag, ThingIcon, onTheWeb, opensHint, pinItem, sections, thingName, useThing, useThings } from "./Things";
 import { t } from "../lib/i18n";
 import { shortcut, tabCommand } from "../lib/keys";
-
-/** Where each kind of document is listed. */
-export const KIND_VIEW: Record<DocKind, ViewName> = {
-  announcement: "announcements", assignment: "assignments", page: "pages", syllabus: "syllabus", post: "ed",
-};
-/** What each view that's a reader lists: a kind of document, or everything from Ed, whatever its kind. */
-export const VIEW_LISTS: Partial<Record<ViewName, DocKind | "ed">> = {
-  announcements: "announcement", assignments: "assignment", pages: "page", syllabus: "syllabus", ed: "ed",
-};
 
 /** The overview, loaded once per course and version (it also says which tabs to show).
  * `seen` changes when you open something, so the counts of what's new follow. */
@@ -85,10 +77,6 @@ function tabsShown(entries: Shown[], overview: Overview | null, current?: Thing 
   const has = viewsWithContent(overview);
   return entries.filter((e) => !e.hidden && ((current && same(e, current)) || !ownTab(e) || has.has(e.view)));
 }
-
-/** The one place at the end of a course's tabs: a new tab, or something shown that isn't one of
- * its tabs (a temporary tab). It stays while you go to other tabs, until closed. */
-export type Spare = Thing | "new";
 
 /** A course's tabs: its views, and whatever of the course you put there (a page, a folder, a
  * module, a tool, a note, a search; or a web link). Drag them into your order; drag something of

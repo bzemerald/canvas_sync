@@ -63,7 +63,9 @@ without the Canvas website or Finder.
     Tests point `assistants.HOME` at a temporary home (conftest.py): never the real apps.
   - `config.py`: config.toml and app.toml, written with tomlkit so comments survive.
 - `app/`: Tauri v2, React 19, TypeScript, Vite, Tailwind v4.
-  - `src/MainWindow.tsx`: navigation (`View`), menus, pinning, what's on screen. What it's
+  - `src/lib/navigation.ts`: where the window is (`View`), its history, and the rules of a
+    course's tabs (which tab shows a thing, the tab at the end); `navigation.test.ts`.
+  - `src/MainWindow.tsx`: the window: its state, going places, menus, pinning. What it's
     drawn with: `src/components/Sidebar.tsx` (置顶's list, terms, rows, the sync status),
     `Toolbar.tsx` (breadcrumb, search box), `Notice.tsx`, `Results.tsx` (a smart folder's).
   - `src/components/CourseView.tsx`: tabs, readers, modules, grades.

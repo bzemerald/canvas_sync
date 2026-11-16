@@ -10,7 +10,7 @@ import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/Fi
 import { type Finder, FinderContext, FoundHere, type How, actionsFor, rememberCourse, useCatalog } from "./components/Found";
 import { Marked } from "./components/Marked";
 import {
-  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, NewTab, type Spare, VIEW_LISTS, useOverview,
+  CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, NewTab, useOverview,
 } from "./components/CourseView";
 import { CourseOverview, LinksPage, NoteEditor } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
@@ -36,6 +36,10 @@ import { quickLook } from "./lib/quicklook";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
+import {
+  type CourseView, START, type Spare, VIEW_LISTS, type View, firstTab, listed, replaced, settle, showing as isShowing, showsFiles, spareKey, spareOf,
+  stepped, toTab as tabOf, under, went, withoutSpare,
+} from "./lib/navigation";
 import { type Reading, read } from "./lib/query";
 import { appCommand, copyName, fileManager, isMac, shortcut, trashName } from "./lib/keys";
 import { copyFiles } from "./lib/copyFiles";
@@ -55,30 +59,13 @@ import { SignInDialog, browserSignIn } from "./components/SignIn";
 import { t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
 
-// A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually), or
-// where you last were in it (openCourse).
-// `tab` is the thing the course's page shows (one of its views, or anything put there as a tab);
-// `path` is the folder 文件 (or a folder tab) is in; `item` the announcement / assignment / page
-// being read, or the module open in 模块. A search is a smart folder (a saved search) shown.
-// `found`: what's marked there, having come from search (lib/marks.ts).
-// `blank`: a new tab is showing (`tab` is the one before it, to go back to when it's closed).
-type CourseView = { kind: "course"; id: number; tab: Thing; path: string; select?: string; item?: string; first?: boolean; found?: string; blank?: boolean };
-type View =
-  | CourseView // first: opened on its first tab
-  | { kind: "browse"; path: string; select?: string; found?: string }
-  | { kind: "search"; search: ThingOf<"search">; found?: string }
-  | { kind: "settings"; found?: undefined };
-
 /** The open course's page: its places, each with all they hold (as last loaded, or as just changed). */
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
 const layouts = new Map<number, Layout>(); // each course's, as last loaded: drawn at once when it's opened again
 
-
-const under = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(dir + "/");
 const RESTORABLE = new Set(["modified", "missing", "ignored"]);
 const typingIn = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 const countLabel = (names: string[]) => (names.length === 1 ? names[0] : t("{n} 项", { n: names.length }));
-const listed = (list: Shown[], x: Thing) => list.some((e) => same(e, x) && !e.hidden);
 /** The views that count what's new in them. */
 const countsNew = (v: ViewName): v is NewsView => ["announcements", "assignments", "pages", "files", "ed"].includes(v);
 // Views that narrow their own lists as you type in the search box.
@@ -108,7 +95,7 @@ export function MainWindow() {
   const launcherKeys = useLauncherKeys();
   const [courseList, setCourseList] = useState<Course[]>([]);
   const [pinned, setPinned] = useState<Shown[]>([]);
-  const [hist, setHist] = useState<{ stack: View[]; i: number }>({ stack: [{ kind: "browse", path: "" }], i: 0 });
+  const [hist, setHist] = useState(START); // where it is, and was (lib/navigation.ts)
   const [query, setQuery] = useState("");
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
   const [showChanges, setShowChanges] = usePref("showChanges", false); // what you changed, in files
@@ -148,16 +135,11 @@ export function MainWindow() {
   const go = useCallback((v: View) => {
     setQuery("");
     setWide(false);
-    setHist((h) => ({ stack: [...h.stack.slice(0, h.i + 1), v], i: h.i + 1 }));
+    setHist((h) => went(h, v));
   }, []);
-  const step = (d: number) => setHist((h) => ({ ...h, i: Math.max(0, Math.min(h.stack.length - 1, h.i + d)) }));
+  const step = (d: number) => setHist((h) => stepped(h, d));
   /** Change where we are without a new history entry (picking an item in a list). */
-  const replaceView = (v: View) =>
-    setHist((h) => {
-      const stack = [...h.stack];
-      stack[h.i] = v;
-      return { ...h, stack };
-    });
+  const replaceView = (v: View) => setHist((h) => replaced(h, v));
   const refresh = () => setVersion((n) => n + 1);
   const seenChanged = () => setSeenTick((n) => n + 1);
   const newFiles = useLoaded("new-files", api.newFiles, [version, seenTick]).value; // (what a file's menu can mark read)
@@ -247,37 +229,9 @@ export function MainWindow() {
   const courseLayout = layout && layout.id === layoutId ? layout.layout : layoutId !== null ? layouts.get(layoutId) ?? null : null;
   const tabs = courseLayout?.tabs ?? [];
   /** Going to one of the course's tabs (or showing something there). */
-  const toTab = (v: CourseView, x: Thing): CourseView => {
-    const c = courseById(v.id);
-    // A folder tab is at its folder; 文件 starts at the course's, and so does clicking it again.
-    const fresh = v.tab.type === "folder" || x.type === "folder" || (same(v.tab, x) && !v.blank);
-    return { ...v, tab: x, item: undefined, select: undefined, first: false, found: undefined, blank: false, path: x.type === "folder" ? x.path : fresh ? c?.dir ?? v.path : v.path };
-  };
-  // The first tab that shows something here (not one that opens a file, a tool or a link).
-  const firstTab = (list: Shown[], id: number): Thing => thingOf(list.find((e) => !e.hidden && !opensElsewhere(e)) ?? viewOf(id, "overview"));
-  /** Where the course's page is, once its tabs are known: a thing it has a tab for is that tab;
-   * a document, a module, a folder is in the view that has it (the reader with it picked, 模块 at
-   * it, 文件 or a folder tab at it), if that's one of its tabs. Else it shows on a tab for now. */
-  const settle = (v: CourseView): CourseView => {
-    if (!courseLayout || layout?.id !== v.id) return v;
-    if (v.first) return { ...toTab(v, firstTab(tabs, v.id)), found: v.found };
-    const x = v.tab;
-    if (listed(tabs, x)) return v;
-    if (x.type === "doc" && x.course === v.id && listed(tabs, viewOf(v.id, KIND_VIEW[x.kind]))) {
-      return { ...v, tab: viewOf(v.id, KIND_VIEW[x.kind]), item: x.id };
-    }
-    if (x.type === "module" && x.course === v.id && listed(tabs, viewOf(v.id, "modules"))) {
-      return { ...v, tab: viewOf(v.id, "modules"), item: String(x.module) };
-    }
-    if (x.type === "folder") {
-      const holder = tabs.filter((e) => e.type === "folder" && !e.hidden && under(x.path, e.path))
-        .sort((a, b) => (b as ThingOf<"folder">).path.length - (a as ThingOf<"folder">).path.length)[0];
-      if (holder) return { ...v, tab: thingOf(holder), path: x.path };
-      if (listed(tabs, viewOf(v.id, "files"))) return { ...v, tab: viewOf(v.id, "files"), path: x.path };
-    }
-    return v;
-  };
-  const view: View = raw.kind === "course" ? settle(raw) : raw;
+  const toTab = (v: CourseView, x: Thing): CourseView => tabOf(v, x, courseById(v.id)?.dir);
+  // Where the page is, once the course's tabs are known (see `settle`).
+  const view: View = raw.kind === "course" && courseLayout && layout?.id === raw.id ? settle(raw, tabs, courseById(raw.id)?.dir) : raw;
   const cv = view.kind === "course" ? view : null;
   // The course you were last in: search (here and in the search window) puts its things a little first.
   useEffect(() => {
@@ -294,7 +248,6 @@ export function MainWindow() {
   // that isn't one of its tabs. Showing one puts it there, in place of what was; going to another
   // tab, it stays, until closed.
   const [spares, setSpares] = useState<ReadonlyMap<number, Spare>>(new Map());
-  const spareKey = (s: Spare | null | undefined) => (!s ? "" : s === "new" ? s : thingKey(s));
   const setSpare = (id: number, s: Spare | null) =>
     setSpares((m) => {
       if (spareKey(m.get(id)) === spareKey(s)) return m;
@@ -305,7 +258,7 @@ export function MainWindow() {
     });
   const lastTab = useRef(new Map<number, Thing>()); // the tab you were last on, in each course
   const settled = !!cv && !!courseLayout && layout?.id === cv.id; // (see settle)
-  const shownSpare: Spare | null = !cv ? null : cv.blank ? "new" : !settled || listed(tabs, cv.tab) ? null : cv.tab;
+  const shownSpare: Spare | null = cv ? spareOf(cv, tabs, settled) : null;
   const kept = cv ? spares.get(cv.id) : undefined;
   const keptListed = !!kept && kept !== "new" && listed(tabs, kept); // (made a tab: it's not kept there any more)
   const spare = shownSpare ?? (keptListed ? null : kept ?? null);
@@ -318,10 +271,9 @@ export function MainWindow() {
     }
   }, [cv?.id, settled, spareKey(shownSpare), spareKey(kept), keptListed, tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
   const tabEntry = tab ? tabs.find((e) => same(e, tab)) ?? tab : null;
-  const filesTab = view.kind === "browse" || (!!tab && !cv?.blank && (isView(tab, "files") || tab.type === "folder"));
+  const filesTab = showsFiles(view);
   const filesView = view.kind === "browse" || view.kind === "course"; // has a search box for where it is
-  const browsing = filesView ? view.path : null;
-  const folderShown = filesTab ? browsing : null; // a course's other tabs remember a folder, but don't show it
+  const browsing = filesView ? view.path : null; // (a course's other tabs remember a folder, but don't show it)
 
   /** Go to a folder: inside a course, that's the course's page (in 文件, or a folder tab that has
    * it); elsewhere, a plain folder. */
@@ -357,11 +309,7 @@ export function MainWindow() {
   const closeSpare = () => {
     if (!cv) return;
     setSpare(cv.id, null);
-    if (!cv.blank && !shownSpare) return;
-    // (A new tab's `tab` is the one before it, unless that's no longer a tab.)
-    const before = [cv.blank ? cv.tab : null, lastTab.current.get(cv.id)].find((x) => x && listed(tabs, x));
-    if (cv.blank && before && same(before, cv.tab)) replaceView({ ...cv, blank: false });
-    else replaceView(toTab(cv, before ?? firstTab(tabs, cv.id)));
+    if (cv.blank || shownSpare) replaceView(withoutSpare(cv, tabs, lastTab.current.get(cv.id), courseById(cv.id)?.dir));
   };
   /** Anything, wherever it opens: a file in its app; a tool, a link, the course on Canvas in the
    * browser; a search as a smart folder; the rest in its course's page. Noted, with what had been
@@ -463,11 +411,7 @@ export function MainWindow() {
   // What's marked on the page: what its box narrows it to, as you type; else what search opened it for.
   const narrowed = useMemo(() => (filtering && query.trim() ? markPattern(read(query, vocab), vocab) ?? null : null), [filtering, query, vocab]);
   const marking = narrowed ?? (searching ? null : view.found ?? null);
-  const clearMarks = useCallback(() => setHist((h) => {
-    const stack = [...h.stack];
-    stack[h.i] = { ...stack[h.i], found: undefined } as View;
-    return { ...h, stack };
-  }), []);
+  const clearMarks = useCallback(() => setHist((h) => replaced(h, { ...h.stack[h.i], found: undefined } as View)), []);
   /** Above the results: what was searched, and the way to search more (or less) widely. */
   const scopeNote = (() => {
     if (!query.trim()) return null;
@@ -1003,17 +947,7 @@ export function MainWindow() {
   if (startupError) return <StartupError message={startupError} />;
 
   // -- layout ---------------------------------------------------------------------------
-  /** Whether a thing is what's on screen: a course's tab, the announcement or page being read,
-   * the module open in 模块, the folder 文件 is in, the smart folder. */
-  const showing = (x: Thing): boolean => {
-    if (view.kind === "search") return same(x, view.search);
-    if (x.type === "folder") return folderShown === x.path;
-    if (!cv || !tab) return false;
-    if (same(x, tab)) return true;
-    if (x.type === "doc") return x.course === cv.id && (isView(tab, KIND_VIEW[x.kind]) || (isView(tab, "ed") && fromEd(x))) && cv.item === x.id;
-    if (x.type === "module") return x.course === cv.id && isView(tab, "modules") && cv.item === String(x.module);
-    return false;
-  };
+  const showing = (x: Thing) => isShowing(view, x); // (what's on screen: highlighted in 置顶)
   const pinnedHere = pinned.some(showing); // highlight that, not also its course
   /** The sidebar's row `row`, if it's the one being renamed: its name, as an input. */
   const nameEditor = (row: string, initial: string, submit: (name: string) => void, hint?: string, className = "h-5 text-sm") =>
