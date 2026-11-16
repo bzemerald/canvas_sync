@@ -1,15 +1,13 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, FolderTree, LayoutGrid, List, ListChecks, MoreHorizontal, Paperclip, Plus, RefreshCw, Search,
-  Settings as SettingsIcon, Sparkles,
+  ChevronLeft, ChevronRight, Eye, EyeOff, FolderTree, LayoutGrid, List, ListChecks, Paperclip, Plus, RefreshCw, Search,
+  Settings as SettingsIcon,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
-import {
-  CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, rememberCourse, useCatalog,
-} from "./components/Found";
+import { type Finder, FinderContext, FoundHere, type How, actionsFor, rememberCourse, useCatalog } from "./components/Found";
 import { Marked } from "./components/Marked";
 import {
   CourseDoc, CourseGrades, CourseModules, CourseReader, CourseTabs, KIND_VIEW, NewTab, type Spare, VIEW_LISTS, useOverview,
@@ -18,15 +16,16 @@ import { CourseOverview, LinksPage, NoteEditor } from "./components/Overview";
 import { DeleteDialog } from "./components/DeleteDialog";
 import { CourseIconDialog } from "./components/CourseIconDialog";
 import { HideCourseDialog } from "./components/HideCourseDialog";
-import { HitBrowser } from "./components/HitBrowser";
 import { KeysDialog } from "./components/KeysDialog";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
-import { type Place as PlaceOf, usePlace, usePlaceDrag } from "./components/Place";
-import { KIND } from "./components/Result";
+import { Notice, type NoticeAction, type NoticeState } from "./components/Notice";
+import { usePlace } from "./components/Place";
 import { RenameInput } from "./components/RenameInput";
 import { RestoreDialog } from "./components/RestoreDialog";
+import { Results } from "./components/Results";
 import { Settings } from "./components/Settings";
-import { Count } from "./components/Status";
+import { NavItem, PinnedSection, SectionHeader, SyncStatus, TermSection, UpdateNotice, arrange, groupByTerm, pinnedWhere } from "./components/Sidebar";
+import { Breadcrumb, SearchInput, SmartTitle, ToolButton } from "./components/Toolbar";
 import { SmartFolderDialog, type SmartFolder } from "./components/SmartFolderDialog";
 import {
   ThingIcon, ThingsContext, VIEW_LABEL, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
@@ -34,7 +33,7 @@ import {
 import * as api from "./lib/api";
 import { courseUrl, docUrl } from "./lib/canvas";
 import { quickLook } from "./lib/quicklook";
-import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, CourseLayout, Entry, Hit, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
 import { type Reading, read } from "./lib/query";
@@ -45,17 +44,15 @@ import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
 import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
-import { termRank } from "./lib/terms";
 import {
   type Shown, type Thing, type ThingOf, type ViewName, folderTitle, fromEd, isView, ofCourse, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingNamed, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
 import { ownFrame, useTrafficLights } from "./lib/window";
-import { installUpdate, startUpdateChecks, useUpdate } from "./lib/update";
-import { shortDate } from "./lib/dates";
-import { edSaying, fileSaying, friendly, syncSaying } from "./lib/errors";
+import { startUpdateChecks } from "./lib/update";
+import { friendly } from "./lib/errors";
 import { SignInDialog, browserSignIn } from "./components/SignIn";
-import { locale, t } from "./lib/i18n";
+import { t } from "./lib/i18n";
 import { useLoaded } from "./lib/useLoaded";
 
 // A course is its own kind of place, not "a folder": it opens on its first tab (概览, usually), or
@@ -76,37 +73,6 @@ type View =
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
 const layouts = new Map<number, Layout>(); // each course's, as last loaded: drawn at once when it's opened again
 
-/** A term in the sidebar: `label` as you named it, `key` as Canvas does (what its place is saved by). */
-type TermGroup = { label: string; key: string; courses: Course[] };
-
-function groupByTerm(list: Course[]): TermGroup[] {
-  const groups = new Map<string, Course[]>();
-  for (const c of list) {
-    const key = c.term ?? "";
-    groups.set(key, [...(groups.get(key) ?? []), c]);
-  }
-  return [...groups.entries()]
-    .sort(([a], [b]) => termRank(b) - termRank(a))
-    .map(([key, courses]) => ({ key, courses, label: courses[0].term_label ?? t("无学期") }));
-}
-
-/** The sidebar's terms and courses as you dragged them. Terms you haven't placed (a new one)
- * come first, newest first; courses you haven't placed come last in their term. */
-function arrange(list: Course[], order: SidebarOrder): TermGroup[] {
-  const place = <T,>(saved: T[], k: T, unplaced: number) => (saved.includes(k) ? saved.indexOf(k) : unplaced);
-  return groupByTerm(list)
-    .map(({ label, key, courses }, i) => ({
-      label,
-      key,
-      i,
-      courses: courses
-        .map((c, j) => ({ c, j }))
-        .sort((a, b) => place(order.courses, a.c.id, Infinity) - place(order.courses, b.c.id, Infinity) || a.j - b.j)
-        .map(({ c }) => c),
-    }))
-    .sort((a, b) => place(order.terms, a.key, -1) - place(order.terms, b.key, -1) || a.i - b.i)
-    .map(({ label, key, courses }) => ({ label, key, courses }));
-}
 
 const under = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(dir + "/");
 const RESTORABLE = new Set(["modified", "missing", "ignored"]);
@@ -1508,518 +1474,6 @@ export function MainWindow() {
     </div>
     </FinderContext.Provider>
     </ThingsContext.Provider>
-  );
-}
-
-// -- pieces -----------------------------------------------------------------------------
-
-/** 置顶: what's pinned, in the order you put it in. Anything dropped on it is pinned where you let
- * go (a line shows where); dragged off it, it's unpinned. */
-function PinnedSection({ place, collapsed, header, empty, render, onPin, onUnpin }: {
-  place: PlaceOf; // 置顶
-  collapsed: boolean;
-  header: React.ReactNode;
-  empty: React.ReactNode;
-  render: (item: Shown) => React.ReactNode;
-  onPin: (entry: Shown, at?: number) => void;
-  onUnpin: (item: Shown) => void; // dragged off the list
-}) {
-  const items = place.entries;
-  const list = useRef<HTMLDivElement>(null);
-  const slotAt = (_x: number, y: number) => {
-    const rows = Array.from(list.current?.querySelectorAll<HTMLElement>(":scope > [data-pin]") ?? []);
-    const i = rows.findIndex((el) => {
-      const r = el.getBoundingClientRect();
-      return y < r.top + r.height / 2;
-    });
-    return i < 0 ? rows.length : i;
-  };
-  // (What's pinned can be dragged onto a course's tabs, its overview, too.)
-  const { zone, drag } = usePlaceDrag(place, "y", { slotAt, drop: (entry, at) => onPin(entry, collapsed ? undefined : at), off: onUnpin });
-  const over = zone.state === "over" && !collapsed && items.length > 0;
-  const line = (
-    <div aria-hidden className="relative h-0">
-      <div className="absolute inset-x-2 -top-px h-0.5 rounded-full bg-accent" />
-    </div>
-  );
-  return (
-    <div
-      ref={zone.ref}
-      className={`-mx-1 rounded-lg px-1 pb-1 ${zone.state === "over" ? "bg-accent/10 ring-1 ring-accent" : zone.state === "ready" ? "outline-1 outline-dashed outline-accent/60" : ""}`}
-    >
-      {header}
-      {!collapsed && items.length === 0 && (
-        // Both in one spot, one shown: the sidebar below doesn't move as a drag starts (it'd be off
-        // from where the pointer is, for dragging there).
-        <div className="grid">
-          <div className={`[grid-area:1/1] ${zone.state === "idle" ? "" : "invisible"}`}>{empty}</div>
-          <p className={`[grid-area:1/1] self-center px-2 py-2 text-xs text-muted ${zone.state === "idle" ? "invisible" : ""}`}>{t("放在这里置顶")}</p>
-        </div>
-      )}
-      {!collapsed && (
-        <div ref={list}>
-          {items.map((item, i) => (
-            <Fragment key={thingKey(item)}>
-              {over && zone.slot === i && line}
-              <div data-pin {...drag.item(i)}>{render(item)}</div>
-            </Fragment>
-          ))}
-          {over && zone.slot === items.length && line}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A term in the sidebar: its header folds it and drags it among the terms; its courses drag
- * among themselves. */
-function TermSection({ group, sectionRef, grab, collapsed, editor, onToggle, onMenu, onReorder, renderCourse }: {
-  group: TermGroup;
-  editor?: React.ReactNode; // being renamed: the input, in its name's place
-  sectionRef: (el: HTMLElement | null) => void;
-  grab: { onPointerDown: (e: React.PointerEvent) => void };
-  collapsed: boolean;
-  onToggle: () => void;
-  onMenu: (x: number, y: number) => void;
-  onReorder: (ids: number[]) => void;
-  renderCourse: (c: Course) => React.ReactNode;
-}) {
-  const drag = useReorder(group.courses.length, (from, to) => onReorder(moved(group.courses, from, to).map((c) => c.id)), "y", {
-    thing: (i) => ({ type: "course", course: group.courses[i].id }),
-  });
-  const fresh = group.courses.reduce((n, c) => n + c.new, 0);
-  return (
-    <section ref={sectionRef}>
-      <SectionHeader
-        title={group.label}
-        editor={editor}
-        collapsed={collapsed}
-        onToggle={onToggle}
-        grab={grab}
-        count={collapsed ? fresh : 0}
-        action={{ label: t("{term} 的操作", { term: group.label }), icon: <MoreHorizontal className="size-3.5" />, onClick: onMenu }}
-        onMenu={onMenu}
-      />
-      {!collapsed && group.courses.map((c, i) => (
-        <div key={c.id} {...drag.item(i)}>
-          {renderCourse(c)}
-        </div>
-      ))}
-    </section>
-  );
-}
-
-/** Where a pinned folder or file is, for its subtitle: its course (or term), else its parent folder. */
-function pinnedWhere(path: string, c: Course | null): string {
-  if (c && path === c.dir) return c.term_label ?? "";
-  if (c) return c.label;
-  return parentOf(path) || t("全部文件");
-}
-
-/** What to do about a notice, from it: 撤销, say. */
-export type NoticeAction = { label: string; run: () => void };
-type NoticeState = { text: string; action?: NoticeAction };
-
-/** A short message at the bottom of the window that goes away by itself (a little later when
- * there's something to do about it). */
-function Notice({ notice, onDone }: { notice: NoticeState | null; onDone: () => void }) {
-  const done = useRef(onDone);
-  done.current = onDone;
-  useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => done.current(), notice.action ? 8000 : 5000); // per message, not per re-render
-    return () => clearTimeout(t);
-  }, [notice]);
-  if (!notice) return null;
-  return (
-    <div role="status" className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-lg border border-line bg-panel px-4 py-2 text-sm shadow-xl">
-      {notice.text}
-      {notice.action && (
-        <button
-          onClick={() => {
-            notice.action!.run();
-            done.current();
-          }}
-          className="shrink-0 font-medium text-accent hover:underline"
-        >
-          {notice.action.label}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function Results({ view, mode, results, asked, scope, showCourse, onOpen, onReveal, onMenu, onDelete, onCopy }: {
-  view: View;
-  mode: ViewMode;
-  query: string;
-  results: { hits: Hit[]; error: string | null; loading: boolean };
-  asked: boolean; // a search was typed, or is saved (a smart folder)
-  scope?: { text: string; action: string; onAction: () => void } | null;
-  onReveal: (hit: Hit) => void;
-  showCourse: boolean;
-  onOpen: (hit: Hit) => void;
-  onMenu: (hits: Hit[], x: number, y: number) => void;
-  onDelete: (hits: Hit[]) => void;
-  onCopy: (hits: Hit[]) => void;
-}) {
-  const [kind, setKind] = useState<Kind | null>(null);
-  const { hits, error, loading } = results;
-  useEffect(() => setKind(null), [view]);
-  const shown = kind ? hits.filter((h) => h.kind === kind) : hits;
-  const counts: Partial<Record<Kind, number>> = {};
-  for (const h of hits) counts[h.kind] = (counts[h.kind] ?? 0) + 1;
-
-  const header = (
-    <>
-      {scope && (
-        <p className="mb-2 flex items-center gap-2 px-2 text-xs text-muted">
-          {scope.text}
-          <button onClick={scope.onAction} className="text-accent hover:underline">{scope.action}</button>
-        </p>
-      )}
-      {hits.length > 0 && Object.keys(counts).length > 1 && (
-        <div className="mb-2 flex flex-wrap gap-1.5 px-2 text-xs">
-          <Chip active={!kind} onClick={() => setKind(null)}>{t("全部")} {hits.length}</Chip>
-          {(Object.keys(KIND) as Kind[]).filter((k) => counts[k]).map((k) => (
-            <Chip key={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)}>{KIND[k].label} {counts[k]}</Chip>
-          ))}
-        </div>
-      )}
-      {error && <p className="px-2 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
-      {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
-    </>
-  );
-  return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} onCopy={onCopy} />;
-}
-
-function SearchInput({ inputRef, value, onChange, placeholder, compact, autoFocus, completion }: {
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  value: string;
-  completion?: string | null; // what ⇥ would make of it: shown faint, with the key
-  onChange: (v: string) => void;
-  placeholder: string;
-  compact?: boolean;
-  autoFocus?: boolean;
-}) {
-  return (
-    <div className={`flex items-center border border-line bg-panel ${compact ? "w-56 shrink-0 gap-2 rounded-lg px-2.5 focus-within:border-accent" : "gap-3 rounded-xl px-4"}`}>
-      <Search className="size-4 shrink-0 text-muted" aria-hidden />
-      <div className="relative min-w-0 flex-1">
-        <input
-          ref={inputRef}
-          value={value}
-          autoFocus={autoFocus}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
-            // Cleared and left: the keys go to the page (its list), as before searching.
-            onChange("");
-            e.currentTarget.blur();
-            requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-keys]")?.focus());
-          }}
-          // A query ("mt", "hw3 sol"), not prose: no autocorrect or capitals.
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          placeholder={placeholder}
-          className={`w-full bg-transparent outline-none placeholder:text-muted ${compact ? "h-7 text-sm" : "h-11"}`}
-        />
-        <CompletionGhost query={value} completion={completion ?? null} className={compact ? "text-sm" : ""} />
-      </div>
-    </div>
-  );
-}
-
-/** Where you are. In a course it starts at the course (its name, not where its files live). */
-function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inline, onGo, onRootMenu }: {
-  path: string;
-  root?: { path: string; label: string; icon?: React.ReactNode };
-  inline?: string; // a folder shown as the root itself (a course's Files, in 文件): not a step
-  onGo: (p: string) => void;
-  onRootMenu?: (x: number, y: number) => void; // the root, right-clicked
-}) {
-  const rest = path.slice(root.path.length).replace(/^\//, "");
-  const prefix = root.path ? root.path + "/" : "";
-  const parts = (rest ? rest.split("/") : []).map((_, i, all) => prefix + all.slice(0, i + 1).join("/")).map((p) => ({ name: folderTitle(p), path: p }))
-    .filter((p) => p.path !== inline);
-  return (
-    <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
-      <button onClick={() => onGo(root.path)} onContextMenu={onRootMenu && ((e) => (e.preventDefault(), onRootMenu(e.clientX, e.clientY)))} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
-        {root.icon}
-        {root.label}
-      </button>
-      {parts.map((p, i) => (
-        <span key={i} className="flex min-w-0 items-center gap-0.5">
-          <ChevronRight className="size-3.5 shrink-0 text-muted" />
-          <button
-            onClick={() => onGo(p.path)}
-            className={`truncate rounded px-1.5 py-0.5 hover:bg-chip ${i === parts.length - 1 ? "font-medium" : "text-muted"}`}
-          >
-            {p.name}
-          </button>
-        </span>
-      ))}
-    </nav>
-  );
-}
-
-function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search">; name: string; courses: Course[] }) {
-  const names = folder.courses.map((id) => courses.find((c) => c.id === id)?.label ?? `#${id}`);
-  const bits = [
-    folder.query && `“${folder.query}”`,
-    names.length ? names.join(t("、")) : t("所有课程"),
-    folder.kinds.length ? folder.kinds.map((k) => KIND[k].label).join(t("、")) : "",
-    folder.content ? t("含正文") : t("只看名称"),
-  ].filter(Boolean);
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium"><Sparkles className="size-4 text-accent" />{name}</span>
-      <span className="truncate text-xs text-muted">{bits.join(" · ")}</span>
-    </div>
-  );
-}
-
-function NavItem({ icon, title, editor, subtitle, keys, active, count, muted, onPress, onClick, onMenu }: {
-  icon?: React.ReactNode;
-  title: string;
-  editor?: React.ReactNode; // being renamed: the input, in its name's place (not in a button)
-  subtitle?: string;
-  keys?: string; // its shortcut, shown on the right
-  active: boolean;
-  muted?: boolean;
-  count?: number; // new things in it
-  onPress?: () => void;
-  onClick: () => void;
-  onMenu?: (x: number, y: number) => void;
-}) {
-  if (editor) {
-    return (
-      <div className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${active ? "bg-selected text-fg" : "text-fg-soft"} ${muted ? "opacity-50" : ""}`}>
-        {icon && <span className="shrink-0 text-muted">{icon}</span>}
-        <span className="min-w-0 flex-1">
-          {editor}
-          {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className="group relative">
-      <button
-        onPointerDown={onPress}
-        onClick={onClick}
-        onContextMenu={onMenu && ((e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)))}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-selected text-fg" : "text-fg-soft hover:bg-chip"} ${muted ? "opacity-50" : ""}`}
-      >
-        {icon && <span className="shrink-0 text-muted">{icon}</span>}
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">{title}</span>
-          {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
-        </span>
-        {keys && <span className="shrink-0 text-xs text-muted">{keys}</span>}
-        {!!count && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
-      </button>
-      {onMenu && (
-        <button
-          aria-label={t("{title} 的操作", { title })}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            onMenu(r.left, r.bottom + 2);
-          }}
-          className="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded p-1 text-muted group-hover:block hover:bg-line hover:text-fg"
-        >
-          <MoreHorizontal className="size-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function SectionHeader({ title, editor, action, onMenu, collapsed, onToggle, grab, count = 0 }: {
-  title: string;
-  editor?: React.ReactNode; // being renamed: the input, in its name's place
-  action?: { label: string; icon: React.ReactNode; onClick: (x: number, y: number) => void };
-  onMenu?: (x: number, y: number) => void;
-  collapsed?: boolean;
-  onToggle?: () => void; // folds the section
-  grab?: { onPointerDown: (e: React.PointerEvent) => void }; // drags the section
-  count?: number; // new things inside, shown while it's folded
-}) {
-  return (
-    <div
-      {...grab}
-      className="group mt-4 flex items-center gap-1 px-2 pb-1"
-      onContextMenu={onMenu && !editor ? (e) => (e.preventDefault(), onMenu(e.clientX, e.clientY)) : undefined} // (the input's own: paste)
-    >
-      <h2 className="min-w-0 flex-1">
-        {editor ?? <button
-          onClick={onToggle}
-          disabled={!onToggle}
-          aria-expanded={onToggle ? !collapsed : undefined}
-          title={onToggle ? (collapsed ? t("展开") : t("收起")) : undefined}
-          className="flex max-w-full items-center gap-1 text-[11px] font-medium tracking-wide text-muted uppercase hover:text-fg-soft disabled:hover:text-muted"
-        >
-          <span className="truncate">{title}</span>
-          {onToggle && (
-            <ChevronRight className={`size-3 shrink-0 transition-transform ${collapsed ? "" : "rotate-90 opacity-0 group-hover:opacity-100"}`} />
-          )}
-        </button>}
-      </h2>
-      {/* What's new in a folded section; on hover, its actions take the place. They share one cell,
-          so the row's height never changes: under the pointer that would make it flicker. */}
-      <div className="grid items-center justify-items-end empty:hidden">
-        {action && !editor && (
-          <button
-            title={action.label}
-            aria-label={action.label}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              action.onClick(r.left, r.bottom + 2);
-            }}
-            className="peer col-start-1 row-start-1 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus-visible:opacity-100"
-          >
-            {action.icon}
-          </button>
-        )}
-        {count > 0 && (
-          <span className="col-start-1 row-start-1 flex group-hover:invisible peer-focus-visible:invisible">
-            <Count n={count} label={t("{n} 个新的", { n: count })} />
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ToolButton({ title, onClick, disabled, pressed, children }: {
-  title: string;
-  onClick: (e: React.MouseEvent) => void;
-  disabled?: boolean;
-  pressed?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      title={title}
-      aria-label={title}
-      aria-pressed={pressed}
-      disabled={disabled}
-      onClick={onClick}
-      className={`rounded p-1.5 disabled:opacity-30 ${pressed ? "bg-chip text-fg" : "text-muted hover:bg-chip hover:text-fg"}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-2.5 py-0.5 ${active ? "border-accent bg-accent text-on-accent" : "border-line text-fg-soft hover:bg-chip"}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-const PHASE: Record<SyncState["phase"], string> = {
-  idle: "",
-  checking: t("正在检查 Canvas…"),
-  downloading: t("正在下载"),
-  indexing: t("正在建立搜索索引"),
-  done: t("已同步"),
-  failed: t("同步失败"),
-};
-
-const CHANGE: Record<string, (n: number) => string> = {
-  download: (n) => t("{n} 个新文件", { n }),
-  update: (n) => t("{n} 个更新", { n }),
-  conflict: (n) => t("{n} 个冲突", { n }),
-  move: (n) => t("移动了 {n} 个", { n }),
-  ignore: (n) => t("{n} 个不再同步", { n }),
-  remote_deleted: (n) => t("{n} 个已从 Canvas 删除", { n }),
-  delete: (n) => t("删除了 {n} 个", { n }),
-};
-
-/** A new version, at the sidebar's foot once a check found one: click to update (and restart). */
-function UpdateNotice() {
-  const update = useUpdate();
-  if (update.phase !== "available" && update.phase !== "downloading" && update.phase !== "installing") return null;
-  const label = update.phase === "available" ? t("新版本 {v} · 更新并重启", { v: update.version })
-    : update.phase === "downloading" ? t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
-      : t("正在安装，马上重启…");
-  return (
-    <button onClick={() => void installUpdate()} disabled={update.phase !== "available"}
-      className="mb-1 w-full rounded-md bg-selected px-2.5 py-1.5 text-left text-xs text-accent hover:opacity-90 disabled:opacity-80">
-      {label}
-    </button>
-  );
-}
-
-function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: {
-  sync: SyncState | null;
-  label: string;
-  onFix: () => void;
-  onSignIn: () => void; // signed out of Canvas: sign in again
-  session: boolean; // signed in in the Canvas window (else with a token)
-  renewing?: boolean; // that, quietly, now
-}) {
-  const [showFailed, setShowFailed] = useState(false);
-  if (!sync || sync.phase === "idle") return null;
-  const failed = sync.failed ?? [];
-  const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
-  const finished = sync.finished_at ?? sync.last_synced; // when it ended
-  const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t("，"));
-  return (
-    <div className="mx-4 mb-2 rounded-md bg-chip px-2.5 py-2 text-xs text-fg-soft">
-      <div className="flex justify-between gap-2">
-        <span className={`truncate ${sync.phase === "failed" ? "text-danger" : ""}`}>
-          {PHASE[sync.phase]}{label && sync.scope.length > 0 ? ` · ${label}` : ""}
-        </span>
-        {sync.running && pct !== null && <span className="shrink-0">{sync.done}/{sync.total}</span>}
-        {!sync.running && finished && <span className="shrink-0 text-muted" title={new Date(finished).toLocaleString(locale)}>{shortDate(finished)}</span>}
-      </div>
-      {sync.running && pct !== null && (
-        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-line">
-          <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
-        </div>
-      )}
-      {sync.running && sync.current && <p className="mt-1 truncate text-muted">{sync.current.split("/").pop()}</p>}
-      {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || t("没有新内容")}</p>}
-      {!sync.expired && sync.errors.slice(0, 1).map((e) => (
-        <p key={e} className="mt-1 break-words text-danger" title={e}>{syncSaying(e)}</p>
-      ))}
-      {failed.length > 0 && (
-        <button onClick={() => setShowFailed(!showFailed)} className="mt-1 block text-left text-danger hover:underline">
-          {t("{n} 个文件没能同步", { n: failed.length })}{showFailed ? " ▾" : " ›"}
-        </button>
-      )}
-      {showFailed && (
-        <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
-          {failed.map((f) => (
-            <li key={f.path} title={`${f.path}\n${f.error}`}>
-              <span className="block truncate">{f.path.split("/").pop()}</span>
-              <span className="block text-muted">{fileSaying(f.error)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!sync.running && sync.warnings.length > 0 && (
-        <p className="mt-1 text-muted" title={sync.warnings.join("\n")}>{t("有些内容这次没读到，下次同步再试。")}</p>
-      )}
-      {sync.expired && (renewing ? (
-        <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
-      ) : (
-        <button onClick={onSignIn} className="mt-1 block text-left text-accent hover:underline">
-          {session ? t("Canvas 登录已过期，点这里重新登录") : t("Canvas 令牌已失效，点这里更换")}
-        </button>
-      ))}
-      {!sync.running && sync.ed_error && (
-        <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>
-      )}
-    </div>
   );
 }
 
