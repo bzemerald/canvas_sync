@@ -139,11 +139,45 @@ class Hit:
     match: str = "name"   # name: the title or a folder matched; content: only the text inside
     doc_id: str | None = None  # pages, assignments, announcements: their id in the course
     source: str = "canvas"  # where it came from (canvas, ed)
+    key: str = ""         # the index's for it (items.key): tells hits apart; not part of what's sent
+
+    @classmethod
+    def from_row(cls, r: sqlite3.Row, codes: dict[int, str], snippet: list[tuple[str, bool]], match: str) -> Hit:
+        """A hit for a row of the index's `items`. `codes`: what each course is called."""
+        return cls(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
+                   title=r["title"], path=r["path"], url=r["url"], date=r["date"], snippet=snippet, match=match,
+                   doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None, source=r["source"], key=r["key"])
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        del d["key"]
         d["snippet"] = [{"text": t, "match": m} for t, m in self.snippet]
         return d
+
+
+def narrowed(course_ids: list[int] | None, kinds: list[str] | None, source: str | None, since: str | None,
+             until: str | None, column: str = "") -> tuple[list[str], list[Any]]:
+    """SQL conditions on `items` (and what they're asked with) for only these courses and kinds,
+    what came from `source`, and what's dated from `since` up to `until`. `column`: what its
+    columns are prefixed with ("i.")."""
+    where: list[str] = []
+    args: list[Any] = []
+    if course_ids:
+        where.append(f"{column}course_id IN ({','.join('?' * len(course_ids))})")
+        args += course_ids
+    if kinds:
+        where.append(f"{column}kind IN ({','.join('?' * len(kinds))})")
+        args += kinds
+    if source:
+        where.append(f"{column}source = ?")
+        args.append(source)
+    if since:
+        where.append(f"{column}date >= ?")
+        args.append(since)
+    if until:
+        where.append(f"{column}date < ?")
+        args.append(until)
+    return where, args
 
 
 @dataclass
@@ -565,22 +599,7 @@ class Index:
             if not q.course_ids:
                 return []
         codes = {c.id: course_label(c, settings) for c in courses}
-        where, args = [], []
-        if q.course_ids:
-            where.append(f"i.course_id IN ({','.join('?' * len(q.course_ids))})")
-            args += q.course_ids
-        if kinds:
-            where.append(f"i.kind IN ({','.join('?' * len(kinds))})")
-            args += kinds
-        if source:
-            where.append("i.source = ?")
-            args.append(source)
-        if since:
-            where.append("i.date >= ?")
-            args.append(since)
-        if until:
-            where.append("i.date < ?")
-            args.append(until)
+        where, args = narrowed(q.course_ids, kinds, source, since, until, "i.")
         if under == "":  # the whole sync folder: what's a file there, not what's only on Canvas
             where.append("i.path IS NOT NULL")
         elif under is not None:
@@ -611,11 +630,8 @@ class Index:
         else:
             return []
         return [
-            Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
-                title=r["title"], path=r["path"], url=r["url"], date=r["date"],
-                snippet=_segments(r["snip"]) if r["snip"] and _HIT_START in r["snip"] else [],
-                match="name" if r["in_name"] else "content",
-                doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None, source=r["source"])
+            Hit.from_row(r, codes, _segments(r["snip"]) if r["snip"] and _HIT_START in r["snip"] else [],
+                         "name" if r["in_name"] else "content")
             for r in self.db.execute(sql, args)
         ]
 

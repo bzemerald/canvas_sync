@@ -219,10 +219,10 @@ class Engine:
         if (len(query.split()) >= 2 and under is None and home and AppPrefs.load(prefs_path).meaning
                 and meaning.downloaded(home)):
             codes = {c.id: course_label(c, self.settings) for c in self.state.courses()}
-            had = {(h.kind, h.course_id, h.path or h.url or h.title) for h in hits}
+            had = {h.key for h in hits}
             hits += [h for h in Meaning(self.index).search(query, meaning.embedder(home), codes, course_ids, kinds,
                                                            since, until, source=source)
-                     if (h.kind, h.course_id, h.path or h.url or h.title) not in had]
+                     if h.key not in had]
         return hits, corrected
 
     def folder_scope(self, under: str | None) -> tuple[str | None, list[str]]:

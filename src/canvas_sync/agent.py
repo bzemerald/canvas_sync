@@ -191,11 +191,8 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
             out["link"] = link
         if h.snippet:
             out["snippet"] = "".join(f"«{t}»" if m else t for t, m in h.snippet)
-        else:  # (only its name matched: how it starts)
-            key = f"file:{h.path and (r := e.state.by_path(h.path)) and r.id}" if h.kind == "file" \
-                else f"{h.kind}:{h.course_id}:{h.doc_id}"
-            if start := " ".join(e.index.start(key, PREVIEW * 2).split())[:PREVIEW]:
-                out["preview"] = start
+        elif start := " ".join(e.index.start(h.key, PREVIEW * 2).split())[:PREVIEW]:
+            out["preview"] = start  # (only its name matched: how it starts)
         if h.source != "canvas":
             out["source"] = h.source
         return out

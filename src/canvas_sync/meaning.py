@@ -202,27 +202,12 @@ class Meaning:
                limit: int = 20, source: str | None = None) -> list[Hit]:
         """What has passages nearest to `query` (at least NEAR), nearest first; the passage is the
         snippet. Narrowed as Index.search is (courses, kinds, dates, source)."""
-        from .search import Hit
+        from .search import Hit, narrowed
 
         rowids, items, vecs = self._vectors()
         if not len(items):
             return []
-        where, args = [], []
-        if course_ids:
-            where.append(f"course_id IN ({','.join('?' * len(course_ids))})")
-            args += course_ids
-        if kinds:
-            where.append(f"kind IN ({','.join('?' * len(kinds))})")
-            args += kinds
-        if source:
-            where.append("source = ?")
-            args.append(source)
-        if since:
-            where.append("date >= ?")
-            args.append(since)
-        if until:
-            where.append("date < ?")
-            args.append(until)
+        where, args = narrowed(course_ids, kinds, source, since, until)
         allowed = {r[0] for r in self.db.execute(f"SELECT id FROM items WHERE {' AND '.join(where)}", args)} if where else None
         scores = vecs @ embed([query])[0]
         best: dict[int, tuple[float, int]] = {}  # item -> (how near, passage's rowid)
@@ -239,8 +224,5 @@ class Meaning:
             if r is None or text is None:
                 continue
             passage = text[0][len(r["title"]) + 2:] if text[0].startswith(r["title"] + ": ") else text[0]
-            hits.append(Hit(kind=r["kind"], course_id=r["course_id"], course=codes.get(r["course_id"], str(r["course_id"])),
-                            title=r["title"], path=r["path"], url=r["url"], date=r["date"],
-                            snippet=[(passage[:240] + ("…" if len(passage) > 240 else ""), False)], match="meaning",
-                            doc_id=r["key"].split(":", 2)[2] if r["kind"] != "file" else None, source=r["source"]))
+            hits.append(Hit.from_row(r, codes, [(passage[:240] + ("…" if len(passage) > 240 else ""), False)], "meaning"))
         return hits
