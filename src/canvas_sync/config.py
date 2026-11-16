@@ -113,10 +113,11 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # A course's page in the app, arranged for it: its tabs, the cards on its overview, and what's in
 # its 工具与链接. Each is a list of the course's things (written as in [[pinned]] below, leaving
 # out `course`; folders and files in its folder; web links too), each with a `title` of your own
-# if you like, and `hidden = true` to hide it. A course's views are its own (overview, modules, announcements, assignments, grades,
-# files, syllabus, pages; on the overview also tools, which is 工具与链接), and so are its tools
-# and Canvas (view "canvas") in 工具与链接: they're hidden, never taken away. A list without any
-# of them follows the default arrangement (in app.toml), with what's in it after.
+# if you like, and `hidden = true` to hide it. A course's views are its own (overview, modules,
+# announcements, ed (what it has on Ed), assignments, grades, files, syllabus, pages; on the
+# overview also tools, which is 工具与链接), and so are its tools and Canvas (view "canvas") in
+# 工具与链接: they're hidden, never taken away. A list without any of them follows the default
+# arrangement (in app.toml), with what's in it after.
 # [course_layouts.12345]
 # tabs = [
 #     {type = "view", view = "overview"},
@@ -138,7 +139,7 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 #   type = "course", course = 12345
 #   type = "folder", path = "Fall 2026/MATH 221/Modules"         (relative to this folder)
 #   type = "file", path = "Fall 2026/MATH 221/Files/schedule.pdf"
-#   type = "doc", course = 12345, kind = "page", id = "schedule" (kind: announcement | assignment | page)
+#   type = "doc", course = 12345, kind = "page", id = "schedule" (kind: announcement | assignment | page | post, a post on Ed)
 #   type = "module", course = 12345, module = 678
 #   type = "tool", course = 12345, tool = 90                     (an external tool in the course's menu)
 #   type = "link", url = "https://math221.example.edu"
@@ -151,7 +152,7 @@ on_remote_delete = "keep"       # removed from Canvas: keep | delete_if_unmodifi
 # title = "Midterm 1"
 # query = "mt1"
 # courses = [12345]                   # optional: only these courses
-# kinds = ["file", "announcement"]    # optional: file | page | assignment | announcement | syllabus
+# kinds = ["file", "announcement"]    # optional: file | page | assignment | announcement | syllabus | post
 # content = false                     # true: also match text inside files and pages, not just names
 """
 
