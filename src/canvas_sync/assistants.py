@@ -19,6 +19,8 @@ from typing import Any
 
 import tomlkit
 
+from .local import write_whole
+
 NAME = "canvas-sync"  # (not "canvas": other Canvas MCP servers are called that)
 HOME: Path | None = None  # whose apps (None: yours; tests set it elsewhere)
 
@@ -93,9 +95,7 @@ def _write(app: App, data: dict[str, Any], backups: Path) -> None:
         backups.mkdir(parents=True, exist_ok=True)
         shutil.copy2(app.path, _backup(app, backups))
     app.path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = app.path.with_name(app.path.name + ".canvas-sync.tmp")
-    tmp.write_text(_dumps(app, data), encoding="utf-8")
-    os.replace(tmp, app.path)
+    write_whole(app.path, _dumps(app, data), ".canvas-sync.tmp")
 
 
 def _snippet(app: App, e: dict[str, Any]) -> str:

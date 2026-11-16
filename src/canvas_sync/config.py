@@ -27,6 +27,7 @@ import keyring.errors
 import tomlkit
 
 from .api import Auth
+from .local import write_whole
 from .paths import under
 from .things import (
     PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, once, parse_entry,
@@ -287,15 +288,16 @@ _writing = threading.RLock()
 @contextmanager
 def _editing(path: Path, *, spaced: bool = False) -> Iterator[Any]:
     """config.toml, to change: read (its comments stay), handed over, and written back if that
-    changed it. One change at a time: the app's requests come in on threads of their own.
-    `spaced`: written with a blank line before each table (`_dump`: for what adds tables)."""
+    changed it, whole or not at all. One change at a time: the app's requests come in on threads
+    of their own. `spaced`: written with a blank line before each table (`_dump`: for what adds
+    tables)."""
     with _writing:
         text = path.read_text(encoding="utf-8")
         doc = tomlkit.parse(text)
         yield doc
         changed = _dump(doc) if spaced else tomlkit.dumps(doc)
         if changed != text:
-            path.write_text(changed, encoding="utf-8")
+            write_whole(path, changed)
 
 
 def _pinned(data: dict[str, Any]) -> list[Entry]:
@@ -680,7 +682,7 @@ class AppPrefs:
                 doc.add(tomlkit.nl())
                 doc.add(tomlkit.comment(f"Every course's {place}, unless arranged for itself (as in config.toml)."))
                 doc[place] = _rows(getattr(self, place))
-        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        write_whole(path, tomlkit.dumps(doc))
 
 
 @dataclass
@@ -711,7 +713,7 @@ class Account:
         for key in ("user", "ed_region", "ed_user"):
             if getattr(self, key):
                 doc[key] = getattr(self, key)
-        ACCOUNT_FILE.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        write_whole(ACCOUNT_FILE, tomlkit.dumps(doc))
 
     def token(self) -> str | None:
         """What signs in to Canvas, as kept: a token, or a browser sign-in's cookies (see `auth`)."""

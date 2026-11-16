@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from canvas_sync import CanvasClient, Engine, server
-from canvas_sync.config import Account, AppPrefs, Settings
+from canvas_sync.config import Account, AppPrefs, Settings, save_sidebar_order, set_course_icon
 from fake_canvas import BASE, FakeCanvas, pull, wait_for_sync
 
 PREFS = "prefs.toml"
@@ -657,3 +657,41 @@ def test_another_school_into_a_folder_that_never_synced(tmp_path, canvas, keycha
         assert api.get("/api/health").json()["choosing"] is True
         got = api.post("/api/account/setup", json={"url": "other.test", "token": "t", "root": root}).json()
         assert (got["signed_in"], got["base_url"]) == (True, "https://other.test")
+
+
+def test_config_is_written_whole_or_not_at_all(root, monkeypatch):
+    """A change that can't be finished (the disk is full) leaves config.toml as it was, and
+    nothing beside it."""
+    config = root / ".canvas" / "config.toml"
+    set_course_icon(config, 1, {"emoji": "🧪"})
+    before = config.read_bytes()
+
+    def full(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("canvas_sync.local.os.replace", full)
+    with pytest.raises(OSError):
+        save_sidebar_order(config, ["Fall 2026"])
+    assert config.read_bytes() == before
+    assert [p.name for p in config.parent.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_config_changes_while_it_is_being_read(root):
+    """On Windows a file that's open can't be replaced: the change waits for the reader."""
+    config = root / ".canvas" / "config.toml"
+    with config.open(encoding="utf-8") as reading:
+        threading.Timer(0.05, reading.close).start()
+        save_sidebar_order(config, ["Fall 2026"])
+    assert Settings.load(config).term_order == ["Fall 2026"]
+
+
+@pytest.mark.links
+def test_a_config_kept_elsewhere_stays_a_link(root, tmp_path):
+    """config.toml as a link to a file kept somewhere else (with your other settings): changes go there."""
+    config = root / ".canvas" / "config.toml"
+    kept = tmp_path / "dotfiles" / "canvas.toml"
+    kept.parent.mkdir()
+    config.rename(kept)
+    config.symlink_to(kept)
+    save_sidebar_order(config, ["Fall 2026"])
+    assert config.is_symlink() and Settings.load(kept).term_order == ["Fall 2026"]

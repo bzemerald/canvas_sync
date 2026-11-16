@@ -51,7 +51,7 @@ from .config import (
 from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
-from .local import MoveError, move_sync_folder, open_path
+from .local import MoveError, move_sync_folder, open_path, write_whole
 from .paths import META_DIR, config_file, note_file
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
@@ -1055,9 +1055,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             raise HTTPException(413, "too long")
         f = note_at(course_id, note)
         f.parent.mkdir(parents=True, exist_ok=True)
-        tmp = f.with_suffix(".tmp")
-        tmp.write_text(req.text, encoding="utf-8")
-        tmp.replace(f)
+        write_whole(f, req.text)
         return {"text": req.text}
 
     @api.post("/courses/{course_id}/hide")

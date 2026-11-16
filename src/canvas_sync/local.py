@@ -34,6 +34,35 @@ def inside(root: Path, rel: str) -> Path:
     return root / rel
 
 
+_REPLACE_TRIES = 10  # putting a file in place: what has the old one open (a reader of ours, an antivirus) lets go in a moment
+
+
+def write_whole(path: Path, text: str, suffix: str = ".tmp") -> None:
+    """`path` as `text`, whole or not at all: written beside it (its name and `suffix`), then put
+    in its place, so a crash or a full disk part way leaves what was there. A link to a file kept
+    elsewhere stays a link; the file stays as readable to others as it was, and one that can't be
+    written still can't."""
+    real = Path(os.path.realpath(path))
+    if real.exists() and not os.access(real, os.W_OK):
+        raise PermissionError(errno.EACCES, "can't be written", str(real))
+    tmp = real.with_name(real.name + suffix)
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        if real.exists():
+            shutil.copymode(real, tmp)
+        for attempt in range(_REPLACE_TRIES):
+            try:
+                os.replace(tmp, real)
+                return
+            except PermissionError:  # (Windows: it's open somewhere just now)
+                if attempt + 1 == _REPLACE_TRIES:
+                    raise
+                time.sleep(0.02)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def clone_file(src: Path, dst: Path) -> None:
     """Copy src to dst. On APFS this is a copy-on-write clone: no extra disk space
     is used until one of the two copies is modified."""
