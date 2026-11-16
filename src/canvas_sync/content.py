@@ -25,6 +25,7 @@ from .config import set_title
 from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url, term_label
 from .state import NEWS_KINDS, FileRecord, State
 from .text import html_to_text
+from .times import time_of
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -108,15 +109,6 @@ def tools(state: State, course_id: int) -> list[dict[str, Any]]:
         if t.get("type") == "external" and m and not t.get("hidden"):
             out.append({"id": int(m[1]), "label": t.get("label") or None, "url": relative_url(t.get("html_url"))})
     return out
-
-
-def _when(iso: str | None) -> datetime | None:
-    if not iso:
-        return None
-    try:
-        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
@@ -264,7 +256,7 @@ def items(state: State, root: Path, course_id: int, kind: str, now: datetime | N
         # Upcoming soonest first, then past ones most recent first, then undated.
         now = now or datetime.now(timezone.utc)
         def order(a: dict[str, Any]) -> tuple[int, float]:
-            due = _when(a["due_at"])
+            due = time_of(a["due_at"])
             if due is None:
                 return (2, 0)
             return (0, due.timestamp()) if due >= now else (1, -due.timestamp())
@@ -336,7 +328,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
 
     assignments = [_summary(course_id, k, i, t, raw, i in new["assignment"]) for k, i, t, raw in docs if k == "assignment"]
     upcoming = sorted(
-        (a for a in assignments if (due := _when(a["due_at"])) and now - timedelta(hours=12) <= due <= now + timedelta(days=21)),
+        (a for a in assignments if (due := time_of(a["due_at"])) and now - timedelta(hours=12) <= due <= now + timedelta(days=21)),
         key=lambda a: a["due_at"],
     )
     announcements = sorted(
@@ -388,7 +380,7 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
 
 def _desc(iso: str | None) -> float:
     """Newest first, as a sort key."""
-    t = _when(iso)
+    t = time_of(iso)
     return -t.timestamp() if t else 0.0
 
 
@@ -455,7 +447,7 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
         items = []
         for it in m.get("items") or []:
             t = target(it)
-            if (due := _when(t.get("due_at"))) and due >= now and (soonest is None or due < soonest[0]):
+            if (due := time_of(t.get("due_at"))) and due >= now and (soonest is None or due < soonest[0]):
                 soonest = (due, m["id"])
             title = it.get("title")
             if not title and it.get("type") == "File" and it.get("content_id") in files:

@@ -29,6 +29,7 @@ from .models import Course
 from .search import Hit, course_label, pick_courses
 from .text import extract, html_to_text, slides
 from .things import Thing, of_item
+from .times import time_of
 
 INSTRUCTIONS = """\
 The student's Canvas courses (and their courses' Ed discussions), as Canvas Sync last synced them
@@ -58,11 +59,8 @@ TIMES = {"date", "due_at", "arrived_at", "synced_at", "last_synced", "last_worke
 
 
 def _when(iso: str | None) -> datetime | None:
-    try:
-        t = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return t if t.tzinfo else t.astimezone()  # (no zone: this computer's)
+    t = time_of(iso)
+    return t if t is None or t.tzinfo else t.astimezone()  # (no zone: this computer's)
 
 
 def _local(iso: str) -> str | None:

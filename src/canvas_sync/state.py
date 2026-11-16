@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import Course, Document, RemoteFile
+from .times import time_of
 
 # What can be new to you (see `arrivals`).
 NEWS_KINDS = ("announcement", "assignment", "page", "file", "post")
@@ -284,11 +285,8 @@ class State:
         first = untracked if first is None else first
 
         def recent(when: str | None) -> bool:
-            try:
-                t = datetime.fromisoformat((when or "").replace("Z", "+00:00"))
-            except ValueError:
-                return False
-            return t.tzinfo is not None and now - timedelta(days=RECENT_DAYS) <= t <= now
+            t = time_of(when)
+            return t is not None and t.tzinfo is not None and now - timedelta(days=RECENT_DAYS) <= t <= now
 
         stamp = now.isoformat()
         self.db.executemany(

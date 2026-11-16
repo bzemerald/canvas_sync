@@ -43,6 +43,7 @@ without the Canvas website or Finder.
   - `paths.py`: where canvas-sync's own things are in a sync folder (`.canvas`, its config.toml,
     notes), and `under` (whether a path is in a folder).
   - `state.py`: `.canvas/state.db` (SQLite).
+  - `times.py`: reading the times Canvas and Ed write (`time_of`).
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
     you open (`POST /opened`).

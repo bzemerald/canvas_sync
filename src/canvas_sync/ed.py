@@ -21,6 +21,7 @@ from . import __version__
 from .config import set_ed_courses
 from .models import Course, Document
 from .search import canvas_copy, code_keys
+from .times import time_of
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -178,10 +179,8 @@ def match(ed: list[dict[str, Any]], canvas: list[Course]) -> dict[int, int]:
 
 def _utc(when: Any) -> str | None:
     """Ed's times ("2026-05-16T11:35:00.1+10:00") as Canvas writes them, so they sort together."""
-    try:
-        return datetime.fromisoformat(str(when)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    except ValueError:
-        return None
+    t = time_of(when)
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if t else None
 
 
 _TAGS = {"paragraph": "p", "bold": "strong", "italic": "em", "underline": "u", "strike": "s", "code": "code",
@@ -276,19 +275,12 @@ def _title(title: str) -> str:
     return re.sub(r"[\s!.?:]+$", "", " ".join(title.casefold().split()))
 
 
-def _time(iso: Any) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def _canvas_copies(e: Engine, course: int) -> dict[str, list[datetime]]:
     """The course's Canvas announcements: title -> when each was posted."""
     out: dict[str, list[datetime]] = {}
     for title, raw in e.state.db.execute(
             "SELECT title, raw FROM documents WHERE course_id = ? AND kind = 'announcement' AND source = 'canvas'", (course,)):
-        if when := _time(json.loads(raw or "{}").get("posted_at")):
+        if when := time_of(json.loads(raw or "{}").get("posted_at")):
             out.setdefault(_title(title), []).append(when)
     return out
 
@@ -296,7 +288,7 @@ def _canvas_copies(e: Engine, course: int) -> dict[str, list[datetime]]:
 def _on_canvas(d: Document, canvas: dict[str, list[datetime]]) -> bool:
     """A thread on Ed that's also one of the course's Canvas announcements (many are posted in
     both): the same title, posted about the same time."""
-    when = _time(d.raw["posted_at"])
+    when = time_of(d.raw["posted_at"])
     return when is not None and any(abs(when - t) <= SAME_WITHIN for t in canvas.get(_title(d.title), []))
 
 

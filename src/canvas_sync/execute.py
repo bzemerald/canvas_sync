@@ -6,7 +6,6 @@ import asyncio
 import os
 import shutil
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 
 from send2trash import send2trash
@@ -17,6 +16,7 @@ from .models import RemoteFile
 from .plan import Action, Kind, Plan
 from .paths import META_DIR
 from .state import NEWS_KINDS, State
+from .times import time_of
 
 # Called after each action with (action, error message or None).
 EventHandler = Callable[[Action, str | None], None]
@@ -189,7 +189,5 @@ class Executor:
 
 
 def _timestamp(iso: str) -> float | None:
-    try:
-        return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+    t = time_of(iso)
+    return t.timestamp() if t else None
