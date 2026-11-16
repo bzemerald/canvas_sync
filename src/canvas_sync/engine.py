@@ -229,12 +229,7 @@ class Engine:
         if under is None:
             return None, []
         under = under.strip("/")
-        also = [
-            r[0] for r in self.state.db.execute(
-                "SELECT f.path FROM links l JOIN files f ON f.id = l.file_id WHERE f.path IS NOT NULL"
-                " AND (l.path = ? OR substr(l.path, 1, ?) = ?)", (under, len(under) + 1, under + "/"))
-        ]
-        return under, also
+        return under, self.state.linked_from(under)
 
     def relative(self, path: Path) -> str:
         """A user-supplied path (absolute, or relative to cwd) as a path relative to root.
@@ -264,7 +259,7 @@ class Engine:
         """Synced files at or under these paths (a view link stands for its file), with
         where they are; and which of the paths are folders."""
         where = self._where()
-        links = {row[0]: row[1] for row in self.state.db.execute("SELECT path, file_id FROM links")}
+        links = self.state.links()
         ids: set[int] = set()
         folders = []
         for rel in rels:
@@ -280,14 +275,14 @@ class Engine:
     def _has_canvas_content(self, folder: str) -> bool:
         if any(r.path and under(r.path, folder) for r in self.state.all_files()):
             return True
-        return any(under(row[0], folder) for row in self.state.db.execute("SELECT path FROM links"))
+        return any(under(path, folder) for path in self.state.links())
 
     def _stop_syncing(self, files: dict[int, str], keep_links_in: list[str] = ()) -> None:  # type: ignore[assignment]
         """Mark files as not synced. Their view links go: sync won't put them there any more.
         But not those in folders you keep without syncing (`keep_links_in`, and folders
         already not synced): they stay, pointing at the file."""
         for fid in files:
-            for path, linked in list(self.state.db.execute("SELECT path, file_id FROM links")):
+            for path, linked in self.state.links().items():
                 kept = any(under(path, k) for k in keep_links_in)
                 if linked == fid and not kept and not self.layout.skipped(PurePosixPath(path)):
                     if (self.root / path).is_symlink():
@@ -327,7 +322,7 @@ class Engine:
         rels = [self._checked(r) for r in rels]
         files, folders = self._affected(rels)
         skip = [f for f in folders if self._has_canvas_content(f)] if stop_syncing_folders else []
-        for path, _ in list(self.state.db.execute("SELECT path, file_id FROM links")):
+        for path in self.state.links():
             if any(under(path, f) for f in folders):
                 self.state.remove_link(path)  # goes to the Trash with its folder
         self._stop_syncing(files)
@@ -401,7 +396,7 @@ class Engine:
         if (self.root / rel).is_dir():
             names |= {d.name for d in os.scandir(self.root / rel) if d.is_dir(follow_symlinks=False)}
         paths = [r.path for r in self.state.all_files() if r.path]
-        paths += [row[0] for row in self.state.db.execute("SELECT path FROM links")]
+        paths += list(self.state.links())
         names |= {p[len(rel) + 1:].split("/")[0] for p in paths if p.startswith(rel + "/") and "/" in p[len(rel) + 1:]}
         return sorted(f"{rel}/{n}" for n in names)
 
@@ -526,7 +521,7 @@ class Engine:
             changes = {k: v for k in ("path", "pinned_path") if (v := moved(getattr(r, k))) is not None}
             if changes:
                 self.state.update(r.id, **changes)
-        for path, fid in list(self.state.db.execute("SELECT path, file_id FROM links")):
+        for path, fid in self.state.links().items():
             if (to := moved(path)) is not None:
                 self.state.remove_link(path)
                 self.state.add_link(to, fid)
@@ -534,7 +529,7 @@ class Engine:
     def _relink(self) -> None:
         """Point every view link at its file again (links from outside a renamed folder
         into it are relative paths that went stale)."""
-        for path, fid in list(self.state.db.execute("SELECT path, file_id FROM links")):
+        for path, fid in self.state.links().items():
             rec = self.state.get(fid)
             link = self.root / path
             if rec is None or rec.path is None or not link.is_symlink():

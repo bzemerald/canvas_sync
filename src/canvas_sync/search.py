@@ -477,10 +477,15 @@ class Index:
         self.db.commit()
         self.db.close()
 
+    def start(self, key: str, chars: int) -> str:
+        """How an item's text starts: its first `chars` characters ("": no such item, or no text)."""
+        row = self.db.execute("SELECT substr(f.body, 1, ?) FROM items i JOIN fts f ON f.rowid = i.id WHERE i.key = ?",
+                              (chars, key)).fetchone()
+        return (row[0] or "").replace(_ZW, "") if row else ""
+
     def _wanted(self, state: State, root: Path) -> Iterator[_Item]:
-        links: dict[int, list[str]] = {}
-        for row in state.db.execute("SELECT path, file_id FROM links"):
-            links.setdefault(row[1], []).append(row[0])
+        links = state.file_links()
+        raws = state.files_raw()
         for r in state.all_files():
             # Files you stopped syncing are still yours to search; deleted ones aren't there.
             if (r.ignored and not (r.path and (root / r.path).is_file())) or (r.remote_deleted and not r.path):
@@ -495,7 +500,7 @@ class Index:
             title = PurePosixPath(r.path).name if r.path else r.name
             if r.name not in (title, PurePosixPath(title).stem):  # renamed (not just given its extension)
                 folder += f" / {r.name}"
-            raw = json.loads(state.db.execute("SELECT raw FROM files WHERE id = ?", (r.id,)).fetchone()[0] or "{}")
+            raw = raws[r.id]
             yield _Item(
                 key=f"file:{r.id}", course_id=r.course_id, kind="file", title=title,
                 path=r.path if st else None, url=f"/courses/{r.course_id}/files/{r.id}",
@@ -504,15 +509,14 @@ class Index:
                 content_stamp=f"{st.st_size}:{st.st_mtime_ns}{READ_AGAIN.get(local.suffix.lower(), '')}" if st else "",
                 body=(lambda p=local: extract(p)) if st else (lambda: ""),
             )
-        for row in state.db.execute("SELECT course_id, kind, id, title, updated_at, raw, source FROM documents"):
-            raw = json.loads(row["raw"] or "{}")
-            html = raw.get(DOC_BODY.get(row["kind"], ""), "") or ""
-            cid, kind = row["course_id"], row["kind"]
+        for d in state.documents():
+            raw, cid, kind = d.raw, d.course_id, d.kind
+            html = raw.get(DOC_BODY.get(kind, ""), "") or ""
             url = doc_url(raw)
             if kind == "syllabus":
                 url = f"/courses/{cid}/assignments/syllabus"
             elif kind == "page" and not url:
-                url = f"/courses/{cid}/pages/{row['id']}"
+                url = f"/courses/{cid}/pages/{d.id}"
             ed = raw.get("ed") or {}
             # On Ed: what staff answered is part of it (the rest of the replies isn't), and its
             # category is where it is ("cs70 homework" finds what's in Homework).
@@ -523,15 +527,15 @@ class Index:
                 continue
             texts = said if copy else [html, *said]
             yield _Item(
-                key=f"{kind}:{cid}:{row['id']}", course_id=cid, kind=kind, title=row["title"],
+                key=f"{kind}:{cid}:{d.id}", course_id=cid, kind=kind, title=d.title,
                 path=None, url=url,
-                date=raw.get("due_at") or raw.get("posted_at") or row["updated_at"] or None,
+                date=raw.get("due_at") or raw.get("posted_at") or d.updated_at or None,
                 folder=" ".join([kind, *([f"due {raw['due_at'][:10]}"] if raw.get("due_at") else []),
                                  ed.get("category", ""), ed.get("subcategory", "")]).strip(),
                 content_stamp=hashlib.sha1("".join(texts).encode()).hexdigest(),
                 body=lambda texts=texts: "\n".join(html_to_text(x) for x in texts),
                 quiet=kind == "post" and not (ed.get("staff") or ed.get("pinned")),
-                source=row["source"],
+                source=d.source,
                 named=not copy,
             )
 

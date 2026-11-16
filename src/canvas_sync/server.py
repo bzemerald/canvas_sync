@@ -592,7 +592,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         with engine() as e:
             changes = {cid: 0 for cid, eid in e.settings.ed_courses.items() if eid == req.ed}
             if req.course is not None:
-                if all(c.id != req.course for c in e.state.courses()):
+                if e.state.course(req.course) is None:
                     raise HTTPException(404, "no such course")
                 changes[req.course] = req.ed
             else:
@@ -999,7 +999,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def place(e: Engine, course_id: int, name: str) -> Place:
         tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
         default = (prefs().tabs or usual("tabs")) if name == "tabs" else (prefs().overview or usual("overview")) if name == "overview" else []
-        course = next((c for c in e.state.courses() if c.id == course_id), None)
+        course = e.state.course(course_id)
         return Place(name, course_id, tools, default, e.layout.course_dir(course).as_posix() if course else None)
 
     def own_layout(e: Engine, course_id: int) -> CourseLayout:

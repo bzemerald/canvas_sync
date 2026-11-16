@@ -13,7 +13,6 @@ the app's query.ts reads as narrowing search to it).
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -46,13 +45,13 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
 
     # Courses, and the views each has something in.
     has: dict[int, set[str]] = {c.id: {"overview", "files", "tools", "canvas"} for c in courses}
-    for cid, kind, n in e.state.db.execute("SELECT course_id, kind, count(*) FROM documents GROUP BY course_id, kind"):
-        if cid in has and n:
-            has[cid].add({"announcement": "announcements", "assignment": "assignments", "page": "pages"}.get(kind, ""))
-    for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM documents WHERE source = 'ed'"):
-        if cid in has:
-            has[cid].add("ed")
-    for (cid,) in e.state.db.execute("SELECT DISTINCT course_id FROM modules"):
+    documents, modules = e.state.documents(), e.state.module_names()
+    for d in documents:
+        if d.course_id in has:
+            has[d.course_id].add({"announcement": "announcements", "assignment": "assignments", "page": "pages"}.get(d.kind, ""))
+            if d.source == "ed":
+                has[d.course_id].add("ed")
+    for cid, _, _ in modules:
         if cid in has:
             has[cid].add("modules")
     for c in courses:
@@ -69,11 +68,10 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             has[c.id].add("grades")
 
     # Announcements, assignments, pages (the syllabus is a view).
-    for row in e.state.db.execute("SELECT course_id, kind, id, title, updated_at, raw FROM documents"):
-        cid, kind = row["course_id"], row["kind"]
+    for d in documents:
+        cid, kind, raw = d.course_id, d.kind, d.raw
         if cid not in shown:
             continue
-        raw = json.loads(row["raw"] or "{}")
         if kind == "syllabus":
             if (raw.get("syllabus_body") or "").strip():
                 has[cid].add("syllabus")
@@ -83,7 +81,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         ed = raw.get("ed") or {}
         if canvas_copy(kind, raw) or (kind == "post" and not (ed.get("pinned") or ed.get("staff"))):
             continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's; a copy of a Canvas announcement is that)
-        fields: dict[str, Any] = {"name": row["title"], "canvas_url": doc_url(raw), "source": raw.get("source")}
+        fields: dict[str, Any] = {"name": d.title, "canvas_url": doc_url(raw), "source": raw.get("source")}
         if kind in ("announcement", "post"):
             fields["date"] = raw.get("posted_at")
         elif kind == "assignment":
@@ -92,9 +90,9 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                 has[cid].add("grades")
             fields |= {"date": raw.get("due_at"), "due": raw.get("due_at"), "status": status}
         else:
-            fields |= {"date": raw.get("updated_at") or row["updated_at"],
-                       "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{row['id']}"}
-        add(Thing("doc", course=cid, kind=kind, id=row["id"]), **fields)
+            fields |= {"date": raw.get("updated_at") or d.updated_at,
+                       "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{d.id}"}
+        add(Thing("doc", course=cid, kind=kind, id=d.id), **fields)
     for c in courses:
         for v in ("overview", "modules", "announcements", "ed", "assignments", "grades", "files", "syllabus", "pages",
                   "tools", "canvas"):
@@ -102,10 +100,9 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                 add(view(c.id, v))
 
     # Modules, and the external tools in each course's menu.
-    for row in e.state.db.execute("SELECT course_id, id, name FROM modules ORDER BY course_id, position, id"):
-        if row["course_id"] in shown:
-            add(Thing("module", course=row["course_id"], module=row["id"]), name=row["name"] or None,
-                canvas_url=f"/courses/{row['course_id']}/modules#module_{row['id']}")
+    for cid, module, name in modules:
+        if cid in shown:
+            add(Thing("module", course=cid, module=module), name=name or None, canvas_url=f"/courses/{cid}/modules#module_{module}")
     for c in courses:
         for t in content.tools(e.state, c.id):
             add(Thing("tool", course=c.id, tool=t["id"]), name=t["label"], canvas_url=t["url"])
@@ -113,20 +110,16 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
     # Files synced for the courses (where they are, not their links in other folders), and the
     # folders they're in (a course's own folder is the course).
     dirs = e.layout.course_dirs(courses)
-    links: dict[int, list[str]] = {}
-    for path, fid in e.state.db.execute("SELECT path, file_id FROM links"):
-        links.setdefault(fid, []).append(path)
+    links, raws = e.state.file_links(), e.state.files_raw()
     folders: dict[str, int] = {}
-    for row in e.state.db.execute(
-        "SELECT id, course_id, path, raw FROM files WHERE path IS NOT NULL AND ignored = 0 ORDER BY path"
-    ):
-        cid, path = row["course_id"], row["path"]
-        if cid not in shown or not (e.root / path).is_file():
+    for r in e.state.synced_files():
+        cid, path = r.course_id, r.path
+        if cid not in shown or path is None or not (e.root / path).is_file():
             continue
-        raw = json.loads(row["raw"] or "{}")
+        raw = raws[r.id]
         add(Thing("file", path=path), course=cid, name=PurePosixPath(path).name,
-            date=raw.get("created_at") or raw.get("updated_at"), canvas_url=f"/courses/{cid}/files/{row['id']}")
-        for p in [path, *links.get(row["id"], [])]:
+            date=raw.get("created_at") or raw.get("updated_at"), canvas_url=f"/courses/{cid}/files/{r.id}")
+        for p in [path, *links.get(r.id, [])]:
             for parent in PurePosixPath(p).parents:
                 folder = parent.as_posix()
                 if folder in dirs or folder == "." or not any(folder.startswith(d + "/") for d in dirs):

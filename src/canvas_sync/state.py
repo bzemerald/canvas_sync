@@ -107,6 +107,12 @@ class FileRecord:
 
 
 _RECORD_COLUMNS = ", ".join(f.name for f in fields(FileRecord))
+_DOCUMENT_COLUMNS = "course_id, kind, id, title, updated_at, raw, source"
+
+
+def _document(row: sqlite3.Row) -> Document:
+    return Document(row["course_id"], row["kind"], row["id"], row["title"], row["updated_at"], json.loads(row["raw"] or "{}"),
+                    row["source"])
 
 
 class State:
@@ -140,6 +146,20 @@ class State:
 
     def all_files(self) -> list[FileRecord]:
         return self._records("1")
+
+    def synced_files(self) -> list[FileRecord]:
+        """Files that are synced and have a place, in the order of their paths."""
+        return self._records("path IS NOT NULL AND ignored = 0 ORDER BY path")
+
+    def file_raw(self, file_id: int) -> dict:
+        """A file as Canvas's API gave it ({}: none we know)."""
+        row = self.db.execute("SELECT raw FROM files WHERE id = ?", (file_id,)).fetchone()
+        return json.loads(row[0] or "{}") if row else {}
+
+    def files_raw(self, course_id: int | None = None) -> dict[int, dict]:
+        """Every file (or a course's) as Canvas's API gave it, by its id."""
+        where, args = (" WHERE course_id = ?", (course_id,)) if course_id is not None else ("", ())
+        return {r[0]: json.loads(r[1] or "{}") for r in self.db.execute("SELECT id, raw FROM files" + where, args)}
 
     def by_path(self, path: str) -> FileRecord | None:
         recs = self._records("path = ? COLLATE NOCASE", path)
@@ -175,6 +195,24 @@ class State:
         self.db.execute("DELETE FROM files WHERE id = ?", (old_id,))
 
     # -- links --------------------------------------------------------------------
+
+    def links(self) -> dict[str, int]:
+        """Every view link: where it is -> the file it shows."""
+        return {r[0]: r[1] for r in self.db.execute("SELECT path, file_id FROM links")}
+
+    def file_links(self) -> dict[int, list[str]]:
+        """Each file's view links: where they are."""
+        out: dict[int, list[str]] = {}
+        for path, file_id in self.links().items():
+            out.setdefault(file_id, []).append(path)
+        return out
+
+    def linked_from(self, folder: str) -> list[str]:
+        """Where the files are that the view links at or under `folder` show."""
+        rows = self.db.execute(
+            "SELECT f.path FROM links l JOIN files f ON f.id = l.file_id WHERE f.path IS NOT NULL"
+            " AND (l.path = ? OR substr(l.path, 1, ?) = ?)", (folder, len(folder) + 1, folder + "/"))
+        return [r[0] for r in rows]
 
     def links_for_course(self, course_id: int) -> dict[str, int]:
         rows = self.db.execute(
@@ -212,6 +250,14 @@ class State:
         rows = self.db.execute("SELECT id, name, code, term FROM courses ORDER BY term, code")
         return [Course(r["id"], r["name"], r["code"], r["term"]) for r in rows]
 
+    def course(self, course_id: int) -> Course | None:
+        r = self.db.execute("SELECT id, name, code, term FROM courses WHERE id = ?", (course_id,)).fetchone()
+        return Course(r["id"], r["name"], r["code"], r["term"]) if r else None
+
+    def synced_at(self) -> dict[int, str]:
+        """When each course was last synced."""
+        return {r[0]: r[1] for r in self.db.execute("SELECT id, synced_at FROM courses")}
+
     def save_modules(self, course_id: int, modules: list[dict]) -> None:
         self.db.execute("DELETE FROM modules WHERE course_id = ?", (course_id,))
         self.db.executemany(
@@ -222,6 +268,16 @@ class State:
     def modules(self, course_id: int) -> list[dict]:
         rows = self.db.execute("SELECT raw FROM modules WHERE course_id = ? ORDER BY position, id", (course_id,))
         return [json.loads(r[0]) for r in rows]
+
+    def module_name(self, course_id: int, module_id: int) -> str | None:
+        """What a module is called (None: there's no such module)."""
+        row = self.db.execute("SELECT name FROM modules WHERE course_id = ? AND id = ?", (course_id, module_id)).fetchone()
+        return row[0] if row else None
+
+    def module_names(self) -> list[tuple[int, int, str]]:
+        """Every module: its course, its id and its name, each course's in its order."""
+        rows = self.db.execute("SELECT course_id, id, name FROM modules ORDER BY course_id, position, id")
+        return [(r[0], r[1], r[2]) for r in rows]
 
     def save_documents(self, course_id: int, docs: list[Document], source: str = "canvas") -> None:
         """A course's documents from one source, as it has them now (the other sources' stay)."""
@@ -234,6 +290,28 @@ class State:
     def has_documents(self, course_id: int, source: str) -> bool:
         return self.db.execute("SELECT 1 FROM documents WHERE course_id = ? AND source = ? LIMIT 1",
                                (course_id, source)).fetchone() is not None
+
+    def documents(self, course_id: int | None = None, kind: str | None = None, source: str | None = None) -> list[Document]:
+        """The documents stored: all of them, or only a course's, of a kind, from a source."""
+        where = [(column, v) for column, v in (("course_id", course_id), ("kind", kind), ("source", source)) if v is not None]
+        sql = f"SELECT {_DOCUMENT_COLUMNS} FROM documents" + (" WHERE " + " AND ".join(f"{c} = ?" for c, _ in where) if where else "")
+        return [_document(r) for r in self.db.execute(sql, [v for _, v in where])]
+
+    def document(self, course_id: int, kind: str, doc_id: str) -> Document | None:
+        row = self.db.execute(f"SELECT {_DOCUMENT_COLUMNS} FROM documents WHERE course_id = ? AND kind = ? AND id = ?",
+                              (course_id, kind, doc_id)).fetchone()
+        return _document(row) if row else None
+
+    def document_title(self, course_id: int, kind: str, doc_id: str) -> str | None:
+        """What a document is called (None: there's no such document)."""
+        row = self.db.execute("SELECT title FROM documents WHERE course_id = ? AND kind = ? AND id = ?",
+                              (course_id, kind, doc_id)).fetchone()
+        return row[0] if row else None
+
+    def update_document(self, d: Document) -> None:
+        """A stored document's `raw`, as it is now (an Ed thread with its replies fetched)."""
+        self.db.execute("UPDATE documents SET raw = ? WHERE course_id = ? AND kind = ? AND id = ?",
+                        (json.dumps(d.raw), d.course_id, d.kind, d.id))
 
     def save_grades(self, course_id: int, grades: dict) -> None:
         self.db.execute("INSERT OR REPLACE INTO grades VALUES (?, ?)", (course_id, json.dumps(grades)))
@@ -302,6 +380,15 @@ class State:
             (course_id, str(file_id), _now()),
         )
 
+    def arrived(self, course_id: int, since: str = "") -> list[dict]:
+        """What arrived in a course since `since` (an ISO time; "": ever), opened or not: kind, id,
+        arrived_at, seen_at, updated. Not what was there when the course first synced: that came in
+        seen at once, and isn't news."""
+        rows = self.db.execute(
+            """SELECT kind, id, arrived_at, seen_at, updated FROM arrivals
+               WHERE course_id = ? AND arrived_at >= ? AND (seen_at IS NULL OR seen_at != arrived_at)""", (course_id, since))
+        return [dict(r) for r in rows]
+
     def unseen(self, course_id: int | None = None, kind: str | None = None) -> dict[tuple[int, str, str], bool]:
         """(course, kind, id) -> whether it's an update, for everything not opened yet."""
         sql, args = "SELECT course_id, kind, id, updated FROM arrivals WHERE seen_at IS NULL", []
@@ -326,7 +413,7 @@ class State:
         """Where each file not opened yet is (its links too) -> its course and id."""
         unseen = {int(i): course for (course, _, i) in self.unseen(kind="file")}
         paths = [(r.path, r.id) for r in self.all_files() if r.path and r.id in unseen and not r.ignored]
-        paths += [(p, fid) for p, fid in self.db.execute("SELECT path, file_id FROM links") if fid in unseen]
+        paths += [(p, fid) for p, fid in self.links().items() if fid in unseen]
         return {p: (unseen[fid], fid) for p, fid in paths}
 
     def mark_paths_seen(self, files: Iterable[str] = (), folders: Iterable[str] = ()) -> None:

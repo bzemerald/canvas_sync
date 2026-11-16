@@ -10,7 +10,6 @@ what you've already read or handed in on Canvas.
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -50,7 +49,7 @@ HOSTING = {"instructure", "amazonaws", "herokuapp", "azurewebsites", "cloudfront
 
 def rename_course(e: Engine, course: int, title: str) -> None:
     """What the app calls a course. Its own name, or none: it goes back to that."""
-    c = next((c for c in e.state.courses() if c.id == course), None)
+    c = e.state.course(course)
     if c is None:
         raise LookupError(f"no course {course}")
     title = title.strip()
@@ -112,9 +111,7 @@ def tools(state: State, course_id: int) -> list[dict[str, Any]]:
 
 
 def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
-    sql = "SELECT kind, id, title, raw FROM documents WHERE course_id = ?" + (" AND kind = ?" if kind else "")
-    rows = state.db.execute(sql, (course_id, kind) if kind else (course_id,))
-    return [(r["kind"], r["id"], r["title"], json.loads(r["raw"] or "{}")) for r in rows]
+    return [(d.kind, d.id, d.title, d.raw) for d in state.documents(course_id, kind or None)]
 
 
 def on_ed(kind: str, doc_id: str) -> bool:
@@ -295,25 +292,25 @@ def _local_files(state: State, root: Path, ids: list[int]) -> dict[str, dict[str
 
 def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> dict[str, Any] | None:
     """One item in full: its summary, its HTML, and the local copies of files it refers to."""
-    for k, i, title, raw in _docs(state, course_id, kind):
-        if i != doc_id:
-            continue
-        html = raw.get(DOC_BODY.get(kind, ""), "") or ""
-        attached = [a for a in raw.get("attachments") or [] if a.get("id")]
-        refs = list(dict.fromkeys([*file_refs(html, course_id), *(a["id"] for a in attached)]))
-        local = _local_files(state, root, refs)
-        thread = (raw.get("ed") or {}).get("thread")
-        return _summary(course_id, k, i, title, raw, i in news(state, root, course_id).get(kind, {})) | {
-            "replies": thread["replies"] if thread else None,  # (on Ed: its answers and comments, once fetched)
-            "html": html,
-            "files": local,  # Canvas file id -> local copy
-            "attachments": [
-                {"id": a["id"], "name": a.get("display_name") or a.get("filename") or str(a["id"]),
-                 "path": local.get(str(a["id"]), {}).get("path")}
-                for a in attached
-            ],
-        }
-    return None
+    d = state.document(course_id, kind, doc_id)
+    if d is None:
+        return None
+    raw = d.raw
+    html = raw.get(DOC_BODY.get(kind, ""), "") or ""
+    attached = [a for a in raw.get("attachments") or [] if a.get("id")]
+    refs = list(dict.fromkeys([*file_refs(html, course_id), *(a["id"] for a in attached)]))
+    local = _local_files(state, root, refs)
+    thread = (raw.get("ed") or {}).get("thread")
+    return _summary(course_id, d.kind, d.id, d.title, raw, d.id in news(state, root, course_id).get(kind, {})) | {
+        "replies": thread["replies"] if thread else None,  # (on Ed: its answers and comments, once fetched)
+        "html": html,
+        "files": local,  # Canvas file id -> local copy
+        "attachments": [
+            {"id": a["id"], "name": a.get("display_name") or a.get("filename") or str(a["id"]),
+             "path": local.get(str(a["id"]), {}).get("path")}
+            for a in attached
+        ],
+    }
 
 
 def overview(state: State, root: Path, course_id: int, now: datetime | None = None,
@@ -340,14 +337,13 @@ def overview(state: State, root: Path, course_id: int, now: datetime | None = No
     graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
 
     files = []
-    for r in state.db.execute(
-        "SELECT id, path, raw FROM files WHERE course_id = ? AND path IS NOT NULL AND ignored = 0", (course_id,)
-    ):
-        if (root / r["path"]).exists():
-            raw = json.loads(r["raw"] or "{}")
-            files.append({"file_id": r["id"], "path": r["path"], "name": Path(r["path"]).name,
+    raws = state.files_raw(course_id)
+    for r in state.files_for_course(course_id):
+        if r.path and not r.ignored and (root / r.path).exists():
+            raw = raws[r.id]
+            files.append({"file_id": r.id, "path": r.path, "name": Path(r.path).name,
                           "date": raw.get("created_at") or raw.get("updated_at"),
-                          "new": str(r["id"]) in new["file"], "updated": new["file"].get(str(r["id"]), False)})
+                          "new": str(r.id) in new["file"], "updated": new["file"].get(str(r.id), False)})
     # Newest uploads, and anything else new to you (a new version of an old file).
     files.sort(key=lambda f: f["date"] or "", reverse=True)
     shown = files[:8]
@@ -402,17 +398,14 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
     """The course's modules, each item saying where it leads in the app: a local file, a
     page / assignment / announcement shown here, a web link, or the item on Canvas."""
     now = now or datetime.now(timezone.utc)
-    course = next((c for c in state.courses() if c.id == course_id), None)
+    course = state.course(course_id)
     raw_modules = state.modules(course_id)
     if course is None or not raw_modules:
         return []
     docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
     files = {r.id: r for r in state.files_for_course(course_id)}
     new = news(state, root, course_id)
-    created: dict[int, str] = {}
-    for row in state.db.execute("SELECT id, raw FROM files WHERE course_id = ?", (course_id,)):
-        raw = json.loads(row["raw"] or "{}")
-        created[row["id"]] = raw.get("created_at") or raw.get("updated_at") or ""
+    created = {fid: raw.get("created_at") or raw.get("updated_at") or "" for fid, raw in state.files_raw(course_id).items()}
 
     def target(item: dict[str, Any]) -> dict[str, Any]:
         kind, cid = item.get("type"), item.get("content_id")

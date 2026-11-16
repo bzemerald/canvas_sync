@@ -70,11 +70,12 @@ class RemoteFile:
 
 @dataclass
 class Document:
-    """A non-file piece of course content (page, assignment, ...), kept for future UIs."""
+    """One of a course's announcements, assignments or pages, its syllabus, or a post on Ed."""
 
     course_id: int
-    kind: str  # page | assignment | announcement | syllabus
+    kind: str  # page | assignment | announcement | syllabus | post
     id: str
     title: str
     updated_at: str
     raw: dict[str, Any] = field(repr=False)
+    source: str = "canvas"  # where it's from (canvas, ed)

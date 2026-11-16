@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import json
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -278,10 +277,9 @@ def _title(title: str) -> str:
 def _canvas_copies(e: Engine, course: int) -> dict[str, list[datetime]]:
     """The course's Canvas announcements: title -> when each was posted."""
     out: dict[str, list[datetime]] = {}
-    for title, raw in e.state.db.execute(
-            "SELECT title, raw FROM documents WHERE course_id = ? AND kind = 'announcement' AND source = 'canvas'", (course,)):
-        if when := time_of(json.loads(raw or "{}").get("posted_at")):
-            out.setdefault(_title(title), []).append(when)
+    for d in e.state.documents(course, "announcement", "canvas"):
+        if when := time_of(d.raw.get("posted_at")):
+            out.setdefault(_title(d.title), []).append(when)
     return out
 
 
@@ -312,8 +310,7 @@ async def _course(e: Engine, client: EdClient, course: int, ed_course: int) -> N
         docs.append(d)
     # Replies fetched before, while there are as many; none to fetch where there are none; and
     # the ones most worth having offline (pinned, megathreads, staff's), up to PREFETCH.
-    before = {(r[0], r[1]): json.loads(r[2]) for r in e.state.db.execute(
-        "SELECT kind, id, raw FROM documents WHERE course_id = ? AND source = ?", (course, SOURCE))}
+    before = {(d.kind, d.id): d.raw for d in e.state.documents(course, source=SOURCE)}
     for d in docs:
         if old := before.get((d.kind, d.id), {}).get("ed", {}).get("thread"):
             d.raw["ed"]["thread"] = old
@@ -336,20 +333,15 @@ async def _course(e: Engine, client: EdClient, course: int, ed_course: int) -> N
 async def fetch_replies(e: Engine, token: str, region: str, course: int, kind: str, doc_id: str) -> bool:
     """A document from Ed with its replies as they are now, if they weren't (opening it). Whether
     it changed; when Ed can't be asked, it stays as it was."""
-    row = e.state.db.execute("SELECT title, updated_at, raw FROM documents WHERE course_id = ? AND kind = ? AND id = ? AND source = ?",
-                             (course, kind, doc_id, SOURCE)).fetchone()
-    if row is None:
-        return False
-    d = Document(course, kind, doc_id, row[0], row[1], json.loads(row[2]))
-    if not _stale(d):
+    d = e.state.document(course, kind, doc_id)
+    if d is None or d.source != SOURCE or not _stale(d):
         return False
     try:
         async with EdClient(token, region) as client:
             _with_replies(d.raw, await client.replies(int(doc_id.removeprefix("ed-"))))
     except EdError:
         return False
-    e.state.db.execute("UPDATE documents SET raw = ? WHERE course_id = ? AND kind = ? AND id = ?",
-                       (json.dumps(d.raw), course, kind, doc_id))
+    e.state.update_document(d)
     e.state.commit()
     return True
 

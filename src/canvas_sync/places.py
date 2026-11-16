@@ -120,10 +120,6 @@ def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
     def in_course(path: str) -> int | None:
         return next((cid for d, cid in dirs.items() if under(path, d)), None)
 
-    def one(sql: str, *args: Any) -> str | None:
-        row = e.state.db.execute(sql, args).fetchone()
-        return row[0] if row else None
-
     out = []
     for entry in entries:
         t = entry.thing
@@ -137,10 +133,12 @@ def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
             name, course = Path(t.path).name, in_course(t.path)
             exists = (e.root / t.path).is_dir() if t.type == "folder" else (e.root / t.path).is_file()
         elif t.type == "doc":
-            name = one("SELECT title FROM documents WHERE course_id = ? AND kind = ? AND id = ?", t.course, t.kind, t.id)
+            assert t.course is not None and t.kind is not None and t.id is not None
+            name = e.state.document_title(t.course, t.kind, t.id)
             exists = name is not None
         elif t.type == "module":
-            name = one("SELECT name FROM modules WHERE course_id = ? AND id = ?", t.course, t.module)
+            assert t.course is not None and t.module is not None
+            name = e.state.module_name(t.course, t.module)
             exists = name is not None
         elif t.type == "tool":
             assert t.course is not None

@@ -9,7 +9,6 @@ can say which one it means. What courses say was written by others: it's handed 
 from __future__ import annotations
 
 import functools
-import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -195,9 +194,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         else:  # (only its name matched: how it starts)
             key = f"file:{h.path and (r := e.state.by_path(h.path)) and r.id}" if h.kind == "file" \
                 else f"{h.kind}:{h.course_id}:{h.doc_id}"
-            row = e.index.db.execute("SELECT substr(f.body, 1, ?) FROM items i JOIN fts f ON f.rowid = i.id WHERE i.key = ?",
-                                     (PREVIEW * 2, key)).fetchone()
-            if row and (start := " ".join((row[0] or "").replace("\u200b", "").split())[:PREVIEW]):
+            if start := " ".join(e.index.start(key, PREVIEW * 2).split())[:PREVIEW]:
                 out["preview"] = start
         if h.source != "canvas":
             out["source"] = h.source
@@ -207,7 +204,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         out: dict[str, Any] = {"thing": Thing("file", path=path).to_dict(), "path": path, **fields}
         rec = e.state.by_path(path)
         if rec is not None:
-            c = next((c for c in e.state.courses() if c.id == rec.course_id), None)
+            c = e.state.course(rec.course_id)
             if c is not None:
                 out["course"] = course_label(c, e.settings)
             if rec.remote_deleted:
@@ -229,7 +226,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
     def uploaded(e: Engine, file_id: int | None) -> str | None:
         """When Canvas last changed a file."""
         rec = e.state.get(file_id) if file_id else None
-        raw = json.loads(e.state.db.execute("SELECT raw FROM files WHERE id = ?", (rec.id,)).fetchone()[0] or "{}") if rec else {}
+        raw = e.state.file_raw(rec.id) if rec else {}
         return raw.get("modified_at") or raw.get("updated_at") or raw.get("created_at")  # (as the index has it)
 
     @tool
@@ -238,7 +235,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         are new (not opened yet), when it last synced. Hidden courses (and ones not synced any
         more) only with include_hidden. `sync_root`: the folder every path is in (relative to)."""
         with engine() as e:
-            synced = dict(e.state.db.execute("SELECT id, synced_at FROM courses").fetchall())
+            synced = e.state.synced_at()
             out = []
             for c in content.courses(e):
                 if (c["hidden"] or c["excluded"]) and not include_hidden:
@@ -426,11 +423,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         with engine() as e:
             out = []
             for c in shown(e, course):
-                # What was there when a course first synced came in "seen" at once: not news.
-                rows = e.state.db.execute(
-                    """SELECT kind, id, arrived_at, seen_at, updated FROM arrivals
-                       WHERE course_id = ? AND arrived_at >= ? AND (seen_at IS NULL OR seen_at != arrived_at)""",
-                    (c.id, start.astimezone(timezone.utc).isoformat() if start else ""))
+                rows = e.state.arrived(c.id, start.astimezone(timezone.utc).isoformat() if start else "")
                 arrived = {(r["kind"], r["id"]): {"arrived_at": r["arrived_at"], "opened": r["seen_at"] is not None,
                                                   **({"updated": True} if r["updated"] else {})} for r in rows}
                 if start is None:  # (not opened; nor read on Canvas, nor handed in; files still here)
