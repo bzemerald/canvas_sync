@@ -1,17 +1,20 @@
-import { BookOpen, ClipboardList, FileText, Megaphone, MessagesSquare, ScrollText, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Hit, Kind } from "../lib/api";
 import { locale, t } from "../lib/i18n";
+import { KINDS, VIEWS } from "../lib/kinds";
 import { titlesAlong } from "../lib/things";
 import { SourceTag } from "./Things";
 import { Thumb } from "./Thumb";
 
+/** What the index has, by kind (a search result's, a smart folder's): the syllabus is one, and a
+ * post says it's Ed's. */
 export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
-  file: { icon: FileText, label: t("文件") },
-  page: { icon: BookOpen, label: t("页面") },
-  assignment: { icon: ClipboardList, label: t("作业") },
-  announcement: { icon: Megaphone, label: t("公告") },
-  syllabus: { icon: ScrollText, label: t("大纲") },
-  post: { icon: MessagesSquare, label: t("Ed 帖子") },
+  file: { icon: KINDS.file.icon, label: KINDS.file.all },
+  page: { icon: KINDS.page.icon, label: KINDS.page.all },
+  assignment: { icon: KINDS.assignment.icon, label: KINDS.assignment.all },
+  announcement: { icon: KINDS.announcement.icon, label: KINDS.announcement.all },
+  syllabus: { icon: VIEWS.syllabus.icon, label: VIEWS.syllabus.tab },
+  post: { icon: KINDS.post.icon, label: t("Ed 帖子") },
 };
 
 export { fileManager, isMac } from "../lib/keys";

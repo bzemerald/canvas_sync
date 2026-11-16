@@ -28,7 +28,7 @@ import { NavItem, PinnedSection, SectionHeader, SyncStatus, TermSection, UpdateN
 import { Breadcrumb, SearchInput, SmartTitle, ToolButton } from "./components/Toolbar";
 import { SmartFolderDialog, type SmartFolder } from "./components/SmartFolderDialog";
 import {
-  ThingIcon, ThingsContext, VIEW_LABEL, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
+  ThingIcon, ThingsContext, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
 } from "./components/Things";
 import * as api from "./lib/api";
 import { courseUrl, docUrl } from "./lib/canvas";
@@ -42,6 +42,7 @@ import {
 } from "./lib/navigation";
 import { type Reading, read } from "./lib/query";
 import { appCommand, copyName, fileManager, isMac, shortcut, trashName } from "./lib/keys";
+import { VIEWS } from "./lib/kinds";
 import { copyFiles } from "./lib/copyFiles";
 import { clickSearchButton, keysLabel, pressSearchButton, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
@@ -357,7 +358,7 @@ export function MainWindow() {
   const folderScope = !wide && ((cv && filesTab) || view.kind === "browse") ? browsing : null;
   const courseWide = !!cv && !filesTab && (!!cv.blank || !(isView(tab) && FILTERS_ITSELF.includes(tab.view)));
   const tabName = tabEntry ? thingName(tabEntry, courseList, "tab") : "";
-  const folderName = (path: string) => (course && path === course.dir ? VIEW_LABEL.files : path === "" ? t("全部文件") : folderTitle(path));
+  const folderName = (path: string) => (course && path === course.dir ? VIEWS.files.tab : path === "" ? t("全部文件") : folderTitle(path));
   useEffect(() => {
     if (!query.trim()) setWide(false);
   }, [query]);

@@ -1,15 +1,13 @@
 // Things on screen (see lib/things.ts): what each is called and its icon, how it opens, and what
 // you can do with it wherever it shows: press and drag it to a place (置顶, a course's tabs, its
 // overview, 工具与链接), or right-click it. The main window provides the doing (ThingsContext).
-import {
-  AppWindow, Award, BookOpen, ClipboardList, ExternalLink, FileText, Folder, FolderOpen, GraduationCap, LayoutDashboard,
-  Link as LinkIcon, ListChecks, Megaphone, MessagesSquare, NotebookPen, ScrollText, Sparkles,
-} from "lucide-react";
+import { FileText, GraduationCap } from "lucide-react";
 import { createContext, createElement, useContext } from "react";
 import type { Course } from "../lib/api";
 import { CourseIcon } from "../lib/courseIcons";
 import { t } from "../lib/i18n";
 import { dragToPlace } from "../lib/dropZones";
+import { KINDS, VIEWS, kindOf } from "../lib/kinds";
 import { type Shown, type Thing, type ViewName, folderTitle, isView, opensElsewhere } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
@@ -81,21 +79,7 @@ export function sections(...parts: MenuItem[][]): MenuItem[] {
   return parts.filter((p) => p.length).flatMap((p, i) => (i ? ["separator" as const, ...p] : p));
 }
 
-// -- what things are called -----------------------------------------------------------------------
-
-/** A course's views, as tabs. */
-export const VIEW_LABEL: Record<ViewName, string> = {
-  overview: t("概览"), modules: t("模块"), announcements: t("公告"), ed: "Ed", assignments: t("作业"), grades: t("成绩"),
-  files: t("文件"), syllabus: t("大纲"), pages: t("页面"), tools: t("工具与链接"), canvas: t("在 Canvas 中打开"),
-};
-/** A course's views, as cards on its overview. */
-export const CARD_LABEL: Partial<Record<ViewName, string>> = {
-  assignments: t("近期截止"), announcements: t("最新公告"), ed: "Ed", modules: t("当前模块"),
-  files: t("最近新增的文件"), syllabus: t("课程大纲"),
-};
-/** As a row (in the sidebar, in 工具与链接). */
-const ROW_LABEL: Partial<Record<ViewName, string>> = { syllabus: t("课程大纲") };
-const DOC_LABEL = { announcement: t("公告"), assignment: t("作业"), page: t("页面@@card"), post: t("帖子") };
+// -- what things are called (lib/kinds.ts) --------------------------------------------------------
 
 export type Where = "tab" | "card" | "row";
 
@@ -118,21 +102,17 @@ export function ownName(e: Shown, courses: Course[], where: Where = "row"): stri
     case "course": return courses.find((c) => c.id === e.course)?.label ?? e.name ?? t("课程 #{id}", { id: e.course });
     case "folder": return folderTitle(e.path);
     case "file": return e.path.split("/").pop() ?? e.path;
-    case "doc": return e.name || DOC_LABEL[e.kind];
-    case "module": return e.name || t("模块@@card");
-    case "tool": return e.name || t("外部工具");
+    case "doc": return e.name || KINDS[e.kind].one;
+    case "module": case "tool": return e.name || KINDS[e.type].one;
     case "link": return host(e.url);
     case "search": return e.query ? `“${e.query}”` : t("搜索");
-    case "note": return t("备忘录");
-    case "view": return (where === "card" ? CARD_LABEL[e.view] : where === "row" ? ROW_LABEL[e.view] : undefined) ?? VIEW_LABEL[e.view];
+    case "note": return KINDS.note.one;
+    case "view": {
+      const v = VIEWS[e.view];
+      return (where === "card" ? v.card : where === "row" ? v.row : undefined) ?? v.tab;
+    }
   }
 }
-
-const VIEW_ICON: Record<ViewName, typeof Megaphone> = {
-  overview: LayoutDashboard, modules: ListChecks, announcements: Megaphone, ed: MessagesSquare, assignments: ClipboardList, grades: Award,
-  files: FolderOpen, syllabus: ScrollText, pages: BookOpen, tools: AppWindow, canvas: ExternalLink,
-};
-const DOC_ICON = { announcement: Megaphone, assignment: ClipboardList, page: BookOpen, post: MessagesSquare };
 
 export function ThingIcon({ thing, courses, className = "size-4" }: { thing: Thing; courses?: Course[]; className?: string }) {
   if (thing.type === "file") return <FileIcon name={thing.path} />;
@@ -140,9 +120,8 @@ export function ThingIcon({ thing, courses, className = "size-4" }: { thing: Thi
     const c = courses?.find((x) => x.id === thing.course);
     return c ? <CourseIcon course={c} /> : <GraduationCap className={className} />;
   }
-  const icon = thing.type === "view" ? VIEW_ICON[thing.view]
-    : thing.type === "doc" ? DOC_ICON[thing.kind]
-      : { folder: Folder, module: ListChecks, tool: AppWindow, link: LinkIcon, search: Sparkles, note: NotebookPen }[thing.type];
+  const kind = kindOf(thing);
+  const icon = isView(thing) ? VIEWS[thing.view]?.icon : kind ? KINDS[kind]?.icon : undefined;
   return createElement(icon ?? FileText, { className: `${className} shrink-0` });
 }
 

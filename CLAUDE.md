@@ -97,6 +97,8 @@ without the Canvas website or Finder.
   - `src/lib/update.ts`: 检查更新 (Tauri's updater, from GitHub's releases; checks by itself
     in a release build).
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
+  - `src/lib/kinds.ts`: each kind of thing as both windows show it (icon, what one is called,
+    what they're called together), and each of a course's views (icon, name as a tab, a card, a row).
   - `src/lib/canvas.ts`: where a course and its documents are on Canvas, for what came without
     an address (as urls.py).
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).

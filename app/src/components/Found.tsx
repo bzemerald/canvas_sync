@@ -15,6 +15,7 @@ import { en } from "../lib/en";
 import { type Action, type Catalog, type Describe, type Found, type GroupId, type NameWord, type Results, type Scope, dueSoon, find, likelyWord, nameWords, narrow, prepare, recent, vocabulary } from "../lib/find";
 import { locale, t, tx } from "../lib/i18n";
 import { isMac } from "../lib/keys";
+import { KINDS } from "../lib/kinds";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular } from "../lib/query";
 import { type Thing, type ViewName, setFolderTitles, titlesAlong } from "../lib/things";
 import { useLoaded } from "../lib/useLoaded";
@@ -63,7 +64,7 @@ const KIND_SAID: Record<KindId, string[]> = {
   course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], post: ["帖子", "讨论", "thread"], module: ["模块", "模块@@card"], // i18n-ignore
   tool: ["外部工具", "工具"], link: ["链接"], note: ["备忘录"], search: ["智能文件夹"], file: ["文件", "文件@@card"], folder: ["文件夹"], // i18n-ignore
 };
-const KINDS: Record<string, KindId> = Object.fromEntries(
+const KIND_OF_WORD: Record<string, KindId> = Object.fromEntries(
   (Object.entries(KIND_SAID) as [KindId, string[]][]).flatMap(([kind, zh]) =>
     [...zh.flatMap(inBoth), kind].map((w) => w.toLowerCase()).filter((w) => !w.includes(" ")).map((w) => [singular(w), kind])),
 );
@@ -90,7 +91,7 @@ export function useCatalog(again: unknown[], courses: Course[] = [], on = true) 
     setFolderTitles(data.folder_titles); // (what comes next is named and found by them)
     return prepare(data.things, describeEntry(courses), data.abbreviations);
   }, [data, courses]);
-  const vocab = useMemo(() => (catalog ? vocabulary(catalog, KINDS) : NO_VOCABULARY), [catalog]);
+  const vocab = useMemo(() => (catalog ? vocabulary(catalog, KIND_OF_WORD) : NO_VOCABULARY), [catalog]);
   const names = useMemo(
     () => new Map((data?.things ?? []).flatMap((e) => (e.type === "course" ? [[e.course, e.name ?? ""] as const] : []))),
     [data],
@@ -396,10 +397,6 @@ const NO_NAMES = new Map<number, string>();
 // -- how a query reads ----------------------------------------------------------------------------
 
 const STATUS_LABEL = { todo: t("未提交"), missing: t("缺交"), overdue: t("逾期未交"), submitted: t("已提交"), graded: t("已评分") };
-const KIND_LABEL: Record<KindId, string> = {
-  course: t("课程"), announcement: t("公告"), assignment: t("作业"), page: t("页面"), post: t("帖子"), module: t("模块"), tool: t("外部工具"),
-  link: t("链接"), note: t("备忘录"), search: t("智能文件夹"), file: t("文件"), folder: t("文件夹"),
-};
 const KIND_THING: Record<KindId, Thing> = {
   course: { type: "course", course: -1 }, announcement: { type: "view", course: -1, view: "announcements" },
   assignment: { type: "view", course: -1, view: "assignments" }, page: { type: "view", course: -1, view: "pages" },
@@ -431,7 +428,7 @@ function partLabel(p: Part, names: Map<number, string>): string {
       const all = p.courses.map((c) => names.get(c) ?? `#${c}`);
       return !all.length ? t("没有这门课") : all.length <= 2 ? all.join(" / ") : `${all[0]} +${all.length - 1}`;
     }
-    case "kind": return KIND_LABEL[p.kind];
+    case "kind": return KINDS[p.kind].all;
     case "when": return whenLabel(p);
     case "status": return STATUS_LABEL[p.status];
     case "source": return "Ed"; // (a name)
@@ -604,13 +601,10 @@ function FoundRow({ f, courses, names, top }: { f: Found; courses: Course[]; nam
 /** What a thing is, in a few words: its kind, or where it is. */
 function describeKind(e: CatalogEntry): string {
   switch (e.type) {
-    case "course": return t("课程");
-    case "doc": return KIND[e.kind].label;
-    case "module": return t("模块@@card");
-    case "tool": return t("外部工具");
+    case "course": case "module": case "tool": case "search": return KINDS[e.type].one;
+    case "doc": return KIND[e.kind].label; // (as search results say it: "Ed 帖子")
     case "link": return e.url.replace(/^https?:\/\/(www\.)?/, "");
-    case "note": return e.text || t("备忘录");
-    case "search": return t("智能文件夹");
+    case "note": return e.text || KINDS.note.one;
     case "file": case "folder": return titlesAlong(e.path, 2, -1).join(" / ");
     default: return "";
   }
