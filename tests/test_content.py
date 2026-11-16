@@ -86,7 +86,7 @@ def api(root, course, monkeypatch):
     course.media["/equation_images/x2"] = (PNG, "image/png")
     course.media["/courses/1/pages/intro"] = (b"<html>", "text/html")
     monkeypatch.setattr(
-        "canvas_sync.server.CanvasClient",
+        "canvas_sync.backend.CanvasClient",
         lambda url, token: CanvasClient(url, token, transport=httpx.MockTransport(course.handle)),
     )
     monkeypatch.setattr(Account, "token", lambda self: "secret-token")
@@ -125,7 +125,7 @@ def test_media(api, course, monkeypatch, root):
         return httpx.Response(200, content=PNG, headers={"content-type": "image/png"})
 
     real = httpx.AsyncClient
-    monkeypatch.setattr("canvas_sync.server.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(elsewhere), **kw))
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(elsewhere), **kw))
     assert api.get("/api/media", params={"url": "https://imgur.test/a.png"}).content == PNG
     assert "authorization" not in sent[0].headers
     assert api.get("/api/media", params={"url": "file:///etc/passwd"}).status_code == 400
@@ -133,7 +133,7 @@ def test_media(api, course, monkeypatch, root):
 
 def test_open_external_links_only(api, monkeypatch):
     opened = []
-    monkeypatch.setattr("canvas_sync.server.webbrowser.open", opened.append)
+    monkeypatch.setattr("webbrowser.open", opened.append)
     assert api.post("/api/open", json={"external": "https://example.com/x"}).status_code == 200
     assert api.post("/api/open", json={"external": "javascript:alert(1)"}).status_code == 400
     assert opened == ["https://example.com/x"]
@@ -201,7 +201,7 @@ def test_marking_several_paths_read_looks_once(root, course, monkeypatch):
 
 
 def test_whats_new(api, course, root, monkeypatch):
-    monkeypatch.setattr("canvas_sync.server.open_path", lambda p, **kw: None)
+    monkeypatch.setattr("canvas_sync.routes.opening.open_path", lambda p, **kw: None)
     api.post("/api/courses/1/seen")  # start with nothing new
     course.announcements += [
         {"id": 9, "title": "Exam moved", "posted_at": "2026-10-14T00:00:00Z", "message": "", "read_state": "unread"},
@@ -360,7 +360,7 @@ def test_tool_names():
 
 def test_launch(api, course, monkeypatch):
     opened = []
-    monkeypatch.setattr("canvas_sync.server.webbrowser.open", opened.append)
+    monkeypatch.setattr("webbrowser.open", opened.append)
     r = api.post("/api/launch", json={"course_id": 1, "tool_id": 5}).json()
     assert r == {"opened": course.launch_url, "signed_in": True} and opened == [course.launch_url]
     assert course.launches[-1] == {"id": "5", "launch_type": "course_navigation"}

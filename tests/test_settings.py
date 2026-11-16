@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from canvas_sync import CanvasClient, Engine, server
+from canvas_sync import CanvasClient, Engine, backend, server
+from canvas_sync.routes import account as account_routes, opening
 from canvas_sync.config import Account, AppPrefs, Settings, save_sidebar_order, set_course_icon
 from fake_canvas import BASE, FakeCanvas, pull, wait_for_sync
 
@@ -34,9 +36,9 @@ def keychain(monkeypatch, tmp_path) -> dict[str, str]:
 def canvas(fake: FakeCanvas, monkeypatch) -> FakeCanvas:
     """The fake Canvas, for the sign-in check and for syncing."""
     real = httpx.AsyncClient  # (patched for every user of httpx, CanvasClient too: that brings its own transport)
-    monkeypatch.setattr("canvas_sync.server.httpx.AsyncClient", lambda **kw: real(**{"transport": httpx.MockTransport(fake.handle), **kw}))
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: real(**{"transport": httpx.MockTransport(fake.handle), **kw}))
     monkeypatch.setattr(
-        "canvas_sync.server.CanvasClient",
+        "canvas_sync.backend.CanvasClient",
         lambda url, token: CanvasClient(url, token, transport=httpx.MockTransport(fake.handle)),
     )
     return fake
@@ -184,7 +186,7 @@ def test_sign_out_and_in_again(root, tmp_path, canvas, keychain):
 
 def test_sync_on_launch(root, tmp_path, canvas, keychain, monkeypatch):
     keychain[BASE] = "t"
-    monkeypatch.setattr(server, "STARTUP_DELAY", 0.01)
+    monkeypatch.setattr(backend, "STARTUP_DELAY", 0.01)
 
     def launch_and_watch(seconds: float) -> str:
         with client(Account(BASE, root), tmp_path, background=True) as api:
@@ -204,24 +206,24 @@ def test_sync_on_launch(root, tmp_path, canvas, keychain, monkeypatch):
     assert launch_and_watch(2) == "done"  # last synced long ago: it syncs
     assert launch_and_watch(0.2) == "idle"  # just did: it doesn't
     AppPrefs(sync_on_launch=False).save(tmp_path / PREFS)
-    monkeypatch.setattr(server, "LAUNCH_GRACE", timedelta(0))
+    monkeypatch.setattr(backend, "LAUNCH_GRACE", timedelta(0))
     assert launch_and_watch(0.2) == "idle"
 
 
 def test_automatic_sync_is_due():
     now = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
-    assert server._due(None, timedelta(hours=1), now)
-    assert not server._due(now - timedelta(minutes=59), timedelta(hours=1), now)
-    assert server._due(now - timedelta(minutes=61), timedelta(hours=1), now)
+    assert backend._due(None, timedelta(hours=1), now)
+    assert not backend._due(now - timedelta(minutes=59), timedelta(hours=1), now)
+    assert backend._due(now - timedelta(minutes=61), timedelta(hours=1), now)
 
 
 def test_canvas_site():
-    assert server._canvas_site(" bcourses.berkeley.edu ") == "https://bcourses.berkeley.edu"
-    assert server._canvas_site("https://bcourses.berkeley.edu/courses/1/") == "https://bcourses.berkeley.edu"
-    assert server._canvas_site("http://localhost:3000") == "http://localhost:3000"
+    assert account_routes._canvas_site(" bcourses.berkeley.edu ") == "https://bcourses.berkeley.edu"
+    assert account_routes._canvas_site("https://bcourses.berkeley.edu/courses/1/") == "https://bcourses.berkeley.edu"
+    assert account_routes._canvas_site("http://localhost:3000") == "http://localhost:3000"
     for bad in ("http://bcourses.berkeley.edu", "mailto:x@y", "https://"):
         with pytest.raises(HTTPException):
-            server._canvas_site(bad)
+            account_routes._canvas_site(bad)
 
 
 def test_sidebar_order(root, tmp_path, keychain):
@@ -354,7 +356,7 @@ def test_move_folder_fails_leaving_it_as_it_was(root, tmp_path, canvas, keychain
     import shutil
 
     keychain[BASE] = "t"
-    real_rename, real_copy, real_usage = server.os.rename, shutil.copy2, shutil.disk_usage
+    real_rename, real_copy, real_usage = os.rename, shutil.copy2, shutil.disk_usage
     canvas.put(1, "lec.pdf", b"lecture")
     canvas.put(2, "hw.pdf", b"homework")
     new = (tmp_path / "New").resolve()
@@ -433,7 +435,7 @@ def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keych
     seen = {}
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         moved_setup(api, root, tmp_path)
-        real = server.move_sync_folder
+        real = account_routes.move_sync_folder
 
         def looking(src, dst, use):
             seen["courses"] = api.get("/api/courses").status_code
@@ -443,7 +445,7 @@ def test_nothing_touches_the_folder_while_it_moves(root, tmp_path, canvas, keych
             seen["state"] = api.get("/api/sync").status_code
             seen["again"] = api.post("/api/account/move", json={"root": str(tmp_path / "Other")}).status_code
             return real(src, dst, use)
-        monkeypatch.setattr(server, "move_sync_folder", looking)
+        monkeypatch.setattr(account_routes, "move_sync_folder", looking)
         assert api.post("/api/account/move", json={"root": str(tmp_path / "New")}).status_code == 200
     assert seen == {"courses": 409, "sync": 409, "health": (False, False), "state": 200, "again": 409}
     assert not (tmp_path / "Other").exists()
@@ -455,7 +457,7 @@ def test_a_move_waits_for_what_is_being_answered(root, tmp_path, canvas, keychai
     asked, answer = threading.Event(), threading.Event()
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         moved_setup(api, root, tmp_path)
-        real_status, real_move = Engine.status, server.move_sync_folder
+        real_status, real_move = Engine.status, account_routes.move_sync_folder
 
         def slow(self, *args, **kw):
             asked.set()
@@ -467,7 +469,7 @@ def test_a_move_waits_for_what_is_being_answered(root, tmp_path, canvas, keychai
             order.append("moved")
             return real_move(src, dst, use)
         monkeypatch.setattr(Engine, "status", slow)
-        monkeypatch.setattr(server, "move_sync_folder", moving)
+        monkeypatch.setattr(account_routes, "move_sync_folder", moving)
         reading = threading.Thread(target=lambda: api.get("/api/status"))
         reading.start()
         assert asked.wait(5)
@@ -533,7 +535,7 @@ def test_move_folder_waits_for_a_sync(root, tmp_path, canvas, keychain, monkeypa
 
     async def still_going(*args, **kw):
         pass
-    monkeypatch.setattr(server, "_run_sync", still_going)  # (so the job stays at its first phase)
+    monkeypatch.setattr(backend, "_run_sync", still_going)  # (so the job stays at its first phase)
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         assert api.post("/api/sync").status_code == 202
         assert api.get("/api/sync").json()["running"]
@@ -543,7 +545,7 @@ def test_move_folder_waits_for_a_sync(root, tmp_path, canvas, keychain, monkeypa
 
 def test_the_folder_opens_in_the_file_manager(root, tmp_path, canvas, keychain, monkeypatch):
     opened = []
-    monkeypatch.setattr(server, "open_path", lambda p, **kw: opened.append((p, kw)))
+    monkeypatch.setattr(opening, "open_path", lambda p, **kw: opened.append((p, kw)))
     with client(Account(BASE, root, "Test"), tmp_path) as api:
         assert api.post("/api/open", json={"path": ""}).status_code == 200
     assert opened == [(root, {"reveal": False, "preview": False})]

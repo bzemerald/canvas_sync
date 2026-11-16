@@ -200,9 +200,9 @@ def api(root, fake, monkeypatch):
     add_week2(fake)
     pull(root, fake)
     opened = []
-    monkeypatch.setattr("canvas_sync.server.open_path", lambda p, **kw: opened.append((p, kw)))
+    monkeypatch.setattr("canvas_sync.routes.opening.open_path", lambda p, **kw: opened.append((p, kw)))
     monkeypatch.setattr(
-        "canvas_sync.server.CanvasClient",
+        "canvas_sync.backend.CanvasClient",
         lambda url, token: CanvasClient(url, token, transport=httpx.MockTransport(fake.handle)),
     )
     monkeypatch.setattr(Account, "token", lambda self: "t")

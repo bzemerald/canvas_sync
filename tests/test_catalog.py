@@ -89,7 +89,7 @@ def test_catalog_leaves_out_hidden_courses(root, course):
 
 def test_api_catalog_and_what_you_open(root, course, monkeypatch):
     pull(root, course)
-    monkeypatch.setattr("canvas_sync.server.CanvasClient",
+    monkeypatch.setattr("canvas_sync.backend.CanvasClient",
                         lambda url, token: CanvasClient(url, token, transport=httpx.MockTransport(course.handle)))
     monkeypatch.setattr(Account, "token", lambda self: "t")
     with TestClient(create_app(Account(BASE, root), "s"), headers={"Authorization": "Bearer s"}) as api:

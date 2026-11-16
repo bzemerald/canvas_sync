@@ -222,7 +222,7 @@ def test_reindex_is_incremental(root, course):
 def client(root, course, monkeypatch):
     pull(root, course)
     reindex(root)
-    monkeypatch.setattr("canvas_sync.server.open_path", lambda p, **kw: None)
+    monkeypatch.setattr("canvas_sync.routes.opening.open_path", lambda p, **kw: None)
     app = create_app(Account(BASE, root), "secret")
     return TestClient(app, headers={"Authorization": "Bearer secret"})
 
@@ -246,7 +246,7 @@ def test_api_sync_job(root, course, monkeypatch):
     from canvas_sync import CanvasClient
 
     monkeypatch.setattr(
-        "canvas_sync.server.CanvasClient",
+        "canvas_sync.backend.CanvasClient",
         lambda url, token: CanvasClient(url, token, transport=httpx.MockTransport(course.handle)),
     )
     monkeypatch.setattr(Account, "token", lambda self: "t")

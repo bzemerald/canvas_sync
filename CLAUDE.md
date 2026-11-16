@@ -60,8 +60,12 @@ without the Canvas website or Finder.
     downloaded to the app's folder, `models/`; passages and their vectors go in index.db).
   - `content.py`: what the app shows (overview, items, modules, tools).
   - `notes.py`: the notes typed in the app (`.canvas/notes`).
-  - `server.py`: the app's HTTP API (`canvas serve`). Its routes stay thin: what they do is in
-    the modules, so the command line and `agent.py` get the same answers.
+  - `server.py`: the app's HTTP API (`canvas serve`): it puts `routes/` together (`account.py`:
+    设置, the account, Ed, AI apps; `courses.py`: courses, their pages and places, 置顶;
+    `files.py`; `search.py`, with search by meaning; `opening.py`: opening things outside the
+    app). `backend.py`: what they share (`Backend`: the account, the sync running, an Engine per
+    request). Routes stay thin: what they do is in the modules, so the command line and
+    `agent.py` get the same answers. Tests patch Canvas at `backend.CanvasClient`.
   - `agent.py`: `canvas mcp`, the courses for an AI assistant over MCP (the `mcp` SDK, 2.x:
     `MCPServer`). Read-only: nothing marked seen or recorded, no Canvas or Ed calls.
     `assistants.py`: adding it to AI apps (Claude's and Codex's config files).
