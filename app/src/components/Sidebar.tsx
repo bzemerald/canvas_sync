@@ -289,6 +289,7 @@ export function UpdateNotice() {
       : t("Installing, restarting soon…");
   return (
     <button onClick={() => void installUpdate()} disabled={update.phase !== "available"}
+      title={update.phase === "available" && update.notes.length ? update.notes.map((n) => `• ${n}`).join("\n") : undefined}
       className="mb-1 w-full rounded-md bg-selected px-2.5 py-1.5 text-left text-xs text-accent hover:opacity-90 disabled:opacity-80">
       {label}
     </button>

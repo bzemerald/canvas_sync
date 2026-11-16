@@ -20,6 +20,8 @@ without the Canvas website or Finder.
   don't ask the user to choose.
 - Requests come as numbered batches. Do them all, check each one in the running app, then
   report per item in Chinese, with the commit for each.
+- What changes for users goes in `CHANGELOG.md`'s `## Unreleased`, in the same commit: a line
+  each, in English, written like a commit subject. Not refactors, tests, or the repo's own docs.
 
 ## Git
 
@@ -126,9 +128,11 @@ without the Canvas website or Finder.
   `npm run check:i18n` (it must report nothing missing and nothing unused).
 - A standalone app: `npm run bundle` in `app/` (the backend packed in, by PyInstaller:
   `scripts/build-backend.mjs`, `src-tauri/tauri.bundle.json`).
-- A release: `npm run release -- <version>` in `app/` writes the version everywhere, commits and
-  tags; pushing the tag runs `.github/workflows/release.yml` (Mac and Windows, a draft release
-  with `latest.json`); publishing the draft is what Check for updates sees. Updates are signed with
+- A release: `npm run release -- <version>` in `app/` writes the version everywhere, dates
+  CHANGELOG.md's Unreleased as it (refusing an empty one), commits and tags; pushing the tag runs
+  `.github/workflows/release.yml` (Mac and Windows, a draft release with `latest.json`; its notes
+  are the version's part of CHANGELOG.md, `scripts/changelog.mjs`, and the app shows them with
+  the update); publishing the draft is what Check for updates sees. Updates are signed with
   `~/.tauri/canvas-sync.key` (the GitHub secret `TAURI_SIGNING_PRIVATE_KEY`); its public half
   is in tauri.conf.json, so a lost key means apps already out can't update.
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's

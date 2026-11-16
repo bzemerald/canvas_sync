@@ -1,6 +1,7 @@
 # Builds the Mac and Windows apps when a version tag is pushed (npm run release -- <version>, in
 # app/, makes the tag), and puts them in a draft release with latest.json, which the apps'
-# Check for updates reads once the draft is published. Run by hand (Actions → release → Run workflow) it
+# Check for updates reads once the draft is published; its notes are CHANGELOG.md's part for the
+# version. Run by hand (Actions → release → Run workflow) it
 # only builds, to try the build: the apps are kept with the run, no release is made.
 #
 # Needs the secret TAURI_SIGNING_PRIVATE_KEY (Settings → Secrets and variables → Actions): the
@@ -42,6 +43,16 @@ jobs:
           $py -m pip install -e '.[dev]'
       - run: npm ci
         working-directory: app
+      - name: The release's notes, this version's part of CHANGELOG.md
+        id: notes
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          {
+            echo 'body<<END_OF_NOTES'
+            node app/scripts/changelog.mjs "$GITHUB_REF_NAME"
+            echo 'END_OF_NOTES'
+          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,7 +64,7 @@ jobs:
           args: --config src-tauri/tauri.bundle.json --config src-tauri/tauri.release.json
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Canvas Sync ${{ github.ref_name }}
-          releaseBody: ""
+          releaseBody: ${{ steps.notes.outputs.body }} # (also latest.json's notes, which Check for updates shows)
           releaseDraft: true
           includeUpdaterJson: true
       - name: Keep the apps with the run (when run by hand)

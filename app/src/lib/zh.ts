@@ -728,6 +728,7 @@ export const zh: Record<string, string> = {
   "Check for updates": "检查更新",
   "Up to date": "已是最新版本",
   "Version {v} is available": "有新版本 {v}",
+  "What's new in {v}:": "{v} 的更新：",
   "Update and restart": "更新并重启",
   "Version {v} · Update and restart": "新版本 {v} · 更新并重启",
   "Downloading {v}…": "正在下载 {v}…",

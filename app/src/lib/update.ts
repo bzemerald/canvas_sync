@@ -10,7 +10,7 @@ export type UpdateState =
   | { phase: "idle" }
   | { phase: "checking" }
   | { phase: "latest" } // checked, nothing newer
-  | { phase: "available"; version: string }
+  | { phase: "available"; version: string; notes: string[] } // notes: what's new in it, an item each
   | { phase: "downloading"; version: string; progress: number | null } // 0..1, null: size unknown
   | { phase: "installing"; version: string }
   | { phase: "failed"; error: string; version?: string };
@@ -36,10 +36,22 @@ export async function checkForUpdate(quiet = false) {
   if (!quiet) set({ phase: "checking" });
   try {
     found = await check();
-    set(found ? { phase: "available", version: found.version } : { phase: "latest" });
+    set(found ? { phase: "available", version: found.version, notes: noteItems(found.body) } : { phase: "latest" });
   } catch (e) {
     set(quiet ? before : { phase: "failed", error: String(e) });
   }
+}
+
+/** A release's notes (its part of CHANGELOG.md: "- " items, wrapped lines indented) as items. */
+export function noteItems(body: string | undefined): string[] {
+  const items: string[] = [];
+  for (const line of (body ?? "").split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text) continue;
+    if (/^\s/.test(line) && items.length) items[items.length - 1] += " " + text;
+    else items.push(text.replace(/^[-*]\s+/, ""));
+  }
+  return items;
 }
 
 /** Downloads the update, installs it, restarts. On Windows installing quits the app itself. */

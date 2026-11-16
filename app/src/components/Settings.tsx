@@ -368,8 +368,20 @@ function VersionRow() {
   const update = useUpdate();
   useEffect(() => void getVersion().then(setVersion, () => {}), []);
   const status = update.phase === "failed" ? null : updateSaying(update);
+  const available = update.phase === "available" && update.notes.length ? update : null;
+  // (The hint is a <p>: what's new is in spans, a line each.)
   return (
-    <Row label={t("Version")} hint={version ? <span className="tabular-nums">{version}</span> : undefined}>
+    <Row label={t("Version")} hint={version ? (
+      <>
+        <span className="tabular-nums">{version}</span>
+        {available && (
+          <span className="mt-1.5 block text-fg-soft">
+            {t("What's new in {v}:", { v: available.version })}
+            {available.notes.map((n, i) => <span key={i} className="mt-0.5 flex gap-1.5"><span>•</span><span>{n}</span></span>)}
+          </span>
+        )}
+      </>
+    ) : undefined}>
       <span className="flex items-center gap-3 text-sm">
         {update.phase === "failed"
           ? <span className="flex items-center gap-1 text-xs text-danger" title={update.error}><CircleAlert className="size-3.5" />{updateSaying(update)}</span>
