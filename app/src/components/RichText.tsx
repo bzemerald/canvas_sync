@@ -20,7 +20,7 @@ function prepare(html: string): string {
   doc.querySelectorAll("iframe, video, audio, object, embed").forEach((el) => {
     const src = el.getAttribute("src") || el.querySelector("source")?.getAttribute("src") || el.getAttribute("data");
     const a = doc.createElement("a");
-    a.textContent = t("▶ 嵌入的内容（在浏览器中打开）");
+    a.textContent = t("▶ Embedded content (opens in your browser)");
     if (src) a.setAttribute("href", src);
     el.replaceWith(a);
   });
@@ -63,7 +63,7 @@ export function RichText({ html, files, className = "" }: {
           urls.push(url);
           img.src = url;
         } else {
-          img.alt = img.alt || t("（图片无法加载）");
+          img.alt = img.alt || t("(the image couldn't load)");
         }
       });
     });

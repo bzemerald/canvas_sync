@@ -11,7 +11,7 @@ import * as api from "../lib/api";
 import type { Course, DocKind, Hit, Module, NewsView, Overview } from "../lib/api";
 import { courseUrl } from "../lib/canvas";
 import { shortDate } from "../lib/dates";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 import { GLIDE, useFlip } from "../lib/flip";
 import { Settling, lineIn, slotInColumn } from "../lib/slot";
 import { remember, useLoaded } from "../lib/useLoaded";
@@ -93,7 +93,7 @@ function useLinks(links: Shown[], syllabus: boolean, onArrange: (next: Shown[]) 
   const things = useThings();
   return usePlace({
     entries: links, shown: links.filter((e) => !e.hidden && (!isView(e, "syllabus") || syllabus)), onArrange, onSay,
-    name: (e) => thingName(e, things.courses), taken: (name) => t("已移除“{name}”", { name }),
+    name: (e) => thingName(e, things.courses), taken: (name) => t("Removed “{name}”", { name }),
   });
 }
 
@@ -174,10 +174,10 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
             : e.view === "ed" ? !!overview?.counts.ed
               : true;
   const shown = all.filter((e) => !e.hidden && available(e));
-  const titleOf = (e: Shown) => e.title || (isView(e, "tools") && !overview?.tools.length ? t("链接") : thingName(e, things.courses, "card"));
+  const titleOf = (e: Shown) => e.title || (isView(e, "tools") && !overview?.tools.length ? t("Links") : thingName(e, things.courses, "card"));
   // The two places here: the cards, and 工具与链接 (one of the cards; a tool or a link goes there).
   const cardPlace = usePlace({
-    entries: all, shown, onArrange: (next) => onArrange("overview", next), onSay, name: titleOf, taken: (name) => t("已移除“{name}”", { name }),
+    entries: all, shown, onArrange: (next) => onArrange("overview", next), onSay, name: titleOf, taken: (name) => t("Removed “{name}”", { name }),
   });
   const linkPlace = useLinks(links, !!overview?.counts.syllabus, (next) => onArrange("links", next), onSay);
   /** A card for it (at `slot` among those shown, or last), outlined for a moment. */
@@ -253,26 +253,26 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
   if (empty && all.every((e) => e.hidden || isOwn(e))) {
     return (
       <div className="mx-auto max-w-md px-6 py-16 text-sm text-fg-soft">
-        <p className="mb-2 text-base text-fg">{t("这门课在 Canvas 上几乎没有内容。")}</p>
-        <p className="text-muted">{t("很多课程把材料放在课程网站、Ed 或 Gradescope 上。")}</p>
-        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-4 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
+        <p className="mb-2 text-base text-fg">{t("This course has almost nothing on Canvas.")}</p>
+        <p className="text-muted">{t("Many courses keep their materials on a course website, Ed or Gradescope instead.")}</p>
+        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-4 text-accent hover:underline">{t("Open in Canvas")}</button>
       </div>
     );
   }
 
   /** The overview, right-clicked between the cards. (Hidden cards come back through 添加卡片.) */
   const overviewMenu = (): MenuItem[] => [
-    { label: t("添加卡片…"), onSelect: () => setAdding(true) },
+    { label: t("Add a card…"), onSelect: () => setAdding(true) },
   ];
   /** A card, right-clicked: what's to do with it, and with it as a card. */
   const cardMenu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? things.markRead(e) : things.ways(e),
-    cardPlace.menu(e, { hide: t("隐藏“{name}”", { name: titleOf(e) }), takeAway: t("删除卡片"), danger: true }),
+    cardPlace.menu(e, { hide: t("Hide “{name}”", { name: titleOf(e) }), takeAway: t("Remove card"), danger: true }),
     [pinItem(things, e)],
-    isView(e, "tools") ? [{ label: t("添加链接…"), onSelect: () => setAddingLink(true) }] : [],
+    isView(e, "tools") ? [{ label: t("Add a link…"), onSelect: () => setAddingLink(true) }] : [],
   );
 
-  const markRead = (n: number, of: NewsView) => (n > 0 ? { label: t("标为已读"), onClick: () => onMarkSeen(of) } : undefined);
+  const markRead = (n: number, of: NewsView) => (n > 0 ? { label: t("Mark read"), onClick: () => onMarkSeen(of) } : undefined);
   const more = (name: Parameters<typeof view>[1]) => () => things.open(view(course.id, name));
   const moduleItems = (m: Module, limit = 10) => (
     <>
@@ -282,7 +282,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         ))}
       </ul>
       {m.items.length > limit && (
-        <button onClick={() => things.open({ type: "module", course: course.id, module: m.id })} className="px-2 py-1 text-xs text-muted hover:text-fg">{t("还有 {n} 项 ›", { n: m.items.length - limit })}</button>
+        <button onClick={() => things.open({ type: "module", course: course.id, module: m.id })} className="px-2 py-1 text-xs text-muted hover:text-fg">{tn("1 more ›", "{n} more ›", { n: m.items.length - limit })}</button>
       )}
     </>
   );
@@ -309,16 +309,16 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         case "assignments":
           return {
             more: counts.assignments ? more("assignments") : undefined, action: markRead(overview.new.assignments, "assignments"),
-            body: upcoming.length === 0 ? <Empty>{t("接下来三周没有要交的作业")}</Empty>
+            body: upcoming.length === 0 ? <Empty>{t("Nothing due in the next three weeks")}</Empty>
               : upcoming.map((a) => <AssignmentRow key={a.id} a={a} course={course.id} onClick={() => things.open(docThing(course.id, a))} />),
           };
         case "announcements":
           return {
             more: counts.announcements ? more("announcements") : undefined, action: markRead(overview.new.announcements, "announcements"),
-            body: announcements.length === 0 ? <Empty>{t("还没有公告")}</Empty> : announcements.map((a) => (
+            body: announcements.length === 0 ? <Empty>{t("No announcements yet")}</Empty> : announcements.map((a) => (
               <Row key={a.id} onClick={() => things.open(docThing(course.id, a))} thing={docThing(course.id, a)}>
                 <div className="flex items-center gap-2">
-                  {a.new && <NewDot label={t("新公告")} />}
+                  {a.new && <NewDot label={t("New announcement")} />}
                   <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
                   <SourceTag source={a.source} />
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(a.date, false)}</span>
@@ -330,11 +330,11 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         case "ed":
           return {
             more: more("ed"), action: markRead(overview.new.ed, "ed"),
-            body: ed.length === 0 ? <Empty>{t("Ed 上没有置顶、公告或教师发的内容")}</Empty> : ed.map((p) => (
+            body: ed.length === 0 ? <Empty>{t("Nothing pinned, announced or from staff on Ed")}</Empty> : ed.map((p) => (
               <Row key={p.id} onClick={() => things.openIn(docThing(course.id, p), "ed")} thing={docThing(course.id, p)}>
                 <div className="flex items-center gap-2">
                   {p.new && <NewDot />}
-                  {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+                  {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("Pinned")} />}
                   {p.kind === "announcement" && <EdAnnouncementMark />}
                   <span className={`truncate ${p.new ? "font-medium" : ""}`}>{p.title}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
@@ -356,7 +356,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         case "files":
           return {
             more: more("files"), action: markRead(overview.new.files, "files"),
-            body: new_files.length === 0 ? <Empty>{t("还没有文件")}</Empty> : new_files.map((f) => (
+            body: new_files.length === 0 ? <Empty>{t("No files yet")}</Empty> : new_files.map((f) => (
               <FileRow key={f.file_id} path={f.path} name={f.name} date={f.date} isNew={f.new} updated={f.updated} />
             )),
           };
@@ -368,10 +368,10 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
                 {grades.total && (
                   <div className="px-2 pt-1 pb-2">
                     <TotalLine total={grades.total} />
-                    <p className="mt-0.5 text-xs text-muted">{t("当前总评（只算已评分的作业）")}</p>
+                    <p className="mt-0.5 text-xs text-muted">{t("Current grade (graded work only)")}</p>
                   </div>
                 )}
-                {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">{t("最近评分")}</h3>}
+                {grades.recent.length > 0 && <h3 className="px-2 pt-1 text-[11px] font-medium text-muted">{t("Recently graded")}</h3>}
                 {grades.recent.map((a) => (
                   <Row key={a.id} onClick={() => things.open(docThing(course.id, a))} thing={docThing(course.id, a)}>
                     <div className="flex items-center gap-2">
@@ -405,14 +405,14 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
       case "search":
         return { more: () => things.open(e), body: <SearchCard search={e} /> };
       default: // (a view of no card of its own, a tool, a link...: put here by hand)
-        return { body: <Row onClick={() => things.open(e)} thing={e}><span className="text-muted">{t("打开 ›")}</span></Row> };
+        return { body: <Row onClick={() => things.open(e)} thing={e}><span className="text-muted">{t("Open ›")}</span></Row> };
     }
   };
 
   return (
     <div ref={zone.ref} className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(overviewMenu(), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-5xl px-6 pt-4 pb-6">
-        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("所有卡片都隐藏了。点下面的“添加卡片”加几张。")}</p>}
+        {shown.length === 0 && <p className="py-10 text-center text-sm text-muted">{t("Every card is hidden. Add some with “Add a card” below.")}</p>}
         <div
           ref={setGrid}
           className={`relative rounded-xl ${zone.state === "ready" ? "outline-1 outline-offset-4 outline-dashed outline-accent/60" : ""}`}
@@ -449,7 +449,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         <div className="mt-4 flex justify-center">
           <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-chip hover:text-fg">
             <Plus className="size-3.5" />
-            {t("添加卡片")}
+            {t("Add a card")}
           </button>
         </div>
       </div>
@@ -500,14 +500,14 @@ function Card({ cardKey, style, flash, title, editor, icon, more, action, cardRe
       {flash && <span aria-hidden className="pointer-events-none absolute -inset-px z-10 animate-[fade-out_2s_ease-in_forwards] rounded-[inherit] ring-2 ring-accent" />}
       <header
         {...grab}
-        title={t("拖动标题可以移动卡片，右键可以重命名或隐藏")}
+        title={t("Drag the title to move this card; right-click to rename or hide it")}
         className="flex cursor-grab items-center gap-2 px-4 pt-3 pb-1.5 text-sm font-medium active:cursor-grabbing"
       >
         <span className="text-muted">{icon}</span>
         {editor ?? <span className="truncate">{title}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-3 text-xs font-normal">
           {action && <button onClick={action.onClick} className="text-muted hover:text-fg">{action.label}</button>}
-          {more && <button onClick={more} className="text-muted hover:text-fg">{t("全部 ›")}</button>}
+          {more && <button onClick={more} className="text-muted hover:text-fg">{t("All ›")}</button>}
         </span>
       </header>
       <div className="px-2 pb-2">{children}</div>
@@ -529,7 +529,7 @@ function LinksList({ course, place, onAdd }: {
   const name = (e: Shown) => thingName(e, things.courses);
   const menu = (e: Shown): MenuItem[] => sections(
     things.ways(e),
-    place.menu(e, { hide: t("隐藏“{name}”", { name: name(e) }), takeAway: t("删除链接"), danger: true }),
+    place.menu(e, { hide: t("Hide “{name}”", { name: name(e) }), takeAway: t("Remove link"), danger: true }),
     [pinItem(things, e)],
   );
   // Dragged in from elsewhere: it goes where the link it's over (or nearest) was when it came
@@ -581,7 +581,7 @@ function LinksList({ course, place, onAdd }: {
               <span className="flex items-center gap-2">
                 <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
                 {name(shown[i])}
-                {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+                {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("Opening…")}</span>}
               </span>
             </Row>
           )}
@@ -589,7 +589,7 @@ function LinksList({ course, place, onAdd }: {
       ))}
       <div data-flip="add">
         <Row onClick={onAdd}>
-          <span className="flex items-center gap-2 text-muted"><Plus className="size-4" />{t("添加链接")}</span>
+          <span className="flex items-center gap-2 text-muted"><Plus className="size-4" />{t("Add a link")}</span>
         </Row>
       </div>
     </div>
@@ -599,8 +599,8 @@ function LinksList({ course, place, onAdd }: {
 /** 工具与链接 right-clicked where there's no link: add one, show the hidden ones again. */
 function linksMenu(place: Place, onAdd: () => void, courses: Course[]): MenuItem[] {
   return sections(
-    [{ label: t("添加链接…"), onSelect: onAdd }],
-    place.entries.filter((x) => x.hidden).map((x) => ({ label: t("显示“{name}”", { name: thingName(x, courses) }), onSelect: () => place.show(x) })),
+    [{ label: t("Add a link…"), onSelect: onAdd }],
+    place.entries.filter((x) => x.hidden).map((x) => ({ label: t("Show “{name}”", { name: thingName(x, courses) }), onSelect: () => place.show(x) })),
   );
 }
 
@@ -641,12 +641,12 @@ function FileRow({ path, name, date, isNew, updated }: { path: string; name: str
       <div className="flex items-center gap-2">
         <FileIcon name={name} />
         <span className={`truncate ${isNew ? "font-medium" : ""}`}>{name}</span>
-        {isNew && <NewDot label={updated ? t("有新版本") : t("新文件")} />}
-        {updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("已更新")}</span>}
+        {isNew && <NewDot label={updated ? t("New version") : t("New file")} />}
+        {updated && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("Updated")}</span>}
         <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(date, false)}</span>
         <button
-          title={t("在文件夹中显示")}
-          aria-label={t("在文件夹中显示")}
+          title={t("Show in folder")}
+          aria-label={t("Show in folder")}
           onClick={(e) => (e.stopPropagation(), things.showInFolder(path))}
           className="shrink-0 rounded p-0.5 text-muted hover:text-fg"
         >
@@ -663,10 +663,10 @@ function FileRow({ path, name, date, isNew, updated }: { path: string; name: str
 function FolderCard({ path }: { path: string }) {
   const things = useThings();
   const { value: entries, error } = useLoaded(`tree:${path}`, () => api.tree(path));
-  if (error) return <Empty>{t("找不到这个文件夹了")}</Empty>;
+  if (error) return <Empty>{t("This folder is gone")}</Empty>;
   if (!entries) return <Loading className={LOADING} />;
   const live = entries.filter((e) => !e.deleted);
-  if (!live.length) return <Empty>{t("这个文件夹是空的")}</Empty>;
+  if (!live.length) return <Empty>{t("This folder is empty")}</Empty>;
   const sorted = [...live].sort((a, b) => (a.type === b.type ? (b.mtime ?? 0) - (a.mtime ?? 0) : a.type === "dir" ? 1 : -1));
   return (
     <>
@@ -684,7 +684,7 @@ function FolderCard({ path }: { path: string }) {
         );
       })}
       {sorted.length > 12 && (
-        <button onClick={() => things.open({ type: "folder", path })} className="px-2 py-1 text-xs text-muted hover:text-fg">{t("还有 {n} 项 ›", { n: sorted.length - 12 })}</button>
+        <button onClick={() => things.open({ type: "folder", path })} className="px-2 py-1 text-xs text-muted hover:text-fg">{tn("1 more ›", "{n} more ›", { n: sorted.length - 12 })}</button>
       )}
     </>
   );
@@ -700,7 +700,7 @@ function FileCard({ file }: { file: ThingOf<"file"> }) {
       <Thumb path={file.path} name={name} mtime={null} size={56} iconClass="size-10" />
       <span className="min-w-0">
         <span className="block truncate text-sm">{name}</span>
-        <span className="text-xs text-muted">{t("点一下打开")}</span>
+        <span className="text-xs text-muted">{t("Click to open")}</span>
       </span>
     </button>
   );
@@ -740,12 +740,12 @@ export function NoteEditor({ course, id, page = false }: { course: number; id: s
       <textarea
         value={text}
         onChange={(e) => change(e.target.value)}
-        placeholder={t("写点什么：考试范围、办公时间、要问老师的问题…")}
+        placeholder={t("Write something: what's on the exam, office hours, questions to ask…")}
         rows={page ? undefined : Math.min(14, Math.max(4, text.split("\n").length + 1))}
         className={`selectable w-full rounded-md border border-transparent bg-chip/50 px-2.5 py-2 text-sm leading-relaxed outline-none focus:border-line ${page ? "mx-auto max-w-3xl flex-1 resize-none" : "resize-y"}`}
       />
       <p className={`text-right text-[11px] text-muted ${page ? "mx-auto w-full max-w-3xl pt-1" : ""}`}>
-        {state === "saving" ? t("正在保存…") : state === "failed" ? t("没保存上，稍后再试") : t("已保存")}
+        {state === "saving" ? t("Saving…") : state === "failed" ? t("Couldn't save; try again in a moment") : t("Saved")}
       </p>
     </div>
   );
@@ -755,11 +755,11 @@ export function NoteEditor({ course, id, page = false }: { course: number; id: s
  * instructors keep the schedule. */
 function DocCard({ course, kind, id }: { course: Course; kind: DocKind; id: string }) {
   const { value: item, error } = useLoaded(`item:${course.id}:${kind}:${id}`, () => api.item(course.id, kind, id));
-  if (error) return <Empty>{t("找不到这个页面了（可能被删了，或者还没同步）")}</Empty>;
+  if (error) return <Empty>{t("This page isn't there (it may have been deleted, or isn't synced yet)")}</Empty>;
   if (!item) return <Loading className={LOADING} />;
   return (
     <div className="max-h-96 overflow-y-auto px-2 pb-1" data-no-drag>
-      {item.html.trim() ? <RichText html={item.html} files={item.files} /> : <Empty>{t("没有正文。")}</Empty>}
+      {item.html.trim() ? <RichText html={item.html} files={item.files} /> : <Empty>{t("Nothing written here.")}</Empty>}
     </div>
   );
 }
@@ -769,7 +769,7 @@ function ModuleCard({ course, id, render }: { course: number; id: number; render
   const modules = useLoaded(`modules:${course}`, () => api.modules(course).catch((): Module[] => [])).value;
   if (modules === undefined) return <Loading className={LOADING} />;
   const module = modules.find((m) => m.id === id);
-  if (!module) return <Empty>{t("找不到这个模块了")}</Empty>;
+  if (!module) return <Empty>{t("This module isn't there any more")}</Empty>;
   return <>{render(module, 12)}</>;
 }
 
@@ -780,7 +780,7 @@ function SearchCard({ search }: { search: ThingOf<"search"> }) {
   const hits = useLoaded(`search:${JSON.stringify([query, courses, kinds, content])}`,
     () => api.search(query, { courses, kinds, namesOnly: !content, limit: 12 }).catch((): Hit[] => [])).value;
   if (!hits) return <Loading className={LOADING} />;
-  if (!hits.length) return <Empty>{t("没有结果")}</Empty>;
+  if (!hits.length) return <Empty>{t("No results")}</Empty>;
   return (
     <>
       {hits.map((h) => {
@@ -808,23 +808,23 @@ function LinkDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (link: { t
   const input = "w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent";
   return (
     <Dialog
-      title={t("添加链接")}
+      title={t("Add a link")}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{t("取消")}</Button>
-          <Button primary disabled={!ok} onClick={add}>{t("添加")}</Button>
+          <Button onClick={onClose}>{t("Cancel")}</Button>
+          <Button primary disabled={!ok} onClick={add}>{t("Add")}</Button>
         </>
       }
     >
       <div className="space-y-3 pb-2" onKeyDown={(e) => e.key === "Enter" && add()}>
         <label className="block">
-          <span className="mb-1 block text-xs text-muted">{t("网址")}</span>
+          <span className="mb-1 block text-xs text-muted">{t("Website URL")}</span>
           <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" autoCorrect="off" autoCapitalize="off" spellCheck={false} className={input} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-muted">{t("名称（可以不填）")}</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("例如：课程网站")} className={input} />
+          <span className="mb-1 block text-xs text-muted">{t("Name (optional)")}</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("e.g. Course website")} className={input} />
         </label>
       </div>
     </Dialog>

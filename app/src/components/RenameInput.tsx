@@ -29,7 +29,7 @@ export function RenameInput({ initial, onSubmit, onCancel, hint, className = "" 
     <input
       ref={input}
       defaultValue={initial}
-      aria-label={t("新名称")}
+      aria-label={t("New name")}
       title={hint}
       onKeyDown={(e) => {
         e.stopPropagation(); // the list's own keys (arrows, Enter, Space) don't apply while typing

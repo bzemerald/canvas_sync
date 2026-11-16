@@ -32,7 +32,7 @@ export function Launcher() {
   const input = useRef<HTMLInputElement>(null);
   const courses = useLoaded("courses", api.courses, { again: [shown] }).value ?? NO_COURSES; // (their icons)
   const { catalog, vocab, usage, names } = useCatalog([shown], courses);
-  const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
+  const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("Open the main window"), names: [t("Open the main window"), t("Main window")] }]), [names]);
   const { reading, results, lately, due, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions);
   // Searching, said only when it takes a while (it mostly answers at once: a dot would only flash).
   const [slow, setSlow] = useState(false);
@@ -179,8 +179,8 @@ export function Launcher() {
                 onValueChange={setQuery}
                 onMouseDown={dragPastText}
                 placeholder={tips.length
-                  ? t("搜索课程内容… 例如 {example}", { example: tips[ahead!.pick].query })
-                  : t("搜索课程内容… 例如 221 mt、cs70 hw3 sol、期中")}
+                  ? t("Search your courses… e.g. {example}", { example: tips[ahead!.pick].query })
+                  : t("Search your courses… e.g. 221 mt, cs70 hw3 sol, final")}
                 className="h-14 w-full bg-transparent text-lg text-fg outline-none placeholder:text-muted"
               />
               <CompletionGhost query={query} completion={completed} className="text-lg" />
@@ -193,18 +193,18 @@ export function Launcher() {
         <Command.List ref={list} onMouseDown={onScrollbar} className="min-h-0 flex-1 overflow-y-auto p-2">
           {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{friendly(error)}</p>}
           {!error && query.trim() && !loading && nothing && (
-            <Command.Empty className="px-3 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>
+            <Command.Empty className="px-3 py-10 text-center text-sm text-muted">{t("No results")}</Command.Empty>
           )}
           {!error && !query.trim() && !lately.length && !due.length && <Tips examples={tips} onQuery={(q) => { setQuery(q); input.current?.focus(); }} />}
           <FoundList results={results} recent={lately} due={due} courses={courses} names={names} onOpen={(f) => void open(f, "open")} />
         </Command.List>
 
         <footer className="flex gap-4 border-t border-line px-4 py-2 text-xs text-muted">
-          <span><Key>↵</Key> {t("打开")}</span>
-          <span><Key>{mod}↵</Key> {t("在文件夹中显示")}</span>
-          <span><Key>{mod}⇧↵</Key> {t("在 Canvas 中打开")}</span>
-          <span className="ml-auto"><Key>{mod}O</Key> {t("主窗口")}</span>
-          <span><Key>esc</Key> {t("关闭")}</span>
+          <span><Key>↵</Key> {t("Open")}</span>
+          <span><Key>{mod}↵</Key> {t("Show in folder")}</span>
+          <span><Key>{mod}⇧↵</Key> {t("Open in Canvas")}</span>
+          <span className="ml-auto"><Key>{mod}O</Key> {t("Main window")}</span>
+          <span><Key>esc</Key> {t("Close")}</span>
         </footer>
       </Command>
     </div>
@@ -239,19 +239,19 @@ function Key({ children }: { children: React.ReactNode }) {
 
 // Until your courses' own are known (examples.ts), or if they give none.
 const SOME: Example[] = [
-  ["221 mt", t("MATH 221 里和 midterm 有关的一切")],
-  ["cs70 hw3 sol", t("CS 70 第 3 次作业的答案")],
-  ["53 ps 3", t("MATH 53 的第 3 次作业，叫 HW 3 还是 Problem Set 3 都行")],
-  [t("cs70 本周截止"), t("CS 70 这周要交的作业")],
-  [t("未交"), t("所有还没交的作业")],
-  [t("期中"), t("所有课程的期中相关内容")],
+  ["221 mt", t("Everything about the midterm in MATH 221")],
+  ["cs70 hw3 sol", t("Solutions to CS 70 homework 3")],
+  ["53 ps 3", t("MATH 53's third homework, whether it's called HW 3 or Problem Set 3")],
+  [t("cs70 due this week"), t("What's due in CS 70 this week")],
+  [t("todo"), t("Every assignment you haven't handed in")],
+  [t("midterm"), t("Everything about midterms, in every course")],
 ].map(([query, what]) => ({ query, what, shows: "number", course: 0 }));
 
 /** Ways to search, each an example from your courses: clicking one searches it. */
 function Tips({ examples, onQuery }: { examples: Example[]; onQuery: (q: string) => void }) {
   return (
     <div className="px-3 py-4 text-sm text-muted">
-      <p className="mb-3">{t("课程名、类型、时间或提交状态，加上关键词；缩写和拼错也行：")}</p>
+      <p className="mb-3">{t("A course, a kind, a time or a status, plus keywords; abbreviations and typos are fine:")}</p>
       <ul className="space-y-1.5">
         {(examples.length ? examples : SOME).map(({ query, what }) => (
           <li key={query} className="flex gap-3">

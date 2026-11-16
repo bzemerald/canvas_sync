@@ -10,18 +10,18 @@ import type { KindId } from "./query";
 import type { Thing, ViewName } from "./things";
 
 export const KINDS: Record<KindId, { icon: LucideIcon; one: string; all: string }> = {
-  course: { icon: GraduationCap, one: t("课程"), all: t("课程") },
-  announcement: { icon: Megaphone, one: t("公告"), all: t("公告") },
-  assignment: { icon: ClipboardList, one: t("作业"), all: t("作业") },
-  page: { icon: BookOpen, one: t("页面@@card"), all: t("页面") },
-  post: { icon: MessagesSquare, one: t("帖子"), all: t("帖子") },
-  module: { icon: ListChecks, one: t("模块@@card"), all: t("模块") },
-  tool: { icon: AppWindow, one: t("外部工具"), all: t("外部工具") },
-  link: { icon: LinkIcon, one: t("链接"), all: t("链接") },
-  note: { icon: NotebookPen, one: t("备忘录"), all: t("备忘录") },
-  search: { icon: Sparkles, one: t("智能文件夹"), all: t("智能文件夹") },
-  file: { icon: FileText, one: t("文件@@card"), all: t("文件") },
-  folder: { icon: Folder, one: t("文件夹"), all: t("文件夹") },
+  course: { icon: GraduationCap, one: t("Course"), all: t("Course") },
+  announcement: { icon: Megaphone, one: t("Announcements"), all: t("Announcements") },
+  assignment: { icon: ClipboardList, one: t("Assignments"), all: t("Assignments") },
+  page: { icon: BookOpen, one: t("Page"), all: t("Pages") },
+  post: { icon: MessagesSquare, one: t("Post"), all: t("Post") },
+  module: { icon: ListChecks, one: t("Module"), all: t("Modules") },
+  tool: { icon: AppWindow, one: t("External tool"), all: t("External tool") },
+  link: { icon: LinkIcon, one: t("Links"), all: t("Links") },
+  note: { icon: NotebookPen, one: t("Notes"), all: t("Notes") },
+  search: { icon: Sparkles, one: t("Smart folder"), all: t("Smart folder") },
+  file: { icon: FileText, one: t("File"), all: t("Files") },
+  folder: { icon: Folder, one: t("Folder"), all: t("Folder") },
 };
 
 /** What kind of thing it is (null: one of a course's views). */
@@ -30,15 +30,15 @@ export const kindOf = (x: Thing): KindId | null => (x.type === "doc" ? x.kind : 
 /** A course's views: the icon, the name as a tab, as a card on its overview, as a row (in the
  * sidebar, in 工具与链接): a card or a row without its own is called as the tab. */
 export const VIEWS: Record<ViewName, { icon: LucideIcon; tab: string; card?: string; row?: string }> = {
-  overview: { icon: LayoutDashboard, tab: t("概览") },
-  modules: { icon: ListChecks, tab: t("模块"), card: t("当前模块") },
-  announcements: { icon: Megaphone, tab: t("公告"), card: t("最新公告") },
+  overview: { icon: LayoutDashboard, tab: t("Overview") },
+  modules: { icon: ListChecks, tab: t("Modules"), card: t("This week's module") },
+  announcements: { icon: Megaphone, tab: t("Announcements"), card: t("Latest announcements") },
   ed: { icon: MessagesSquare, tab: "Ed", card: "Ed" },
-  assignments: { icon: ClipboardList, tab: t("作业"), card: t("近期截止") },
-  grades: { icon: Award, tab: t("成绩") },
-  files: { icon: FolderOpen, tab: t("文件"), card: t("最近新增的文件") },
-  syllabus: { icon: ScrollText, tab: t("大纲"), card: t("课程大纲"), row: t("课程大纲") },
-  pages: { icon: BookOpen, tab: t("页面") },
-  tools: { icon: AppWindow, tab: t("工具与链接") },
-  canvas: { icon: ExternalLink, tab: t("在 Canvas 中打开") },
+  assignments: { icon: ClipboardList, tab: t("Assignments"), card: t("Coming up") },
+  grades: { icon: Award, tab: t("Grades") },
+  files: { icon: FolderOpen, tab: t("Files"), card: t("Recently added files") },
+  syllabus: { icon: ScrollText, tab: t("Syllabus"), card: t("Syllabus@@full"), row: t("Syllabus@@full") },
+  pages: { icon: BookOpen, tab: t("Pages") },
+  tools: { icon: AppWindow, tab: t("Tools and links") },
+  canvas: { icon: ExternalLink, tab: t("Open in Canvas") },
 };

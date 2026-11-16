@@ -16,7 +16,7 @@ export function LanguagePicker() {
   return (
     <select value={value ?? "system"} disabled={value === null} onChange={(e) => void choose(e.target.value as LangPref)}
       className="rounded-md border border-line bg-bg px-2 py-1 text-sm">
-      <option value="system">{t("跟随系统")}</option>
+      <option value="system">{t("Same as the system")}</option>
       <option value="zh">简体中文</option> {/* i18n-ignore: each language in its own words */}
       <option value="en">English</option>
     </select>

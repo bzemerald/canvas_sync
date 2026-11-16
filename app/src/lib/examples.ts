@@ -50,21 +50,21 @@ function candidates(catalog: Catalog, current: number[], now: number, lang: "zh"
       const said = `${code} ${/^[a-z]{1,3}$/.test(sw) ? `${sw}${s.n}` : `${sw} ${s.n}`}`; // "hw8", "week 3"
       const own = p.entry.name ?? p.entry.title;
       if (p.entry.type === "file" && ANSWER.test(own.replace(/[_.-]/g, " "))) {
-        add({ query: `${said} sol`, what: t("{course} 的答案：{name}", { course: name(c), name: own }), shows: "answer", near: near(p), target: p.key });
+        add({ query: `${said} sol`, what: t("Answers in {course}: {name}", { course: name(c), name: own }), shows: "answer", near: near(p), target: p.key });
       } else {
-        add({ query: said, what: t("{course} 的 {name}", { course: name(c), name: own }), shows: "number", near: near(p), target: p.key });
+        add({ query: said, what: t("{course}: {name}", { course: name(c), name: own }), shows: "number", near: near(p), target: p.key });
       }
     }
     const docs = (kind: string) => mine.filter((p) => p.entry.type === "doc" && p.entry.kind === kind);
     const anns = docs("announcement");
-    if (anns.length) add({ query: `${code} ${w.announcements}`, what: t("{course} 的公告", { course: name(c) }), shows: "kind", near: Math.min(...anns.map(near)) });
+    if (anns.length) add({ query: `${code} ${w.announcements}`, what: t("{course}'s announcements", { course: name(c) }), shows: "kind", near: Math.min(...anns.map(near)) });
     const hws = docs("assignment");
     const soon = hws.filter((p) => p.entry.due && Date.parse(p.entry.due) > now && Date.parse(p.entry.due) < now + 7 * DAY);
-    if (soon.length) add({ query: `${code} ${w.due}`, what: t("{course} 这周要交的作业", { course: name(c) }), shows: "due", near: Math.min(...soon.map(near)) });
+    if (soon.length) add({ query: `${code} ${w.due}`, what: t("{course}'s assignments due this week", { course: name(c) }), shows: "due", near: Math.min(...soon.map(near)) });
     const todo = hws.filter((p) => p.entry.status === "unsubmitted" && p.entry.due && Date.parse(p.entry.due) > now);
-    if (todo.length) add({ query: `${code} ${w.todo}`, what: t("{course} 还没交的作业", { course: name(c) }), shows: "status", near: Math.min(...todo.map(near)) });
+    if (todo.length) add({ query: `${code} ${w.todo}`, what: t("{course}'s assignments not handed in", { course: name(c) }), shows: "status", near: Math.min(...todo.map(near)) });
     const ed = mine.filter((p) => p.entry.source === "ed");
-    if (ed.length) add({ query: `${code} ed`, what: t("{course} 在 Ed 上的帖子和公告", { course: name(c) }), shows: "ed", near: Math.min(...ed.map(near)) });
+    if (ed.length) add({ query: `${code} ed`, what: t("{course}'s posts and announcements on Ed", { course: name(c) }), shows: "ed", near: Math.min(...ed.map(near)) });
   }
   return out.sort((a, b) => a.near - b.near);
 }

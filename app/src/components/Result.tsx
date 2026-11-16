@@ -14,7 +14,7 @@ export const KIND: Record<Kind, { icon: LucideIcon; label: string }> = {
   assignment: { icon: KINDS.assignment.icon, label: KINDS.assignment.all },
   announcement: { icon: KINDS.announcement.icon, label: KINDS.announcement.all },
   syllabus: { icon: VIEWS.syllabus.icon, label: VIEWS.syllabus.tab },
-  post: { icon: KINDS.post.icon, label: t("Ed 帖子") },
+  post: { icon: KINDS.post.icon, label: t("Ed post") },
 };
 
 export { fileManager, isMac } from "../lib/keys";
@@ -47,7 +47,7 @@ export function ResultBody({ hit, showCourse = true }: { hit: Hit; showCourse?: 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate font-medium text-fg">{hit.title}</span>
-          {!hit.path && hit.kind === "file" && <span className="shrink-0 text-xs text-muted">{t("(未下载)")}</span>}
+          {!hit.path && hit.kind === "file" && <span className="shrink-0 text-xs text-muted">{t("(not downloaded)")}</span>}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
           {showCourse && <span className="shrink-0 rounded bg-chip px-1.5 py-px text-fg-soft">{hit.course}</span>}
@@ -90,7 +90,7 @@ export function firstContentMatch(hits: Hit[]): number {
 export function ContentDivider({ className = "" }: { className?: string }) {
   return (
     <div role="separator" className={`flex items-center gap-2 px-2 pt-3 pb-1 text-xs text-muted ${className}`}>
-      {t("正文中提到")}
+      {t("Mentioned in the text")}
       <span className="h-px flex-1 bg-line" />
     </div>
   );

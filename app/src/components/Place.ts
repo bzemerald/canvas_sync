@@ -24,7 +24,7 @@ export function usePlace({ entries, shown = entries, onArrange, onSay, name, tak
   /** What was put there, gone again (撤销 brings the place back as it was). */
   const takeAway = (e: Shown) => {
     onArrange(without(entries, e));
-    onSay(taken(name(e), e), { label: t("撤销"), run: () => onArrange(entries) });
+    onSay(taken(name(e), e), { label: t("Undo"), run: () => onArrange(entries) });
   };
   return {
     entries,
@@ -48,8 +48,8 @@ export function usePlace({ entries, shown = entries, onArrange, onSay, name, tak
     /** The place's part of an item's menu: rename it, its own name back, and hide it (the place's
      * own; `last`: the only one showing, which stays) or take it away (what was put there). */
     menu: (e: Shown, say: { hide: string; takeAway: string; danger?: boolean; last?: boolean }): MenuItem[] => [
-      { label: t("重命名"), onSelect: () => setRenaming(e) },
-      ...(e.title ? [{ label: t("恢复原名"), onSelect: () => change(e, { title: "" }) }] : []),
+      { label: t("Rename"), onSelect: () => setRenaming(e) },
+      ...(e.title ? [{ label: t("Restore original name"), onSelect: () => change(e, { title: "" }) }] : []),
       e.own
         ? { label: say.hide, disabled: say.last, onSelect: () => change(e, { hidden: true }) }
         : { label: say.takeAway, danger: say.danger, onSelect: () => takeAway(e) },

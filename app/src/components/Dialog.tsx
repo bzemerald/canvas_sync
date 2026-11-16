@@ -37,7 +37,7 @@ export function Dialog({ title, onClose, children, footer, width = "max-w-lg" }:
       >
         <div className="flex items-start gap-2 px-5 pt-4 pb-2">
           <h2 className="min-w-0 flex-1 text-base font-semibold">{title}</h2>
-          <button onClick={onClose} title={t("关闭")} aria-label={t("关闭")}
+          <button onClick={onClose} title={t("Close")} aria-label={t("Close")}
             className="-mr-2 shrink-0 rounded p-1 text-muted hover:bg-chip hover:text-fg">
             <X className="size-4" />
           </button>

@@ -5,7 +5,7 @@ import type { ThingOf } from "../lib/things";
 import { CoursePicker } from "./CoursePicker";
 import { Button, Dialog } from "./Dialog";
 import { KIND } from "./Result";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 
 /** A smart folder: a search, pinned, with a name. */
 export type SmartFolder = ThingOf<"search"> & { title: string };
@@ -48,37 +48,37 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSave }:
   const nothing = !folder.query && !folder.courses.length && !folder.kinds.length;
   return (
     <Dialog
-      title={initial ? t("编辑智能文件夹") : t("新建智能文件夹")}
+      title={initial ? t("Edit smart folder") : t("New smart folder")}
       onClose={onClose}
       width="max-w-xl"
       footer={
         <>
-          <span className="mr-auto self-center text-xs text-muted">{count === null ? "" : t("现在匹配 {n} 项", { n: count >= 500 ? "500+" : count })}</span>
-          <Button onClick={onClose}>{t("取消")}</Button>
-          <Button primary disabled={!folder.title || nothing} onClick={() => onSave(folder)}>{t("保存")}</Button>
+          <span className="mr-auto self-center text-xs text-muted">{count === null ? "" : tn("1 match right now", "{n} matches right now", { n: count >= 500 ? "500+" : count })}</span>
+          <Button onClick={onClose}>{t("Cancel")}</Button>
+          <Button primary disabled={!folder.title || nothing} onClick={() => onSave(folder)}>{t("Save")}</Button>
         </>
       }
     >
       <div className="space-y-4">
         <label className="block">
-          <span className="mb-1 block text-xs text-muted">{t("名称")}</span>
+          <span className="mb-1 block text-xs text-muted">{t("Name")}</span>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
             className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-muted">{t("搜索内容")}</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：slide this week, hw sol, due today")} autoCorrect="off" autoCapitalize="off" spellCheck={false}
+          <span className="mb-1 block text-xs text-muted">{t("Search for...")}</span>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("e.g. slide this week...")} autoCorrect="off" autoCapitalize="off" spellCheck={false}
             className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
         </label>
         <label className="-mt-2 flex items-start gap-2 text-xs text-fg-soft">
             <input type="checkbox" className="mt-0.5" checked={content} onChange={(e) => setContent(e.target.checked)} />
             <span>
-              {t("也匹配正文")}
-              <span className="block text-muted">{t("不勾选时只搜标题。")}</span>
+              {t("Search for main text")}
+              <span className="block text-muted">{t("Only search titles if unchecked.")}</span>
             </span>
         </label>
         <fieldset>
-          <legend className="mb-1 text-xs text-muted">{t("筛选")}</legend>
+          <legend className="mb-1 text-xs text-muted">{t("Filter by")}</legend>
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(KIND) as Kind[]).map((k) => (
               <button key={k} onClick={() => setKinds(toggle(kinds, k))}
@@ -89,7 +89,7 @@ export function SmartFolderDialog({ initial, preset, courses, onClose, onSave }:
           </div>
         </fieldset>
         <div>
-          <span className="mb-1 block text-xs text-muted">{t("课程（不选 = 全部）")}</span>
+          <span className="mb-1 block text-xs text-muted">{t("Courses (leave empty to search all courses)")}</span>
           <CoursePicker courses={courses} picked={[...picked]} onChange={(ids) => setPicked(new Set(ids))} />
         </div>
       </div>

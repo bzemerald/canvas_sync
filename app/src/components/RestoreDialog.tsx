@@ -7,10 +7,10 @@ import { FileIcon } from "./FileIcon";
 import { Pill } from "./Status";
 import { pathTree, type TreeNode } from "../lib/tree";
 import { trashName } from "../lib/keys";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 import { titlesAlong } from "../lib/things";
 
-const WHY: Record<string, string> = { modified: t("改回原版"), missing: t("重新放回"), ignored: t("重新放回") };
+const WHY: Record<string, string> = { modified: t("Restore@@file"), missing: t("Put back"), ignored: t("Put back") };
 const edited = (f: FileStatus) => f.states.includes("modified");
 const OPEN_ALL = 30; // up to this many files, the folders start open; more, they start folded
 
@@ -42,27 +42,27 @@ export function RestoreDialog({ scope, label, onClose, onDone }: {
   const nEdited = files?.filter(edited).length ?? 0;
   return (
     <Dialog
-      title={t("恢复 {label} 的 Canvas 原版", { label })}
+      title={t("Restore Canvas originals in {label}", { label })}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{files?.length ? t("取消") : t("关闭")}</Button>
+          <Button onClick={onClose}>{files?.length ? t("Cancel") : t("Close")}</Button>
           {!!files?.length && (
             <Button primary onClick={go} disabled={busy}>
-              {t("恢复 {n} 个文件", { n: files.length })}
+              {tn("Restore 1 file", "Restore {n} files", { n: files.length })}
             </Button>
           )}
         </>
       }
     >
       {error && <p className="text-danger">{error}</p>}
-      {!files && !error && <p className="text-muted">{t("正在检查…")}</p>}
-      {files?.length === 0 && <p className="text-fg-soft">{t("这里没有你修改或删除过的 Canvas 文件，不需要恢复。")}</p>}
+      {!files && !error && <p className="text-muted">{t("Checking…")}</p>}
+      {files?.length === 0 && <p className="text-fg-soft">{t("Nothing from Canvas here has been changed or deleted; there's nothing to restore.")}</p>}
       {!!files?.length && (
         <>
           <p className="mb-3 text-fg-soft">
-            {t("这些文件会变回上次从 Canvas 下载的版本。")}
-            {nEdited > 0 && <>{t("你修改过的 {n} 个文件会先移到{trash}，需要时可以从那里找回。", { n: nEdited, trash: trashName })}</>}
+            {t("These files go back to the version last downloaded from Canvas.")}
+            {nEdited > 0 && <>{tn("The 1 file you edited goes to the {trash} first, in case you want it back.", "The {n} files you edited go to the {trash} first, in case you want them back.", { n: nEdited, trash: trashName })}</>}
           </p>
           <FileTree files={files} />
         </>
@@ -102,8 +102,8 @@ function FileTree({ files }: { files: FileStatus[] }) {
               {isOpen ? <ChevronDown className="size-3.5 shrink-0 text-muted" /> : <ChevronRight className="size-3.5 shrink-0 text-muted" />}
               <FileIcon name={n.name} dir />
               <span className="min-w-0 flex-1 truncate" title={n.path}>{titlesAlong(n.path).slice(-n.name.split("/").length).join(" / ")}</span>
-              {gone > 0 && <Pill icon={<Trash2 />} n={gone} label={t("其中 {n} 个会重新放回", { n: gone })} className="bg-danger text-on-accent" />}
-              {changed > 0 && <Pill icon={<Pencil />} n={changed} label={t("其中 {n} 个会改回原版", { n: changed })} className="bg-warn text-on-accent" />}
+              {gone > 0 && <Pill icon={<Trash2 />} n={gone} label={tn("1 of them is put back", "{n} of them are put back", { n: gone })} className="bg-danger text-on-accent" />}
+              {changed > 0 && <Pill icon={<Pencil />} n={changed} label={tn("1 of them is restored", "{n} of them are restored", { n: changed })} className="bg-warn text-on-accent" />}
             </button>
           </li>,
         );

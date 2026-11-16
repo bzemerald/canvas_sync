@@ -18,22 +18,22 @@ type Look = Kind | "assignments" | "announcements" | "modules" | "files" | "grad
 
 const icon = (Icon: typeof Folder) => <Icon className="size-4" />;
 const KINDS: { kind: Kind; icon: React.ReactNode; label: string; hint: string }[] = [
-  { kind: "note", icon: icon(NotebookPen), label: t("备忘录"), hint: t("随手记：考试范围、办公时间、要问老师的问题") },
-  { kind: "folder", icon: icon(Folder), label: t("文件夹"), hint: t("某个文件夹里的文件，比如讲义或作业") },
-  { kind: "file", icon: icon(FileText), label: t("文件@@card"), hint: t("一个常看的文件，比如课程表、公式表") },
-  { kind: "page", icon: icon(BookOpen), label: t("页面@@card"), hint: t("Canvas 上的某个页面，比如老师更新进度的那页") },
-  { kind: "module", icon: icon(ListChecks), label: t("模块@@card"), hint: t("固定显示某个模块，比如考试复习") },
-  { kind: "search", icon: icon(SearchIcon), label: t("搜索"), hint: t("这门课里名字符合条件的东西，比如“mt”") },
+  { kind: "note", icon: icon(NotebookPen), label: t("Notes"), hint: t("Jot things down: what's on the exam, office hours, questions to ask") },
+  { kind: "folder", icon: icon(Folder), label: t("Folder"), hint: t("The files in a folder, like the lecture notes or homework") },
+  { kind: "file", icon: icon(FileText), label: t("File"), hint: t("A file you keep opening, like the schedule or a formula sheet") },
+  { kind: "page", icon: icon(BookOpen), label: t("Page"), hint: t("A Canvas page, like the one where the instructor posts the schedule") },
+  { kind: "module", icon: icon(ListChecks), label: t("Module"), hint: t("One module, always shown, like exam review") },
+  { kind: "search", icon: icon(SearchIcon), label: t("Search"), hint: t("Everything in the course whose name matches, like “mt”") },
 ];
 /** The course's own cards, when hidden: what each shows. */
 const OWN: Partial<Record<ViewName, { icon: React.ReactNode; hint: string }>> = {
-  assignments: { icon: icon(ClipboardList), hint: t("接下来三周要交的作业") },
-  announcements: { icon: icon(Megaphone), hint: t("最近的几条公告") },
-  modules: { icon: icon(ListChecks), hint: t("现在在学的模块和里面的东西") },
-  files: { icon: icon(FolderOpen), hint: t("最近从 Canvas 同步下来的文件") },
-  grades: { icon: icon(Award), hint: t("当前总评和最近的评分") },
-  tools: { icon: icon(AppWindow), hint: t("这门课的外部工具，和你加的链接") },
-  syllabus: { icon: icon(ScrollText), hint: t("大纲的正文") },
+  assignments: { icon: icon(ClipboardList), hint: t("What's due in the next three weeks") },
+  announcements: { icon: icon(Megaphone), hint: t("The latest announcements") },
+  modules: { icon: icon(ListChecks), hint: t("The modules you're on now, and what's in them") },
+  files: { icon: icon(FolderOpen), hint: t("Files newly synced from Canvas") },
+  grades: { icon: icon(Award), hint: t("Your current total, and recent grades") },
+  tools: { icon: icon(AppWindow), hint: t("The course's external tools, and links you added") },
+  syllabus: { icon: icon(ScrollText), hint: t("The syllabus, written out") },
 };
 
 /** One of the course's own cards that's hidden now (`available`: the course has anything for it). */
@@ -67,7 +67,7 @@ export function AddCardDialog({ course, hidden, onClose, onAdd }: {
   const [content, setContent] = useState(false);
   const back = kind && (
     <button onClick={() => setKind(null)} className="mr-auto flex items-center gap-1 self-center text-xs text-muted hover:text-fg">
-      <ChevronLeft className="size-3.5" />{t("换一种")}
+      <ChevronLeft className="size-3.5" />{t("Pick another kind")}
     </button>
   );
   const input = "w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent";
@@ -76,32 +76,32 @@ export function AddCardDialog({ course, hidden, onClose, onAdd }: {
     const o = OWN[h.entry.view];
     return o ? [{
       key: `view:${h.entry.view}`, icon: o.icon, label: h.title, hint: o.hint, look: h.entry.view as Look,
-      disabled: h.available ? undefined : t("这门课没有"), pick: () => onAdd(h.entry),
+      disabled: h.available ? undefined : t("Not in this course"), pick: () => onAdd(h.entry),
     }] : [];
   });
   const fresh: Choice[] = KINDS.map((k) => ({ key: k.kind, icon: k.icon, label: k.label, hint: k.hint, look: k.kind, pick: () => setKind(k.kind) }));
 
   return (
     <Dialog
-      title={kind ? KINDS.find((k) => k.kind === kind)!.label : t("添加卡片")}
+      title={kind ? KINDS.find((k) => k.kind === kind)!.label : t("Add a card")}
       onClose={onClose}
       width={kind ? "max-w-lg" : "max-w-2xl"}
       footer={kind && (
         <>
           {back}
-          <Button onClick={onClose}>{t("取消")}</Button>
-          {kind === "note" && <Button primary onClick={() => onAdd({ type: "note", course: course.id, id: newId(), title: title.trim() })}>{t("添加")}</Button>}
+          <Button onClick={onClose}>{t("Cancel")}</Button>
+          {kind === "note" && <Button primary onClick={() => onAdd({ type: "note", course: course.id, id: newId(), title: title.trim() })}>{t("Add")}</Button>}
           {kind === "search" && (
-            <Button primary disabled={!query.trim()} onClick={() => onAdd({ type: "search", query: query.trim(), courses: [course.id], kinds: [], content })}>{t("添加")}</Button>
+            <Button primary disabled={!query.trim()} onClick={() => onAdd({ type: "search", query: query.trim(), courses: [course.id], kinds: [], content })}>{t("Add")}</Button>
           )}
         </>
       )}
     >
-      {!kind && <Chooser groups={[{ label: t("新卡片"), items: fresh }, { label: t("这门课自带的卡片（隐藏中）"), items: own }]} />}
+      {!kind && <Chooser groups={[{ label: t("New@@card"), items: fresh }, { label: t("This course's own (hidden)"), items: own }]} />}
       {kind === "note" && (
         <label className="block pb-2">
-          <span className="mb-1 block text-xs text-muted">{t("标题（可以不填）")}</span>
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("备忘录")} className={input} />
+          <span className="mb-1 block text-xs text-muted">{t("Title (optional)")}</span>
+          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("Notes")} className={input} />
         </label>
       )}
       {(kind === "folder" || kind === "file") && (
@@ -116,13 +116,13 @@ export function AddCardDialog({ course, hidden, onClose, onAdd }: {
       {kind === "search" && (
         <div className="space-y-3 pb-2">
           <label className="block">
-            <span className="mb-1 block text-xs text-muted">{t("搜索内容")}</span>
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("例如：slide this week, hw sol, due today")}
+            <span className="mb-1 block text-xs text-muted">{t("Search for...")}</span>
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("e.g. slide this week...")}
               autoCorrect="off" autoCapitalize="off" spellCheck={false} className={input} />
           </label>
           <label className="flex items-start gap-2 text-xs text-fg-soft">
             <input type="checkbox" className="mt-0.5" checked={content} onChange={(e) => setContent(e.target.checked)} />
-            {t("也匹配正文")}
+            {t("Search for main text")}
           </label>
         </div>
       )}
@@ -153,7 +153,7 @@ function Chooser({ groups }: { groups: { label: string; items: Choice[] }[] }) {
   return (
     <div className="pb-3">
       <input
-        autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("筛选…")} autoCorrect="off" spellCheck={false}
+        autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Filter…")} autoCorrect="off" spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") (e.preventDefault(), step(e.key === "ArrowDown" ? 1 : -1));
           else if (e.key === "Enter") (e.preventDefault(), pick(current));
@@ -162,7 +162,7 @@ function Chooser({ groups }: { groups: { label: string; items: Choice[] }[] }) {
       />
       <div className="flex h-80 gap-4">
         <ul ref={list} className="w-60 shrink-0 overflow-y-auto">
-          {!flat.length && <li className="px-2 py-2 text-xs text-muted">{t("没有符合的卡片")}</li>}
+          {!flat.length && <li className="px-2 py-2 text-xs text-muted">{t("No cards match")}</li>}
           {shown.map((g) => (
             <li key={g.label}>
               <h3 className="px-2 pt-2 pb-1 text-[11px] font-medium text-muted">{g.label}</h3>
@@ -287,7 +287,7 @@ function PathPicker({ root, files, onPick }: { root: string; files: boolean; onP
       </nav>
       <ul className="h-64 overflow-y-auto rounded-md border border-line p-1">
         {entries === null && <li><Loading className="px-2 py-2 text-xs" /></li>}
-        {entries !== null && shown.length === 0 && <li className="px-2 py-2 text-xs text-muted">{files ? t("这个文件夹是空的") : t("没有子文件夹")}</li>}
+        {entries !== null && shown.length === 0 && <li className="px-2 py-2 text-xs text-muted">{files ? t("This folder is empty") : t("No folders in here")}</li>}
         {shown.map((e) => (
           <li key={e.path}>
             <button
@@ -303,7 +303,7 @@ function PathPicker({ root, files, onPick }: { root: string; files: boolean; onP
       </ul>
       {!files && (
         <div className="mt-2 flex justify-end">
-          <Button primary onClick={() => onPick(path)}>{t("用“{name}”", { name: folderTitle(path) })}</Button>
+          <Button primary onClick={() => onPick(path)}>{t("Use “{name}”", { name: folderTitle(path) })}</Button>
         </div>
       )}
     </div>
@@ -323,7 +323,7 @@ function Filterable<T>({ items, label, onPick, empty }: {
   }, [items, q, label]);
   return (
     <div className="pb-2">
-      <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("筛选…")} autoCorrect="off" spellCheck={false}
+      <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Filter…")} autoCorrect="off" spellCheck={false}
         className="mb-2 w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent" />
       <ul className="h-64 overflow-y-auto rounded-md border border-line p-1">
         {items === null && <li><Loading className="px-2 py-2 text-xs" /></li>}
@@ -341,11 +341,11 @@ function Filterable<T>({ items, label, onPick, empty }: {
 function PagePicker({ course, onPick }: { course: Course; onPick: (p: ItemSummary) => void }) {
   const [pages, setPages] = useState<ItemSummary[] | null>(null);
   useEffect(() => void api.items(course.id, "page").then(setPages, () => setPages([])), [course.id]);
-  return <Filterable items={pages} label={(p) => p.title} onPick={onPick} empty={t("这门课没有页面")} />;
+  return <Filterable items={pages} label={(p) => p.title} onPick={onPick} empty={t("This course has no pages")} />;
 }
 
 function ModulePicker({ course, onPick }: { course: Course; onPick: (m: Module) => void }) {
   const [modules, setModules] = useState<Module[] | null>(null);
   useEffect(() => void api.modules(course.id).then(setModules, () => setModules([])), [course.id]);
-  return <Filterable items={modules} label={(m) => m.name} onPick={onPick} empty={t("这门课没有模块")} />;
+  return <Filterable items={modules} label={(m) => m.name} onPick={onPick} empty={t("This course has no modules")} />;
 }

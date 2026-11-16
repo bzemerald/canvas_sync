@@ -16,7 +16,7 @@ export function Welcome({ title, children }: { title: string; children: React.Re
         </div>
         <div className="mt-5 flex items-center justify-end gap-2 text-xs text-muted">
           <VersionLine />
-          <span>{t("语言")}</span>
+          <span>{t("Language")}</span>
           <LanguagePicker />
         </div>
       </div>

@@ -221,9 +221,9 @@ export function Marked({ pattern, place, tools, onClear, children }: {
       {on && (
         <div data-no-drag className="fixed right-5 bottom-4 z-30 flex items-center gap-0.5 rounded-lg border border-line bg-panel py-0.5 pr-1 pl-2.5 text-xs shadow-lg">
           <span className="mr-1.5 text-fg-soft tabular-nums">{at + 1} / {count}</span>
-          <button title={t("上一处")} aria-label={t("上一处")} onClick={() => step(-1)} className={button}><ChevronUp className="size-3.5" /></button>
-          <button title={t("下一处")} aria-label={t("下一处")} onClick={() => step(1)} className={button}><ChevronDown className="size-3.5" /></button>
-          <button title={t("清除高亮 (Esc)")} aria-label={t("清除高亮 (Esc)")} onClick={onClear} className={button}><X className="size-3.5" /></button>
+          <button title={t("Previous match")} aria-label={t("Previous match")} onClick={() => step(-1)} className={button}><ChevronUp className="size-3.5" /></button>
+          <button title={t("Next match")} aria-label={t("Next match")} onClick={() => step(1)} className={button}><ChevronDown className="size-3.5" /></button>
+          <button title={t("Clear highlights (Esc)")} aria-label={t("Clear highlights (Esc)")} onClick={onClear} className={button}><X className="size-3.5" /></button>
         </div>
       )}
     </>

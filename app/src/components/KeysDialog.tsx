@@ -7,44 +7,44 @@ import { Button, Dialog } from "./Dialog";
 export function KeysDialog({ onClose }: { onClose: () => void }) {
   const launcher = useLauncherKeys();
   const groups: [string, [string, string][]][] = [
-    [t("任何地方"), [
-      [t("搜索窗口"), keysLabel(launcher)],
-      [t("在这一页搜索"), shortcut.search],
-      [t("同步所有课程"), shortcut.sync],
-      [t("后退 / 前进"), `${shortcut.back} / ${shortcut.forward}`],
-      [t("上一门 / 下一门课程"), `${shortcut.prevCourse} / ${shortcut.nextCourse}`],
-      [t("设置"), shortcut.settings],
-      [t("键盘快捷键"), shortcut.shortcuts],
+    [t("Anywhere"), [
+      [t("Search window"), keysLabel(launcher)],
+      [t("Search this page"), shortcut.search],
+      [t("Sync all courses@@key"), shortcut.sync],
+      [t("Back / Forward"), `${shortcut.back} / ${shortcut.forward}`],
+      [t("Previous / next course"), `${shortcut.prevCourse} / ${shortcut.nextCourse}`],
+      [t("Settings"), shortcut.settings],
+      [t("Keyboard Shortcuts"), shortcut.shortcuts],
     ]],
-    [t("课程里"), [
-      [t("第 1 到 9 个标签（9：最后一个）"), shortcut.tab],
-      [t("新标签页"), shortcut.newTab],
-      [t("下一个标签"), shortcut.nextTab],
-      [t("上一个标签"), shortcut.prevTab],
-      [t("公告、作业、Ed、页面：上一条 / 下一条"), `${shortcut.up} / ${shortcut.down}`],
-      [t("向下 / 向上翻页"), isMac ? "Space / ⇧Space" : "Space / Shift+Space"],
+    [t("In a course"), [
+      [t("Tabs 1 to 9 (9: the last)"), shortcut.tab],
+      [t("New tab"), shortcut.newTab],
+      [t("Next tab"), shortcut.nextTab],
+      [t("Previous tab"), shortcut.prevTab],
+      [t("Announcements, assignments, Ed, pages: previous / next"), `${shortcut.up} / ${shortcut.down}`],
+      [t("Page down / up"), isMac ? "Space / ⇧Space" : "Space / Shift+Space"],
     ]],
-    [t("文件"), [
-      [t("选择"), "↑ ↓ ← →"],
-      [t("打开"), shortcut.open],
-      ...(isMac ? [[t("快速预览"), shortcut.preview] as [string, string]] : []),
+    [t("Files"), [
+      [t("Select"), "↑ ↓ ← →"],
+      [t("Open"), shortcut.open],
+      ...(isMac ? [[t("Quick Look"), shortcut.preview] as [string, string]] : []),
       [copyName, shortcut.copy],
-      [t("重命名"), shortcut.rename],
-      [t("上一级文件夹"), shortcut.parent],
-      [t("移到{trash}", { trash: trashName }), shortcut.delete],
-      ...(shortcut.toggleChanges ? [[t("显示改动"), shortcut.toggleChanges] as [string, string]] : []),
+      [t("Rename"), shortcut.rename],
+      [t("Enclosing folder"), shortcut.parent],
+      [t("Move to {trash}", { trash: trashName }), shortcut.delete],
+      ...(shortcut.toggleChanges ? [[t("Show modifications"), shortcut.toggleChanges] as [string, string]] : []),
     ]],
-    [t("搜索框"), [
-      [t("选择结果"), "↑ ↓"],
-      [t("打开"), "↩"],
-      [t("在文件夹中显示"), isMac ? "⌘↩" : "Ctrl+Enter"],
-      [t("在 Canvas 中打开"), isMac ? "⌘⇧↩" : "Ctrl+Shift+Enter"],
-      [t("补全课程名"), "⇥"],
-      [t("清空并离开搜索框"), "Esc"],
+    [t("Search box"), [
+      [t("Choose a result"), "↑ ↓"],
+      [t("Open"), "↩"],
+      [t("Show in folder"), isMac ? "⌘↩" : "Ctrl+Enter"],
+      [t("Open in Canvas"), isMac ? "⌘⇧↩" : "Ctrl+Shift+Enter"],
+      [t("Complete a course's name"), "⇥"],
+      [t("Clear and leave the search box"), "Esc"],
     ]],
   ];
   return (
-    <Dialog title={t("键盘快捷键")} onClose={onClose} width="max-w-xl" footer={<Button primary onClick={onClose}>{t("好")}</Button>}>
+    <Dialog title={t("Keyboard Shortcuts")} onClose={onClose} width="max-w-xl" footer={<Button primary onClick={onClose}>{t("OK")}</Button>}>
       <div className="space-y-4 pb-2">
         {groups.map(([name, rows]) => (
           <section key={name}>

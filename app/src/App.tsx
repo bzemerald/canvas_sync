@@ -41,7 +41,7 @@ export default function App() {
       const offSwitch = onSwitchAccount(begin);
       forget = () => (offMissing(), offSwitch());
       void loadLauncherKeys().catch(() => {});
-      void invoke("set_tray_labels", { open: t("打开主窗口"), quit: t("退出") }).catch(() => {}); // (Windows has one)
+      void invoke("set_tray_labels", { open: t("Open the main window"), quit: t("Quit") }).catch(() => {}); // (Windows has one)
     }
     return () => {
       void off.then((f) => f());

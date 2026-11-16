@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import { CloudOff, Pencil, RefreshCwOff, Trash2 } from "lucide-react";
 import type { Entry } from "../lib/api";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 
 const LABEL: Record<string, { text: string; className: string; hint: string }> = {
-  modified: { text: t("已修改"), className: "bg-warn-soft text-warn", hint: t("你改过这个文件；同步不会覆盖你的修改") },
-  missing: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它；下次同步时不会再下载") },
-  ignored: { text: t("已删除"), className: "bg-danger-soft text-danger", hint: t("你删除了它，之后不再同步；可以恢复") },
-  remote_deleted: { text: t("Canvas 已删除"), className: "bg-danger-soft text-danger", hint: t("老师已经从 Canvas 删除了它；本地副本保留着") },
-  untracked: { text: t("不再同步"), className: "bg-chip text-muted", hint: t("你停止了同步：它现在是你自己的文件，Canvas 上的更新不会覆盖它") },
+  modified: { text: t("Edited"), className: "bg-warn-soft text-warn", hint: t("You changed this file; syncing won't overwrite your changes") },
+  missing: { text: t("Deleted"), className: "bg-danger-soft text-danger", hint: t("You deleted it; the next sync won't download it again") },
+  ignored: { text: t("Deleted"), className: "bg-danger-soft text-danger", hint: t("You deleted it, so it isn't synced any more; you can restore it") },
+  remote_deleted: { text: t("Gone from Canvas"), className: "bg-danger-soft text-danger", hint: t("Your instructor removed it from Canvas; your copy is kept") },
+  untracked: { text: t("Not synced"), className: "bg-chip text-muted", hint: t("You stopped syncing it: it's your own file now, and updates on Canvas won't replace it") },
 };
-const SKIPPED_HINT = t("你删除或停止同步了这个文件夹：Canvas 以后在这里新增的文件不会下载");
+const SKIPPED_HINT = t("You deleted this folder or stopped syncing it: files Canvas adds here later won't download");
 /** Why a file in a folder that isn't synced says so (one you stopped syncing says why itself). */
 const skippedHint = (e: Entry) =>
   e.type === "dir" ? SKIPPED_HINT
-    : e.link ? t("它所在的文件夹不再同步；这是快捷方式，原文件照常同步")
-      : t("它所在的文件夹不再同步：Canvas 以后在这里新增的文件不会下载");
+    : e.link ? t("Its folder isn't synced any more; it's a shortcut, and the file it points to still syncs")
+      : t("Its folder isn't synced any more: files Canvas adds here later won't download");
 /** In a folder that isn't synced, and doesn't say so already (a file you deleted says that). */
 const quietlySkipped = (e: Entry) => e.skipped && !e.states.includes("untracked") && !(e.type === "file" && e.deleted);
 // Shown always: what Canvas did, and what isn't synced (that's how it is now, not a change to
@@ -38,17 +38,17 @@ export function StatusBadges({ entry, showChanges }: { entry: Entry; showChanges
       )}
       {quietlySkipped(entry) && (
         <span title={skippedHint(entry)} className="rounded bg-chip px-1.5 py-px text-[11px] whitespace-nowrap text-muted">
-          {t("不再同步")}
+          {t("Not synced")}
         </span>
       )}
       {entry.new === "updated" && (
-        <span title={t("Canvas 上有新版本，已经更新到这里；你还没打开过")} className="rounded bg-info-soft px-1.5 py-px text-[11px] whitespace-nowrap text-info">
-          {t("已更新")}
+        <span title={t("Canvas had a new version, now here too; you haven't opened it yet")} className="rounded bg-info-soft px-1.5 py-px text-[11px] whitespace-nowrap text-info">
+          {t("Updated")}
         </span>
       )}
       {entry.type === "dir" && entry.new_inside > 0 && (
-        <span title={t("里面有你还没打开过的新文件")} className="rounded bg-selected px-1.5 py-px text-[11px] whitespace-nowrap text-accent">
-          {t("{n} 个未读", { n: entry.new_inside })}
+        <span title={t("Has new files you haven't opened yet")} className="rounded bg-selected px-1.5 py-px text-[11px] whitespace-nowrap text-accent">
+          {tn("1 unread", "{n} unread", { n: entry.new_inside })}
         </span>
       )}
       {showChanges && <Tallies entry={entry} />}
@@ -63,10 +63,10 @@ function Tallies({ entry }: { entry: Entry }) {
   return (
     <>
       {entry.deleted_inside > 0 && (
-        <Pill icon={<Trash2 />} n={entry.deleted_inside} label={t("里面有 {n} 个你删除的文件", { n: entry.deleted_inside })} className="bg-danger text-on-accent" />
+        <Pill icon={<Trash2 />} n={entry.deleted_inside} label={tn("Has 1 file you deleted", "Has {n} files you deleted", { n: entry.deleted_inside })} className="bg-danger text-on-accent" />
       )}
       {entry.modified_inside > 0 && (
-        <Pill icon={<Pencil />} n={entry.modified_inside} label={t("里面有 {n} 个你改过的文件", { n: entry.modified_inside })} className="bg-warn text-on-accent" />
+        <Pill icon={<Pencil />} n={entry.modified_inside} label={tn("Has 1 file you changed", "Has {n} files you changed", { n: entry.modified_inside })} className="bg-warn text-on-accent" />
       )}
     </>
   );
@@ -89,13 +89,13 @@ export function IconMarks({ entry, showChanges }: { entry: Entry; showChanges: b
   const mine = (x: string) => showChanges && s.includes(x);
   const marks = entry.type === "dir" ? (
     <>
-      {entry.new_inside > 0 && <Count n={entry.new_inside} label={t("里面有你还没打开过的新文件")} />}
+      {entry.new_inside > 0 && <Count n={entry.new_inside} label={t("Has new files you haven't opened yet")} />}
       {showChanges && <Tallies entry={entry} />}
       {quietlySkipped(entry) && <NotSynced label={skippedHint(entry)} />}
     </>
   ) : (
     <>
-      {entry.new && <Pill label={entry.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} className="bg-accent text-on-accent" />}
+      {entry.new && <Pill label={entry.new === "updated" ? t("A new version you haven't opened yet") : t("New, and you haven't opened it yet")} className="bg-accent text-on-accent" />}
       {s.includes("remote_deleted") && <Pill icon={<CloudOff />} label={LABEL.remote_deleted.hint} className="bg-danger text-on-accent" />}
       {(mine("missing") || mine("ignored")) && <Pill icon={<Trash2 />} label={LABEL.ignored.hint} className="bg-danger text-on-accent" />}
       {mine("modified") && <Pill icon={<Pencil />} label={LABEL.modified.hint} className="bg-warn text-on-accent" />}
@@ -117,7 +117,7 @@ export function Count({ n, label }: { n: number; label: string }) {
 }
 
 /** Marks one new thing: arrived since you last looked, and you haven't opened it. */
-export function NewDot({ label = t("新的") }: { label?: string }) {
+export function NewDot({ label = t("New") }: { label?: string }) {
   return <span title={label} aria-label={label} className="size-1.5 shrink-0 rounded-full bg-accent" />;
 }
 
@@ -129,5 +129,5 @@ export function Loading({ className = "px-6 py-8 text-sm" }: { className?: strin
     const timer = setTimeout(() => setSlow(true), 400);
     return () => clearTimeout(timer);
   }, []);
-  return <p data-loading className={`${className} text-muted transition-opacity duration-200 ${slow ? "opacity-100" : "opacity-0"}`}>{t("正在加载…")}</p>;
+  return <p data-loading className={`${className} text-muted transition-opacity duration-200 ${slow ? "opacity-100" : "opacity-0"}`}>{t("Loading…")}</p>;
 }

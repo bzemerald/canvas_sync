@@ -11,9 +11,9 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, Usage } from "../lib/api";
 import { shortDate, untilDue } from "../lib/dates";
-import { en } from "../lib/en";
 import { type Action, type Catalog, type Describe, type Found, type GroupId, type NameWord, type Results, type Scope, dueSoon, find, likelyWord, nameWords, narrow, prepare, recent, vocabulary } from "../lib/find";
-import { locale, t, tx } from "../lib/i18n";
+import { locale, t, tn, tx } from "../lib/i18n";
+import { zh } from "../lib/zh";
 import { isMac } from "../lib/keys";
 import { KINDS } from "../lib/kinds";
 import { type KindId, NO_VOCABULARY, type Part, type PartOf, type Reading, type Vocabulary, asText, corrected, indexQuery, key, read, shortCode, singular } from "../lib/query";
@@ -24,49 +24,50 @@ import { KIND, ResultBody, Snippet, baseName, formatDate } from "./Result";
 import { SourceTag, ThingIcon, thingName, useThing } from "./Things";
 import { Thumb } from "./Thumb";
 
-/** One of the app's words as it's said in each language (en.ts has the English). */
-function inBoth(zh: string): string[] {
-  const e = en[zh];
-  return [zh.split("@@")[0], ...(e === undefined ? [] : typeof e === "string" ? [e] : e)];
+/** One of the app's words as it's said in each language (zh.ts has the Chinese). */
+function inBoth(en: string): string[] {
+  const z = zh[en];
+  return [en.split("@@")[0], ...(z === undefined ? [] : [z])];
 }
 
-// What else a course's views answer to: their names as tabs and as cards, in both languages.
+// What else a course's views answer to: their names as tabs and as cards, in both languages
+// (and a few Chinese words of no English of their own).
 const VIEW_WORDS: Record<ViewName, string[]> = {
-  overview: ["概览"], // i18n-ignore
-  modules: ["模块", "当前模块"], // i18n-ignore
-  announcements: ["公告", "最新公告"], // i18n-ignore
-  ed: ["讨论", "讨论区", "帖子"], // i18n-ignore
-  assignments: ["作业", "近期截止"], // i18n-ignore
-  grades: ["成绩"], // i18n-ignore
-  files: ["文件", "最近新增的文件"], // i18n-ignore
-  syllabus: ["大纲", "课程大纲"], // i18n-ignore
-  pages: ["页面"], // i18n-ignore
-  tools: ["工具与链接"], // i18n-ignore
-  canvas: ["在 Canvas 中打开"], // i18n-ignore
+  overview: ["Overview"],
+  modules: ["Modules", "This week's module"],
+  announcements: ["Announcements", "Latest announcements"],
+  ed: ["Discussion", "讨论区", "Post"], // i18n-ignore
+  assignments: ["Assignments", "Coming up"],
+  grades: ["Grades"],
+  files: ["Files", "Recently added files"],
+  syllabus: ["Syllabus", "Syllabus@@full"],
+  pages: ["Pages"],
+  tools: ["Tools and links"],
+  canvas: ["Open in Canvas"],
 };
 // What kind of thing it is, in both languages: "cs70 公告" finds CS 70's announcements by name.
 const KIND_WORDS: Record<string, string> = {
-  course: "课程", // i18n-ignore
-  announcement: "公告", // i18n-ignore
-  assignment: "作业", // i18n-ignore
-  page: "页面@@card", // i18n-ignore
-  post: "帖子", // i18n-ignore
-  module: "模块@@card", // i18n-ignore
-  tool: "外部工具", // i18n-ignore
-  link: "链接", // i18n-ignore
-  note: "备忘录", // i18n-ignore
-  search: "智能文件夹", // i18n-ignore
-  file: "文件@@card", // i18n-ignore
-  folder: "文件夹", // i18n-ignore
+  course: "Course",
+  announcement: "Announcements",
+  assignment: "Assignments",
+  page: "Page",
+  post: "Post",
+  module: "Module",
+  tool: "External tool",
+  link: "Links",
+  note: "Notes",
+  search: "Smart folder",
+  file: "File",
+  folder: "Folder",
 };
 // The words a query says a kind of thing by (both languages, as the app says them; one word each).
 const KIND_SAID: Record<KindId, string[]> = {
-  course: ["课程"], announcement: ["公告"], assignment: ["作业"], page: ["页面", "页面@@card"], post: ["帖子", "讨论", "thread"], module: ["模块", "模块@@card"], // i18n-ignore
-  tool: ["外部工具", "工具"], link: ["链接"], note: ["备忘录"], search: ["智能文件夹"], file: ["文件", "文件@@card"], folder: ["文件夹"], // i18n-ignore
+  course: ["Course"], announcement: ["Announcements"], assignment: ["Assignments"], page: ["Pages", "Page"], post: ["Post", "Discussion", "thread"], module: ["Modules", "Module"],
+  tool: ["External tool", "工具"], link: ["Links"], note: ["Notes"], search: ["Smart folder"], file: ["Files", "File"], folder: ["Folder"], // i18n-ignore
 };
 const KIND_OF_WORD: Record<string, KindId> = Object.fromEntries(
-  (Object.entries(KIND_SAID) as [KindId, string[]][]).flatMap(([kind, zh]) =>
-    [...zh.flatMap(inBoth), kind].map((w) => w.toLowerCase()).filter((w) => !w.includes(" ")).map((w) => [singular(w), kind])),
+  (Object.entries(KIND_SAID) as [KindId, string[]][]).flatMap(([kind, said]) =>
+    [...said.flatMap(inBoth), kind].map((w) => w.toLowerCase()).filter((w) => !w.includes(" ")).map((w) => [singular(w), kind])),
 );
 
 /** What things are called, for finding them (see find.ts). `courses`: for their names as shown. */
@@ -103,10 +104,10 @@ export function useCatalog(again: unknown[], courses: Course[] = [], on = true) 
 /** Things to do from search: sync everything or one course, settings, a new smart folder. */
 export function actionsFor(names: Map<number, string>, extra: Action[] = []): Action[] {
   return [
-    { id: "sync", label: t("同步全部课程"), names: [t("同步全部课程"), ...inBoth("同步")] }, // i18n-ignore
-    ...[...names].map(([course, name]) => ({ id: `sync:${course}`, label: t("同步 {name}", { name }), names: inBoth("同步"), course })), // i18n-ignore
-    { id: "settings", label: t("打开设置"), names: [t("打开设置"), ...inBoth("设置")] }, // i18n-ignore
-    { id: "smart-folder", label: t("新建智能文件夹…"), names: inBoth("新建智能文件夹…") }, // i18n-ignore
+    { id: "sync", label: t("Sync all courses"), names: [t("Sync all courses"), ...inBoth("Sync")] },
+    ...[...names].map(([course, name]) => ({ id: `sync:${course}`, label: t("Sync {name}", { name }), names: inBoth("Sync"), course })),
+    { id: "settings", label: t("Open Settings"), names: [t("Open Settings"), ...inBoth("Settings")] },
+    { id: "smart-folder", label: t("New smart folder…"), names: inBoth("New smart folder…") },
     ...extra,
   ];
 }
@@ -291,7 +292,7 @@ export function useAsked(query: string): [boolean, () => void] {
 /** The key that completes it, after what it would add. */
 export function TabKey({ className = "" }: { className?: string }) {
   return (
-    <kbd title={t("按 Tab 补全")} className={`shrink-0 rounded border border-line px-1 font-sans text-[10px] leading-4 text-muted ${className}`}>
+    <kbd title={t("Press Tab to complete")} className={`shrink-0 rounded border border-line px-1 font-sans text-[10px] leading-4 text-muted ${className}`}>
       {isMac ? "⇥ tab" : "Tab"}
     </kbd>
   );
@@ -351,7 +352,7 @@ export function FoundHere({ box, query, onQuery, scope, finder, actions, onOpen,
           </div>
         )}
         {error && <p className="px-2 py-6 text-sm whitespace-pre-wrap text-danger">{error}</p>}
-        {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</Command.Empty>}
+        {query.trim() && nothing && !loading && <Command.Empty className="px-2 py-10 text-center text-sm text-muted">{t("No results")}</Command.Empty>}
         <FoundList results={results} recent={[]} due={[]} courses={courses} names={others} onOpen={(f) => onOpen(f, "open", reading)} props={props} />
       </Command.List>
     </Command>
@@ -397,7 +398,7 @@ const NO_NAMES = new Map<number, string>();
 
 // -- how a query reads ----------------------------------------------------------------------------
 
-const STATUS_LABEL = { todo: t("未提交"), missing: t("缺交"), overdue: t("逾期未交"), submitted: t("已提交"), graded: t("已评分") };
+const STATUS_LABEL = { todo: t("Not submitted"), missing: t("Missing"), overdue: t("Overdue"), submitted: t("Submitted"), graded: t("Graded") };
 const KIND_THING: Record<KindId, Thing> = {
   course: { type: "course", course: -1 }, announcement: { type: "view", course: -1, view: "announcements" },
   assignment: { type: "view", course: -1, view: "assignments" }, page: { type: "view", course: -1, view: "pages" },
@@ -410,16 +411,16 @@ const KIND_THING: Record<KindId, Thing> = {
 /** When, in a few words: 今天, 本周, 10月, 截止 · 本周. */
 function whenLabel(p: PartOf<"when">): string {
   const l = p.when.label;
-  if ("later" in l) return p.when.due ? t("还没到截止时间") : t("从现在起");
+  if ("later" in l) return p.when.due ? t("Not due yet") : t("From now on");
   const said =
     "day" in l ? shortDate(new Date(l.day).toISOString(), false)
-    : "week" in l ? [t("上周"), t("本周"), t("下周")][l.week + 1] ?? ""
-    : "month" in l ? [t("上个月"), t("本月"), t("下个月")][l.month + 1] ?? ""
+    : "week" in l ? [t("Last week"), t("This week"), t("Next week")][l.week + 1] ?? ""
+    : "month" in l ? [t("Last month"), t("This month"), t("Next month")][l.month + 1] ?? ""
     : "monthOf" in l ? new Date(l.monthOf).toLocaleDateString(locale, { month: "long" })
-    : "weekend" in l ? t("周末")
-    : "soon" in l ? t("未来 7 天")
-    : t("最近 14 天");
-  return p.when.due ? `${t("截止")} · ${said}` : said;
+    : "weekend" in l ? t("This weekend")
+    : "soon" in l ? t("Next 7 days")
+    : t("Last 14 days");
+  return p.when.due ? `${t("Due")} · ${said}` : said;
 }
 
 /** What a part was read as, in a few words. */
@@ -427,7 +428,7 @@ function partLabel(p: Part, names: Map<number, string>): string {
   switch (p.role) {
     case "course": {
       const all = p.courses.map((c) => names.get(c) ?? `#${c}`);
-      return !all.length ? t("没有这门课") : all.length <= 2 ? all.join(" / ") : `${all[0]} +${all.length - 1}`;
+      return !all.length ? t("No such course") : all.length <= 2 ? all.join(" / ") : `${all[0]} +${all.length - 1}`;
     }
     case "kind": return KINDS[p.kind].all;
     case "when": return whenLabel(p);
@@ -459,8 +460,8 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
             <span className="truncate">{partLabel(p, names)}</span>
           </span>
           <button
-            aria-label={t("按文字搜索“{text}”", { text: p.text })}
-            title={t("按文字搜索“{text}”", { text: p.text })}
+            aria-label={t("Search for “{text}” as text", { text: p.text })}
+            title={t("Search for “{text}” as text", { text: p.text })}
             onMouseDown={(e) => e.preventDefault()} // (the input keeps the focus)
             onClick={() => onQuery(asText(reading.query, p))}
             className="rounded-r-md p-1 text-muted hover:bg-line hover:text-fg"
@@ -471,9 +472,9 @@ export function ReadingBar({ reading, names, courses, onQuery, className = "" }:
       ))}
       {fixed.map((p) => (
         <span key={`fix:${p.spans[0][0]}`} className="text-muted">
-          {tx("按 {word} 搜索", { word: <span className="font-medium text-fg-soft">{p.text}</span> })}
+          {tx("Showing results for {word}.", { word: <span className="font-medium text-fg-soft">{p.text}</span> })}
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => onQuery(asText(reading.query, p))} className="ml-1.5 text-accent hover:underline">
-            {t("仍搜索“{word}”", { word: p.was! })}
+            {t("Search for “{word}” instead", { word: p.was! })}
           </button>
         </span>
       ))}
@@ -499,8 +500,8 @@ function PartIcon({ part, courses }: { part: Part; courses: Course[] }) {
 const ACTION_ICON = { sync: RefreshCw, settings: SettingsIcon, "smart-folder": Sparkles, main: AppWindow };
 
 const GROUP: Record<GroupId, string> = {
-  courses: t("课程@@group"), places: t("页面与工具"), assignments: t("作业"), announcements: t("公告"), files: t("文件与文件夹"),
-  actions: t("操作"), inside: t("正文中提到"), related: t("意思相近"),
+  courses: t("Courses"), places: t("Pages and tools"), assignments: t("Assignments"), announcements: t("Announcements"), files: t("Files and folders"),
+  actions: t("Actions"), inside: t("Mentioned in the text"), related: t("Similar in meaning"),
 };
 const MOST = 50;
 
@@ -531,14 +532,14 @@ export function FoundList({ results, recent, due, courses, names, onOpen, props 
   if (!results) {
     return (
       <>
-        {recent.length > 0 && <Command.Group heading={t("最近打开")} className={heading}>{recent.map((f) => item(f))}</Command.Group>}
-        {due.length > 0 && <Command.Group heading={t("近期截止")} className={heading}>{due.map((f) => item(f))}</Command.Group>}
+        {recent.length > 0 && <Command.Group heading={t("Recently opened")} className={heading}>{recent.map((f) => item(f))}</Command.Group>}
+        {due.length > 0 && <Command.Group heading={t("Coming up")} className={heading}>{due.map((f) => item(f))}</Command.Group>}
       </>
     );
   }
   return (
     <>
-      {results.top && <Command.Group heading={t("最佳结果")} className={heading}>{item(results.top, true)}</Command.Group>}
+      {results.top && <Command.Group heading={t("Top hit")} className={heading}>{item(results.top, true)}</Command.Group>}
       {results.groups.map((g) => {
         const shown = all.has(g.id) ? g.items.slice(0, MOST) : g.items.slice(0, g.cap);
         const more = g.items.length - shown.length;
@@ -548,7 +549,7 @@ export function FoundList({ results, recent, due, courses, names, onOpen, props 
             {more > 0 && !all.has(g.id) && (
               <Command.Item value={`more:${g.id}`} onSelect={() => setAll((s) => new Set(s).add(g.id))}
                 className={`${itemClass} py-1.5 text-xs text-muted`}>
-                {t("还有 {n} 项 ›", { n: more })}
+                {tn("1 more ›", "{n} more ›", { n: more })}
               </Command.Item>
             )}
           </Command.Group>

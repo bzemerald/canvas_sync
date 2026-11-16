@@ -5,7 +5,7 @@ import { Fragment, useRef, useState } from "react";
 import type { Course, SidebarOrder, SyncState } from "../lib/api";
 import { shortDate } from "../lib/dates";
 import { edSaying, fileSaying, syncSaying } from "../lib/errors";
-import { locale, t } from "../lib/i18n";
+import { locale, t, tn } from "../lib/i18n";
 import { moved, useReorder } from "../lib/reorder";
 import { termRank } from "../lib/terms";
 import { type Shown, thingKey } from "../lib/things";
@@ -25,7 +25,7 @@ export function groupByTerm(list: Course[]): TermGroup[] {
   }
   return [...groups.entries()]
     .sort(([a], [b]) => termRank(b) - termRank(a))
-    .map(([key, courses]) => ({ key, courses, label: courses[0].term_label ?? t("无学期") }));
+    .map(([key, courses]) => ({ key, courses, label: courses[0].term_label ?? t("No term") }));
 }
 
 /** The sidebar's terms and courses as you dragged them. Terms you haven't placed (a new one)
@@ -86,7 +86,7 @@ export function PinnedSection({ place, collapsed, header, empty, render, onPin, 
         // from where the pointer is, for dragging there).
         <div className="grid">
           <div className={`[grid-area:1/1] ${zone.state === "idle" ? "" : "invisible"}`}>{empty}</div>
-          <p className={`[grid-area:1/1] self-center px-2 py-2 text-xs text-muted ${zone.state === "idle" ? "invisible" : ""}`}>{t("放在这里置顶")}</p>
+          <p className={`[grid-area:1/1] self-center px-2 py-2 text-xs text-muted ${zone.state === "idle" ? "invisible" : ""}`}>{t("Drop here to pin")}</p>
         </div>
       )}
       {!collapsed && (
@@ -130,7 +130,7 @@ export function TermSection({ group, sectionRef, grab, collapsed, editor, onTogg
         onToggle={onToggle}
         grab={grab}
         count={collapsed ? fresh : 0}
-        action={{ label: t("{term} 的操作", { term: group.label }), icon: <MoreHorizontal className="size-3.5" />, onClick: onMenu }}
+        action={{ label: t("{term} actions", { term: group.label }), icon: <MoreHorizontal className="size-3.5" />, onClick: onMenu }}
         onMenu={onMenu}
       />
       {!collapsed && group.courses.map((c, i) => (
@@ -146,7 +146,7 @@ export function TermSection({ group, sectionRef, grab, collapsed, editor, onTogg
 export function pinnedWhere(path: string, c: Course | null): string {
   if (c && path === c.dir) return c.term_label ?? "";
   if (c) return c.label;
-  return parentOf(path) || t("全部文件");
+  return parentOf(path) || t("All files");
 }
 
 export function NavItem({ icon, title, editor, subtitle, keys, active, count, muted, onPress, onClick, onMenu }: {
@@ -187,11 +187,11 @@ export function NavItem({ icon, title, editor, subtitle, keys, active, count, mu
           {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
         </span>
         {keys && <span className="shrink-0 text-xs text-muted">{keys}</span>}
-        {!!count && <span className="group-hover:hidden"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
+        {!!count && <span className="group-hover:hidden"><Count n={count} label={tn("1 new", "{n} new", { n: count })} /></span>}
       </button>
       {onMenu && (
         <button
-          aria-label={t("{title} 的操作", { title })}
+          aria-label={t("Actions for {title}", { title })}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             onMenu(r.left, r.bottom + 2);
@@ -226,7 +226,7 @@ export function SectionHeader({ title, editor, action, onMenu, collapsed, onTogg
           onClick={onToggle}
           disabled={!onToggle}
           aria-expanded={onToggle ? !collapsed : undefined}
-          title={onToggle ? (collapsed ? t("展开") : t("收起")) : undefined}
+          title={onToggle ? (collapsed ? t("Expand") : t("Collapse")) : undefined}
           className="flex max-w-full items-center gap-1 text-[11px] font-medium tracking-wide text-muted uppercase hover:text-fg-soft disabled:hover:text-muted"
         >
           <span className="truncate">{title}</span>
@@ -253,7 +253,7 @@ export function SectionHeader({ title, editor, action, onMenu, collapsed, onTogg
         )}
         {count > 0 && (
           <span className="col-start-1 row-start-1 flex group-hover:invisible peer-focus-visible:invisible">
-            <Count n={count} label={t("{n} 个新的", { n: count })} />
+            <Count n={count} label={tn("1 new", "{n} new", { n: count })} />
           </span>
         )}
       </div>
@@ -263,30 +263,30 @@ export function SectionHeader({ title, editor, action, onMenu, collapsed, onTogg
 
 const PHASE: Record<SyncState["phase"], string> = {
   idle: "",
-  checking: t("正在检查 Canvas…"),
-  downloading: t("正在下载"),
-  indexing: t("正在建立搜索索引"),
-  done: t("已同步"),
-  failed: t("同步失败"),
+  checking: t("Checking Canvas…"),
+  downloading: t("Downloading"),
+  indexing: t("Indexing for search"),
+  done: t("Synced"),
+  failed: t("Sync failed"),
 };
 
 const CHANGE: Record<string, (n: number) => string> = {
-  download: (n) => t("{n} 个新文件", { n }),
-  update: (n) => t("{n} 个更新", { n }),
-  conflict: (n) => t("{n} 个冲突", { n }),
-  move: (n) => t("移动了 {n} 个", { n }),
-  ignore: (n) => t("{n} 个不再同步", { n }),
-  remote_deleted: (n) => t("{n} 个已从 Canvas 删除", { n }),
-  delete: (n) => t("删除了 {n} 个", { n }),
+  download: (n) => tn("1 new file", "{n} new files", { n }),
+  update: (n) => tn("1 update", "{n} updates", { n }),
+  conflict: (n) => tn("1 conflict", "{n} conflicts", { n }),
+  move: (n) => tn("1 moved", "{n} moved", { n }),
+  ignore: (n) => tn("1 no longer synced", "{n} no longer synced", { n }),
+  remote_deleted: (n) => tn("1 removed from Canvas", "{n} removed from Canvas", { n }),
+  delete: (n) => tn("1 deleted", "{n} deleted", { n }),
 };
 
 /** A new version, at the sidebar's foot once a check found one: click to update (and restart). */
 export function UpdateNotice() {
   const update = useUpdate();
   if (update.phase !== "available" && update.phase !== "downloading" && update.phase !== "installing") return null;
-  const label = update.phase === "available" ? t("新版本 {v} · 更新并重启", { v: update.version })
-    : update.phase === "downloading" ? t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
-      : t("正在安装，马上重启…");
+  const label = update.phase === "available" ? t("Version {v} · Update and restart", { v: update.version })
+    : update.phase === "downloading" ? t("Downloading {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
+      : t("Installing, restarting soon…");
   return (
     <button onClick={() => void installUpdate()} disabled={update.phase !== "available"}
       className="mb-1 w-full rounded-md bg-selected px-2.5 py-1.5 text-left text-xs text-accent hover:opacity-90 disabled:opacity-80">
@@ -308,7 +308,7 @@ export function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: 
   const failed = sync.failed ?? [];
   const pct = sync.total ? Math.round((sync.done / sync.total) * 100) : null;
   const finished = sync.finished_at ?? sync.last_synced; // when it ended
-  const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t("，"));
+  const changes = Object.entries(sync.changes).map(([k, n]) => CHANGE[k]?.(n) ?? `${n} ${k}`).join(t(", @@sentence"));
   return (
     <div className="mx-4 mb-2 rounded-md bg-chip px-2.5 py-2 text-xs text-fg-soft">
       <div className="flex justify-between gap-2">
@@ -324,13 +324,13 @@ export function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: 
         </div>
       )}
       {sync.running && sync.current && <p className="mt-1 truncate text-muted">{sync.current.split("/").pop()}</p>}
-      {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || t("没有新内容")}</p>}
+      {sync.phase === "done" && <p className="mt-0.5 text-muted">{changes || t("Nothing new")}</p>}
       {!sync.expired && sync.errors.slice(0, 1).map((e) => (
         <p key={e} className="mt-1 break-words text-danger" title={e}>{syncSaying(e)}</p>
       ))}
       {failed.length > 0 && (
         <button onClick={() => setShowFailed(!showFailed)} className="mt-1 block text-left text-danger hover:underline">
-          {t("{n} 个文件没能同步", { n: failed.length })}{showFailed ? " ▾" : " ›"}
+          {tn("1 file didn't sync", "{n} files didn't sync", { n: failed.length })}{showFailed ? " ▾" : " ›"}
         </button>
       )}
       {showFailed && (
@@ -344,17 +344,17 @@ export function SyncStatus({ sync, label, onFix, onSignIn, session, renewing }: 
         </ul>
       )}
       {!sync.running && sync.warnings.length > 0 && (
-        <p className="mt-1 text-muted" title={sync.warnings.join("\n")}>{t("有些内容这次没读到，下次同步再试。")}</p>
+        <p className="mt-1 text-muted" title={sync.warnings.join("\n")}>{t("Some things couldn't be read this time; the next sync tries again.")}</p>
       )}
       {sync.expired && (renewing ? (
-        <p className="mt-1 text-muted">{t("正在重新登录 Canvas…")}</p>
+        <p className="mt-1 text-muted">{t("Signing in to Canvas again…")}</p>
       ) : (
         <button onClick={onSignIn} className="mt-1 block text-left text-accent hover:underline">
-          {session ? t("Canvas 登录已过期，点这里重新登录") : t("Canvas 令牌已失效，点这里更换")}
+          {session ? t("Sign-in expired. Click to sign in again") : t("Canvas token expired. Click to replace it")}
         </button>
       ))}
       {!sync.running && sync.ed_error && (
-        <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed：{why}", { why: edSaying(sync.ed_error) })}</button>
+        <button onClick={onFix} className="mt-1 block text-left text-danger hover:underline">{t("Ed: {why}", { why: edSaying(sync.ed_error) })}</button>
       )}
     </div>
   );

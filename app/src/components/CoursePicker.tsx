@@ -58,9 +58,9 @@ export function CoursePicker({ courses, picked, onChange, placeholder }: {
           return (
             <span key={id} className="flex items-center gap-1 rounded-md bg-chip py-0.5 pr-1 pl-1.5 text-xs">
               {c && <CourseIcon course={c} size={13} />}
-              {c?.label ?? t("课程 #{id}", { id })}
+              {c?.label ?? t("Course #{id}", { id })}
               <button
-                aria-label={t("去掉")}
+                aria-label={t("Remove")}
                 onClick={(e) => (e.stopPropagation(), onChange(picked.filter((x) => x !== id)))}
                 className="rounded p-0.5 text-muted hover:bg-line hover:text-fg"
               >
@@ -78,7 +78,7 @@ export function CoursePicker({ courses, picked, onChange, placeholder }: {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={onKeyDown}
-          placeholder={picked.length ? "" : (placeholder ?? t("输入课程名搜索…"))}
+          placeholder={picked.length ? "" : (placeholder ?? t("Type a course name…"))}
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
@@ -87,7 +87,7 @@ export function CoursePicker({ courses, picked, onChange, placeholder }: {
       </div>
       {open && (
         <ul role="listbox" className="mt-1 max-h-48 overflow-y-auto rounded-md border border-line bg-panel p-1">
-          {matches.length === 0 && <li className="px-2 py-1.5 text-xs text-muted">{t("没有匹配的课程")}</li>}
+          {matches.length === 0 && <li className="px-2 py-1.5 text-xs text-muted">{t("No matching course")}</li>}
           {matches.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === active}>
               <button

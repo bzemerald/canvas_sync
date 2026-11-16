@@ -8,13 +8,13 @@ import { checkForUpdate, installUpdate, useUpdate, type UpdateState } from "../l
 /** How a check for updates is going, in words (null: nothing to say). */
 export function updateSaying(update: UpdateState): string | null {
   switch (update.phase) {
-    case "checking": return t("正在检查…");
-    case "latest": return t("已是最新版本");
-    case "available": return t("有新版本 {v}", { v: update.version });
+    case "checking": return t("Checking…");
+    case "latest": return t("Up to date");
+    case "available": return t("Version {v} is available", { v: update.version });
     case "downloading":
-      return t("正在下载 {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`);
-    case "installing": return t("正在安装，马上重启…");
-    case "failed": return update.version ? t("更新失败") : t("检查失败");
+      return t("Downloading {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`);
+    case "installing": return t("Installing, restarting soon…");
+    case "failed": return update.version ? t("Update failed") : t("Couldn't check");
     default: return null;
   }
 }
@@ -39,9 +39,9 @@ export function VersionLine() {
         )}
       </span>
       {canInstall ? (
-        <button onClick={() => void installUpdate()} className="text-accent hover:underline">{t("更新并重启")}</button>
+        <button onClick={() => void installUpdate()} className="text-accent hover:underline">{t("Update and restart")}</button>
       ) : !busy && (
-        <button onClick={() => void checkForUpdate()} className="text-accent hover:underline">{t("检查更新")}</button>
+        <button onClick={() => void checkForUpdate()} className="text-accent hover:underline">{t("Check for updates")}</button>
       )}
     </span>
   );

@@ -86,7 +86,7 @@ export function tabCommand(e: Key): TabCommand | null {
 /** How to write each shortcut in menus and tooltips. */
 export const shortcut = isMac
   ? {
-      open: "⌘O", copy: "⌘C", rename: "↩", preview: t("空格"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
+      open: "⌘O", copy: "⌘C", rename: "↩", preview: t("Space"), delete: "⌘⌫", parent: "⌘↑", back: "⌘[", forward: "⌘]", search: "⌘F",
       toggleChanges: "⌘⇧.", settings: "⌘,", sync: "⌘R", prevCourse: "⌥⌘↑", nextCourse: "⌥⌘↓", shortcuts: "⌘/",
       tab: "⌘1…9", newTab: "⌘T", nextTab: "⌃⇥ / ⌘⇧]", prevTab: "⌃⇧⇥ / ⌘⇧[", up: "↑", down: "↓",
     }
@@ -97,6 +97,6 @@ export const shortcut = isMac
     };
 
 /** What Finder and Explorer call copying. */
-export const copyName = isMac ? t("拷贝") : t("复制");
-export const trashName = isMac ? t("废纸篓") : t("回收站");
-export const fileManager = isMac ? "Finder" : platform === "windows" ? t("文件资源管理器") : t("文件管理器");
+export const copyName = isMac ? t("Copy@@mac") : t("Copy");
+export const trashName = isMac ? t("Trash") : t("Recycle Bin");
+export const fileManager = isMac ? "Finder" : platform === "windows" ? t("File Explorer") : t("Files@@manager");

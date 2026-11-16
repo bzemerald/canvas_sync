@@ -5,14 +5,14 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import type { AccountInfo } from "../lib/api";
 import { friendly } from "../lib/errors";
-import { t, tx } from "../lib/i18n";
+import { t, tn, tx } from "../lib/i18n";
 import { Button, Dialog } from "./Dialog";
 
 /** How to make a Canvas token, when signing in and when replacing one. */
-export const tokenSteps = () => t("在 Canvas 里点“账户 → 设置 → 已批准的集成 → + 新访问令牌”，“用途”填 Canvas Sync，把令牌粘贴到这里。过期后需要重新生成。");
+export const tokenSteps = () => t("In Canvas: Account → Settings → Approved Integrations → “+ New Access Token”. Set “Purpose” to Canvas Sync and paste the token here. Make a new one when it expires.");
 
 /** Sign in in the app's Canvas window: its cookies (an error "cancelled" if it was closed). */
-export const browserSignIn = (site: string, silent = false) => api.canvasLogin(site, t("登录 Canvas"), silent);
+export const browserSignIn = (site: string, silent = false) => api.canvasLogin(site, t("Sign in to Canvas"), silent);
 
 /** Closing the sign-in window isn't an error to show. */
 export const cancelled = (e: unknown) => /cancelled/.test(String((e as Error)?.message ?? e));
@@ -67,7 +67,7 @@ export function SignInForm({ another, seed, onProgress, submitLabel, onDone, onC
   const go = (to: Step) => (setError(null), setStep(to));
 
   const choose = async () => {
-    const picked = await open({ directory: true, title: t("选择同步文件夹"), defaultPath: !root || root.startsWith("~") ? undefined : root });
+    const picked = await open({ directory: true, title: t("Choose a sync folder"), defaultPath: !root || root.startsWith("~") ? undefined : root });
     if (typeof picked === "string") setRoot(picked);
   };
   const signIn = async () => {
@@ -95,37 +95,37 @@ export function SignInForm({ another, seed, onProgress, submitLabel, onDone, onC
 
   return (
     <form onSubmit={next} className="space-y-4 text-sm">
-      <p className="text-xs text-muted">{t("第 {n} 步，共 3 步", { n: at + 1 })}</p>
+      <p className="text-xs text-muted">{tn("Step 1 of 3", "Step {n} of 3", { n: at + 1 })}</p>
       {step === "folder" && (
         <div>
-          <span className="mb-1 block font-medium">{t("选择同步文件夹")}</span>
+          <span className="mb-1 block font-medium">{t("Choose a sync folder")}</span>
           <div className="flex gap-2">
             <code className={`min-w-0 flex-1 truncate rounded-md border border-line bg-chip px-2.5 py-1.5 ${root ? "" : "font-sans text-muted"}`} title={root}>
-              {root || t("还没选")}
+              {root || t("None chosen yet")}
             </code>
-            <Button type="button" autoFocus onClick={() => void choose()}>{t("选择…")}</Button>
+            <Button type="button" autoFocus onClick={() => void choose()}>{t("Choose…")}</Button>
           </div>
           <span className="mt-1.5 block text-xs text-muted">
             {another
-              ? t("换成另一所学校时，请选一个新的同步文件夹。")
-              : t("课程文件会下载到这里。选一个空文件夹，或者以前用过的同步文件夹。")}
+              ? t("For another school, choose a new sync folder.")
+              : t("Course files download here. Choose an empty folder if it's your first time using Canvas Sync.")}
           </span>
         </div>
       )}
       {step === "site" && (
         <label className="block">
-          <span className="mb-1 block font-medium">{t("学校的 Canvas 网址")}</span>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("例如 bcourses.berkeley.edu")} autoFocus
+          <span className="mb-1 block font-medium">{t("Your school's Canvas address")}</span>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("e.g. bcourses.berkeley.edu")} autoFocus
             spellCheck={false} autoCapitalize="off" className={inputClass} />
         </label>
       )}
       {step === "auth" && <AuthChoice how={how} setHow={(h) => (setHow(h), setError(null))} token={token} setToken={setToken} site={site} />}
       {error && <p className="text-danger">{error}</p>}
       <div className="flex justify-end gap-2 pt-1">
-        {onCancel && <Button type="button" onClick={onCancel} className="mr-auto">{t("取消")}</Button>}
-        {at > 0 && <Button type="button" disabled={busy} onClick={() => go(STEPS[at - 1])}>{t("上一步")}</Button>}
+        {onCancel && <Button type="button" onClick={onCancel} className="mr-auto">{t("Cancel")}</Button>}
+        {at > 0 && <Button type="button" disabled={busy} onClick={() => go(STEPS[at - 1])}>{t("Back")}</Button>}
         <Button primary type="submit" disabled={busy || !ready}>
-          {busy ? t("正在登录…") : step !== "auth" ? t("下一步") : how === "browser" ? t("打开登录窗口…") : submitLabel ?? t("登录")}
+          {busy ? t("Signing in…") : step !== "auth" ? t("Next") : how === "browser" ? t("Open the sign-in page…") : submitLabel ?? t("Sign in")}
         </Button>
       </div>
     </form>
@@ -144,9 +144,9 @@ function AuthChoice({ how, setHow, token, setToken, site }: {
 }) {
   return (
     <div>
-      <span className="mb-1 block font-medium">{t("登录方式")}</span>
+      <span className="mb-1 block font-medium">{t("Sign in with")}</span>
       <div className="flex rounded-md border border-line p-0.5" role="radiogroup">
-        {([["token", t("访问令牌")], ["browser", t("在登录窗口中登录")]] as const).map(([k, label]) => (
+        {([["token", t("Access token")], ["browser", t("Sign-in page")]] as const).map(([k, label]) => (
           <button key={k} type="button" role="radio" aria-checked={how === k} onClick={() => setHow(k)}
             className={`flex-1 rounded px-2 py-1 text-xs ${how === k ? "bg-selected font-medium text-accent" : "text-muted hover:text-fg"}`}>
             {label}
@@ -155,23 +155,23 @@ function AuthChoice({ how, setHow, token, setToken, site }: {
       </div>
       {how === "browser" ? (
         <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-          {t("在打开的窗口中完成登录。")}
+          {t("Complete sign-in in the window that opens.")}
         </span>
       ) : (
         <>
-          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("粘贴令牌")} autoFocus
+          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("Paste the token")} autoFocus
             autoComplete="off" spellCheck={false} className={`${inputClass} mt-2`} />
           <span className="mt-1.5 block text-xs leading-relaxed text-muted">
             {tokenSteps()}
             {site && (
               <button type="button" onClick={() => void api.openExternal(`${site}/profile/settings`)} className="ml-1 text-accent hover:underline">
-                {t("打开 Canvas 设置页")}
+                {t("Open Canvas settings")}
               </button>
             )}
           </span>
           <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-            {tx("有些学校不允许学生生成访问令牌，这时请用{page}登录。", {
-              page: <button type="button" onClick={() => setHow("browser")} className="text-accent hover:underline">{t("登录页")}</button>,
+            {tx("Some schools don't let students create access tokens. If yours doesn't, sign in with the {page} instead.", {
+              page: <button type="button" onClick={() => setHow("browser")} className="text-accent hover:underline">{t("sign-in page")}</button>,
             })}
           </span>
         </>
@@ -208,13 +208,13 @@ export function SignInDialog({ account, onDone, onClose }: {
   };
   return (
     <Dialog
-      title={t("登录 Canvas")}
+      title={t("Sign in to Canvas")}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} className="mr-auto">{t("取消")}</Button>
+          <Button onClick={onClose} className="mr-auto">{t("Cancel")}</Button>
           <Button primary disabled={busy || !ready} onClick={() => void signIn()}>
-            {busy ? t("正在登录…") : how === "browser" ? t("打开登录窗口…") : t("登录")}
+            {busy ? t("Signing in…") : how === "browser" ? t("Open the sign-in page…") : t("Sign in")}
           </Button>
         </>
       }

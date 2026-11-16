@@ -78,9 +78,9 @@ export function Setup({ start, onFinish }: {
 
   if (here.kind === "missing") return <MissingFolderPage root={here.root} onDone={next} />;
   const another = here.kind === "sign in" && here.another;
-  const title = here.kind === "courses" ? t("选择要同步的课程") : another ? t("切换账号或学校") : t("连接 Canvas");
+  const title = here.kind === "courses" ? t("Choose the courses to sync") : another ? t("Switch account or school") : t("Connect to Canvas");
   const body = here.kind === "courses"
-    ? <ChooseCourses submitLabel={t("开始同步")} onDone={finish} onBack={back} />
+    ? <ChooseCourses submitLabel={t("Start syncing")} onDone={finish} onBack={back} />
     : <SignInForm another={another} seed={here.progress} onProgress={progress} onDone={next} />;
   // (One Welcome for signing in and the courses: going from one to the other, its box glides.)
   return <Welcome title={title}>{body}</Welcome>;

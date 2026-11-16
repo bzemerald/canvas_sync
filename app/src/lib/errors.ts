@@ -4,35 +4,35 @@ import { t } from "./i18n";
 
 const SAYINGS: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
   // (First: they quote paths and the system's error, which may say anything.)
-  [/^partly moved\n(.*)\n(.*)$/, (m) => t("没能移动同步文件夹，有些文件也没能移回去。它们现在在 {dst}，把它们移回 {src} 后再试一次。", { src: m[1], dst: m[2] })],
-  [/could not move/, t("没能移动同步文件夹，文件还在原来的位置。可能有文件正被其他应用使用，关掉后再试一次。")],
-  [/move into itself/, t("不能移到现在的同步文件夹里面。请选别的文件夹。")],
-  [/move target not empty/, t("这个文件夹不是空的。请选一个空文件夹。")],
-  [/not enough room/, t("那里的磁盘空间不够放下同步文件夹。")],
-  [/links not supported there/, t("那个磁盘（比如 exFAT 或 FAT 格式的 U 盘、移动硬盘）放不了同步文件夹里的链接。请选别的位置。")],
-  [/the app is busy/, t("应用还在忙别的事，过一会儿再试。")],
-  [/moving the sync folder/, t("正在移动同步文件夹，等移动完成再试")],
-  [/does not exist/, t("找不到这个文件了（可能已经在别处删除或移动）")],
-  [/can't be changed/, t("这个不能改")],
-  [/already exists/, t("这里已经有同名的文件夹了")],
-  [/empty or start with a dot/, t("名称不能为空，也不能以“.”开头")],
-  [/wait for the sync|already running/, t("正在同步，等同步完成再试")],
-  [/add it by hand/, t("读不懂这个应用的设置文件，所以没有改动它。可以用下面的“手动添加到其他应用”。")],
-  [/can't be renamed/, t("这个文件夹不能重命名")],
+  [/^partly moved\n(.*)\n(.*)$/, (m) => t("Couldn't move the sync folder, and some files couldn't be moved back. They're in {dst} now: move them back to {src}, then try again.", { src: m[1], dst: m[2] })],
+  [/could not move/, t("Couldn't move the sync folder, so your files are still where they were. Another app may be using one of them: close it and try again.")],
+  [/move into itself/, t("It can't move inside the current sync folder. Choose another folder.")],
+  [/move target not empty/, t("That folder isn't empty. Choose an empty folder.")],
+  [/not enough room/, t("There isn't enough disk space there for the sync folder.")],
+  [/links not supported there/, t("That disk (an exFAT or FAT drive, say) can't hold the links in the sync folder. Choose another place.")],
+  [/the app is busy/, t("The app is still busy with something else. Try again in a moment.")],
+  [/moving the sync folder/, t("The sync folder is moving. Try again when it's done")],
+  [/does not exist/, t("Can't find the file (it may have been deleted or moved elsewhere)")],
+  [/can't be changed/, t("This can't be changed")],
+  [/already exists/, t("The name is already taken by another folder")],
+  [/empty or start with a dot/, t("Names can't be empty or start with “.”")],
+  [/wait for the sync|already running/, t("Syncing; try again once it's done")],
+  [/add it by hand/, t("Couldn't read this app's settings file, so nothing was changed. You can use “Add to another app by hand” below.")],
+  [/can't be renamed/, t("This folder can't be renamed")],
   // signing in
-  [/token rejected/, t("令牌无效或已经过期。请在 Canvas 上重新生成一个。")],
-  [/sign-in rejected/, t("Canvas 没有接受这次登录。请再登录一次。")],
-  [/can't reach the site/, t("连不上这个网址。检查一下网址和网络连接。")],
-  [/not a Canvas site/, t("这个网址不是 Canvas。请填学校 Canvas 的网址。")],
-  [/not a web address/, t("网址不对。例如 bcourses.berkeley.edu")],
-  [/https only/, t("只支持 https 网址：令牌不能明文传输。")],
-  [/folder not empty/, t("这个文件夹里已经有别的东西了。请选一个空文件夹，或者以前用过的同步文件夹。")],
-  [/another Canvas site/, t("这个文件夹在同步另一个 Canvas 网站的课程，请换一个文件夹。")],
-  [/not a folder/, t("这不是一个文件夹。")],
-  [/not a sync folder/, t("无法识别这个文件夹为同步文件夹。请选原来那个同步文件夹，或者从头开始。")],
-  [/not signed in/, t("还没有登录 Canvas。请到设置里登录。")],
-  [/not set up/, t("先在主窗口里登录 Canvas。")],
-  [/could not list the courses/, t("没能从 Canvas 读到课程列表。检查一下网络连接，再试一次。")],
+  [/token rejected/, t("That token isn't valid, or it expired. Make a new one in Canvas.")],
+  [/sign-in rejected/, t("Canvas didn't accept this sign-in. Please sign in again.")],
+  [/can't reach the site/, t("Couldn't reach that address. Make sure it's spelled correctly and check your internet connection.")],
+  [/not a Canvas site/, t("That address isn't Canvas. Enter your school's Canvas address.")],
+  [/not a web address/, t("That isn't a web address. For example: bcourses.berkeley.edu")],
+  [/https only/, t("Only https addresses work: the token mustn't travel unencrypted.")],
+  [/folder not empty/, t("That folder already has other things in it. Choose an empty folder, or one you've synced into before.")],
+  [/another Canvas site/, t("That folder holds another Canvas site's courses; choose a different one.")],
+  [/not a folder/, t("That isn't a folder.")],
+  [/not a sync folder/, t("This folder isn't recognized as a synced folder. Please choose the old sync folder or start from scratch.")],
+  [/not signed in/, t("You're not signed in to Canvas. Sign in from Settings.")],
+  [/not set up/, t("Sign in to Canvas in the main window first.")],
+  [/could not list the courses/, t("Couldn't get the list of courses from Canvas. Check the network connection and try again.")],
 ];
 
 export function friendly(message: string): string {
@@ -47,40 +47,40 @@ export function friendly(message: string): string {
 // tooltip, for when someone has to look into it.)
 const SYNC_SAYINGS: [RegExp, string][] = [
   [/ConnectError|ConnectTimeout|ReadTimeout|TimeoutException|NetworkError|RemoteProtocolError|nodename|Network is unreachable/,
-    t("连不上 Canvas。检查一下网络连接。")],
-  [/HTTP (5\d\d|429)\b|rate limit/i, t("Canvas 暂时出错了，过一会儿再试。")],
-  [/No space left|Errno 28/, t("磁盘空间不够了。")],
-  [/Permission denied|Errno 13|Operation not permitted/, t("没有权限写入同步文件夹。")],
-  [/database is locked/, t("应用还在忙别的事，过一会儿再试。")],
-  [/ConfigError/, t("配置文件（config.toml）有错，没能读懂。可以在设置里打开它看看。")],
-  [/sync folder missing/, t("找不到同步文件夹了。")],
+    t("Can't reach Canvas. Check your internet connection.")],
+  [/HTTP (5\d\d|429)\b|rate limit/i, t("Canvas had a problem. Try again in a while.")],
+  [/No space left|Errno 28/, t("The disk is full.")],
+  [/Permission denied|Errno 13|Operation not permitted/, t("Not allowed to write to the sync folder.")],
+  [/database is locked/, t("The app is still busy with something else. Try again in a moment.")],
+  [/ConfigError/, t("The config file (config.toml) has an error and couldn't be read. You can open it from Settings.")],
+  [/sync folder missing/, t("The sync folder can't be found.")],
 ];
 
 export function syncSaying(message: string): string {
   for (const [re, saying] of SYNC_SAYINGS) if (re.test(message)) return saying;
   const known = friendly(message);
-  return known !== message ? known : t("同步出错了。");
+  return known !== message ? known : t("Something went wrong while syncing.");
 }
 
 const FILE_SAYINGS: [RegExp, string][] = [
-  [/HTTP 403/, t("老师还没开放，或者已经锁定")],
-  [/HTTP 404/, t("Canvas 上已经没有了")],
-  [/HTTP 401/, t("登录已过期")],
-  [/download failed|HTTP (0|5\d\d)\b/, t("没能下载，下次同步再试")],
-  [/not a symlink/, t("本地有同名的文件挡住了")],
-  [/Permission denied|Errno 13|used by another process/, t("文件正被别的应用占用")],
-  [/No space left|Errno 28/, t("磁盘空间不够")],
+  [/HTTP 403/, t("Not published yet, or locked")],
+  [/HTTP 404/, t("No longer on Canvas")],
+  [/HTTP 401/, t("Signed out")],
+  [/download failed|HTTP (0|5\d\d)\b/, t("Couldn't download; the next sync tries again")],
+  [/not a symlink/, t("A file with the same name is in the way")],
+  [/Permission denied|Errno 13|used by another process/, t("In use by another app")],
+  [/No space left|Errno 28/, t("The disk is full")],
 ];
 
 export function fileSaying(message: string): string {
   for (const [re, saying] of FILE_SAYINGS) if (re.test(message)) return saying;
-  return t("没能同步");
+  return t("Couldn't sync");
 }
 
 const ED_SAYS: Record<string, string> = {
-  "token rejected": t("Ed 不认这个令牌：可能填错了，或者已经被撤销。请在 Ed 上重新生成一个。"),
-  "can't reach Ed": t("连不上 Ed。检查一下网络连接。"),
-  "Ed changed": t("Ed 改了它的接口，Canvas Sync 暂时读不懂。请等待应用更新。"),
+  "token rejected": t("Ed doesn't accept this token: it may be mistyped, or revoked. Create a new one on Ed."),
+  "can't reach Ed": t("Can't reach Ed. Check your internet connection."),
+  "Ed changed": t("Ed changed its interface, and Canvas Sync doesn't understand it for now. Please wait for an app update."),
 };
 
 /** What went wrong with Ed (EdError), said the way the app talks. */

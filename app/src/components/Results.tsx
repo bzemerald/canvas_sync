@@ -37,14 +37,14 @@ export function Results({ view, mode, results, asked, scope, showCourse, onOpen,
       )}
       {hits.length > 0 && Object.keys(counts).length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1.5 px-2 text-xs">
-          <Chip active={!kind} onClick={() => setKind(null)}>{t("全部")} {hits.length}</Chip>
+          <Chip active={!kind} onClick={() => setKind(null)}>{t("All")} {hits.length}</Chip>
           {(Object.keys(KIND) as Kind[]).filter((k) => counts[k]).map((k) => (
             <Chip key={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)}>{KIND[k].label} {counts[k]}</Chip>
           ))}
         </div>
       )}
       {error && <p className="px-2 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
-      {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("没有结果")}</p>}
+      {!error && asked && !loading && shown.length === 0 && <p className="px-2 py-10 text-center text-sm text-muted">{t("No results")}</p>}
     </>
   );
   return <HitBrowser hits={shown} mode={mode} showCourse={showCourse} header={header} onOpen={onOpen} onReveal={onReveal} onMenu={onMenu} onDelete={onDelete} onCopy={onCopy} />;

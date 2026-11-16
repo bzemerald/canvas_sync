@@ -46,7 +46,7 @@ export function SearchInput({ inputRef, value, onChange, placeholder, compact, a
 }
 
 /** Where you are. In a course it starts at the course (its name, not where its files live). */
-export function Breadcrumb({ path, root = { path: "", label: t("全部文件") }, inline, onGo, onRootMenu }: {
+export function Breadcrumb({ path, root = { path: "", label: t("All files") }, inline, onGo, onRootMenu }: {
   path: string;
   root?: { path: string; label: string; icon?: React.ReactNode };
   inline?: string; // a folder shown as the root itself (a course's Files, in 文件): not a step
@@ -58,7 +58,7 @@ export function Breadcrumb({ path, root = { path: "", label: t("全部文件") }
   const parts = (rest ? rest.split("/") : []).map((_, i, all) => prefix + all.slice(0, i + 1).join("/")).map((p) => ({ name: folderTitle(p), path: p }))
     .filter((p) => p.path !== inline);
   return (
-    <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("位置")}>
+    <nav className="flex min-w-0 items-center gap-0.5 text-sm" aria-label={t("Location")}>
       <button onClick={() => onGo(root.path)} onContextMenu={onRootMenu && ((e) => (e.preventDefault(), onRootMenu(e.clientX, e.clientY)))} className={`flex shrink-0 items-center gap-1.5 truncate rounded px-1.5 py-0.5 hover:bg-chip ${parts.length ? "text-muted" : "font-medium"}`}>
         {root.icon}
         {root.label}
@@ -82,9 +82,9 @@ export function SmartTitle({ folder, name, courses }: { folder: ThingOf<"search"
   const names = folder.courses.map((id) => courses.find((c) => c.id === id)?.label ?? `#${id}`);
   const bits = [
     folder.query && `“${folder.query}”`,
-    names.length ? names.join(t("、")) : t("所有课程"),
-    folder.kinds.length ? folder.kinds.map((k) => KIND[k].label).join(t("、")) : "",
-    folder.content ? t("含正文") : t("只看名称"),
+    names.length ? names.join(t(", ")) : t("All courses@@search"),
+    folder.kinds.length ? folder.kinds.map((k) => KIND[k].label).join(t(", ")) : "",
+    folder.content ? t("Includes text inside") : t("Names only"),
   ].filter(Boolean);
   return (
     <div className="flex min-w-0 items-baseline gap-2">

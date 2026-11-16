@@ -37,8 +37,8 @@ export const useThings = () => useContext(ThingsContext)!;
 /** 置顶, or 取消置顶 if it is. */
 export function pinItem(things: Things, entry: Shown): MenuItem {
   return things.isPinned(entry)
-    ? { label: t("取消置顶"), onSelect: () => things.unpin(entry) }
-    : { label: t("置顶"), onSelect: () => things.pin(entry) };
+    ? { label: t("Unpin"), onSelect: () => things.unpin(entry) }
+    : { label: t("Pin"), onSelect: () => things.pin(entry) };
 }
 
 const noDrag = (e: React.PointerEvent) => !!(e.target as HTMLElement).closest("input, textarea, select, [data-no-drag]");
@@ -99,13 +99,13 @@ export function thingName(e: Shown, courses: Course[], where: Where = "row"): st
 /** What a thing is called by itself (what Canvas or the sync folder calls it, else what the app does). */
 export function ownName(e: Shown, courses: Course[], where: Where = "row"): string {
   switch (e.type) {
-    case "course": return courses.find((c) => c.id === e.course)?.label ?? e.name ?? t("课程 #{id}", { id: e.course });
+    case "course": return courses.find((c) => c.id === e.course)?.label ?? e.name ?? t("Course #{id}", { id: e.course });
     case "folder": return folderTitle(e.path);
     case "file": return e.path.split("/").pop() ?? e.path;
     case "doc": return e.name || KINDS[e.kind].one;
     case "module": case "tool": return e.name || KINDS[e.type].one;
     case "link": return host(e.url);
-    case "search": return e.query ? `“${e.query}”` : t("搜索");
+    case "search": return e.query ? `“${e.query}”` : t("Search");
     case "note": return KINDS.note.one;
     case "view": {
       const v = VIEWS[e.view];
@@ -127,21 +127,21 @@ export function ThingIcon({ thing, courses, className = "size-4" }: { thing: Thi
 
 /** What opening a web address says: on Canvas for the site's own (relative) ones, else where. */
 export function onTheWeb(url: string): string {
-  if (url.startsWith("/")) return t("在 Canvas 中打开");
-  return /(^|\.)edstem\.org$/.test(new URL(url).hostname) ? t("在 Ed 中打开") : t("在浏览器中打开");
+  if (url.startsWith("/")) return t("Open in Canvas");
+  return /(^|\.)edstem\.org$/.test(new URL(url).hostname) ? t("Open in Ed") : t("Open in your browser");
 }
 
 /** Where a document came from, when not Canvas: a small tag beside its title. */
 export function SourceTag({ source }: { source?: string }) {
   if (source !== "ed") return null;
-  return <span title={t("来自 Ed")} className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">Ed</span>;
+  return <span title={t("From Ed")} className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">Ed</span>;
 }
 
 /** What a thing opens as, said on hover: a file in its app, a tool or link in the browser. */
 export function opensHint(thing: Thing): string | undefined {
   if (!opensElsewhere(thing)) return undefined;
-  if (thing.type === "file") return t("用默认应用打开");
+  if (thing.type === "file") return t("Opens in its app");
   if (thing.type === "course") return undefined;
-  if (thing.type === "tool") return t("在浏览器中打开这个工具（通过 Canvas 登录）");
-  return isView(thing, "canvas") ? t("在 Canvas 中打开") : t("在浏览器中打开");
+  if (thing.type === "tool") return t("Open this tool in your browser (signed in through Canvas)");
+  return isView(thing, "canvas") ? t("Open in Canvas") : t("Open in your browser");
 }

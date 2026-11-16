@@ -26,7 +26,7 @@ import { RenameInput } from "./RenameInput";
 import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
 import { SourceTag, ThingIcon, onTheWeb, opensHint, pinItem, sections, thingName, useThing, useThings } from "./Things";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 import { shortcut, tabCommand } from "../lib/keys";
 
 /** The overview, loaded once per course, and again when reloaded (it also says which tabs to
@@ -110,7 +110,7 @@ export function CourseTabs({
   const extra = !loaded || !spare || spare === "new" ? null : entries.find((e) => same(e, spare)) ?? (spare as Shown); // (as named there, if hidden)
   const name = (e: Shown) => thingName(e, things.courses, "tab");
   const current = (e: Thing) => !blank && same(tab, e);
-  const place = usePlace({ entries, shown: visible, onArrange, onSay, name, taken: (name) => t("已移除标签“{name}”", { name }) });
+  const place = usePlace({ entries, shown: visible, onArrange, onSay, name, taken: (name) => t("Removed the tab “{name}”", { name }) });
 
   // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them (9 and round: the one at the end
   // too). Going round, not to one that opens somewhere else (a tool, a link). ⌘T: a new tab, if
@@ -170,8 +170,8 @@ export function CourseTabs({
   const menu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? things.markRead(e, fresh[e.view]) : things.ways(e),
     e === extra
-      ? [{ label: t("加为标签"), onSelect: () => place.put(e, visible.length) }]
-      : place.menu(e, { hide: t("隐藏“{name}”标签", { name: name(e) }), takeAway: t("移除这个标签"), last: visible.length <= 1 }),
+      ? [{ label: t("Keep as a tab"), onSelect: () => place.put(e, visible.length) }]
+      : place.menu(e, { hide: t("Hide the “{name}” tab", { name: name(e) }), takeAway: t("Remove this tab"), last: visible.length <= 1 }),
     [pinItem(things, e)],
   );
 
@@ -203,7 +203,7 @@ export function CourseTabs({
         things.menu(menu(e), ev.clientX, ev.clientY);
       }}
       aria-current={current(e) ? "page" : undefined}
-      title={opensHint(e) ?? (!isOwn(e) ? t("拖离标签栏可以移除") : undefined)}
+      title={opensHint(e) ?? (!isOwn(e) ? t("Drag it off the tabs to remove it") : undefined)}
       className={`relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap ${current(e) ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg"}`}
     >
       {inside(e)}
@@ -213,8 +213,8 @@ export function CourseTabs({
     <>
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <span className="max-w-48 truncate">{name(e)}</span>
-      {isOwn(e) && !!fresh[e.view] && <Count n={fresh[e.view]!} label={t("{n} 个新的", { n: fresh[e.view]! })} />}
-      {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+      {isOwn(e) && !!fresh[e.view] && <Count n={fresh[e.view]!} label={tn("1 new", "{n} new", { n: fresh[e.view]! })} />}
+      {things.opening === thingKey(e) && <span className="text-xs text-muted">{t("Opening…")}</span>}
     </>
   );
 
@@ -245,19 +245,19 @@ export function CourseTabs({
       className={`no-scrollbar relative flex shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 ${
         zone.state === "over" ? "bg-accent/10" : zone.state === "ready" ? "outline-1 -outline-offset-2 outline-dashed outline-accent/60" : ""
       }`}
-      aria-label={t("课程")}
+      aria-label={t("Course")}
       onContextMenu={(e) => e.preventDefault()} // (a tab has its own menu; the bar, none)
     >
       {visible.map((e, i) => button(e, drag.item(i)))}
-      {loaded && spare === "new" && spareTab(blank, t("新标签页"), () => !blank && onNewTab(), t("关闭新标签页"))}
-      {extra && spareTab(current(extra), <span className="flex items-center gap-1.5 italic">{inside(extra)}</span>, () => !current(extra) && onTab(extra), t("关闭"),
+      {loaded && spare === "new" && spareTab(blank, t("New tab"), () => !blank && onNewTab(), t("Close the new tab"))}
+      {extra && spareTab(current(extra), <span className="flex items-center gap-1.5 italic">{inside(extra)}</span>, () => !current(extra) && onTab(extra), t("Close"),
         (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           things.menu(menu(extra), ev.clientX, ev.clientY);
         })}
       {loaded && !spare && (
-        <button onClick={onNewTab} aria-label={t("新标签页")} title={`${t("新标签页")} (${shortcut.newTab})`}
+        <button onClick={onNewTab} aria-label={t("New tab")} title={`${t("New tab")} (${shortcut.newTab})`}
           className="ml-0.5 grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-chip hover:text-fg">
           <Plus className="size-4" />
         </button>
@@ -307,11 +307,11 @@ export function NewTab({ course, overview, entries, box, typing, found, onOpen, 
           const count = isView(e) ? fresh[e.view] : 0;
           const here = shown.some((x) => same(x, e));
           return (
-            <button key={thingKey(e)} onClick={() => pick(e)} title={here ? t("在标签栏里：转到那里") : t("在这个标签里打开")}
+            <button key={thingKey(e)} onClick={() => pick(e)} title={here ? t("In the tab bar: go there") : t("Open in this tab")}
               className={`relative flex w-[7.25rem] flex-col items-center gap-2 rounded-lg px-0.5 py-3 text-sm hover:bg-chip hover:text-fg ${here ? "text-fg-soft" : "text-muted"}`}>
               <ThingIcon thing={e} courses={things.courses} className="size-5" />
               <span className="max-w-full truncate">{thingName(e, things.courses, "tab")}</span>
-              {!!count && <span className="absolute top-1.5 right-2"><Count n={count} label={t("{n} 个新的", { n: count })} /></span>}
+              {!!count && <span className="absolute top-1.5 right-2"><Count n={count} label={tn("1 new", "{n} new", { n: count })} /></span>}
             </button>
           );
         })}
@@ -330,7 +330,7 @@ export function scoreText(a: ItemSummary): string | null {
   if (a.status !== "graded") return null;
   switch (a.grading_type) {
     case "pass_fail":
-      return a.grade === "complete" ? t("通过") : a.grade === "incomplete" ? t("未通过") : a.grade ?? null;
+      return a.grade === "complete" ? t("Pass") : a.grade === "incomplete" ? t("Fail") : a.grade ?? null;
     case "percent":
     case "letter_grade":
     case "gpa_scale":
@@ -342,10 +342,10 @@ export function scoreText(a: ItemSummary): string | null {
 }
 
 const STATUS: Record<string, { text: string; className: string; hint: string }> = {
-  submitted: { text: t("已提交"), className: "bg-ok-soft text-ok", hint: t("已提交，还没有成绩（或成绩还没公布）") },
-  missing: { text: t("缺交"), className: "bg-danger-soft text-danger", hint: t("已过截止时间，Canvas 上没有你的提交") },
-  excused: { text: t("免交"), className: "bg-chip text-muted", hint: t("老师免除了这项作业") },
-  unsubmitted: { text: t("未提交"), className: "bg-chip text-muted", hint: t("Canvas 上还没有你的提交") },
+  submitted: { text: t("Submitted"), className: "bg-ok-soft text-ok", hint: t("Submitted; not graded yet (or the grade isn't released)") },
+  missing: { text: t("Missing"), className: "bg-danger-soft text-danger", hint: t("Past due, and Canvas has no submission from you") },
+  excused: { text: t("Excused"), className: "bg-chip text-muted", hint: t("Your instructor excused you from this one") },
+  unsubmitted: { text: t("Not submitted"), className: "bg-chip text-muted", hint: t("Canvas has no submission from you yet") },
 };
 
 /** Handed in? Graded? `quiet`: say nothing about work that's simply not done yet. */
@@ -354,9 +354,9 @@ export function SubmissionBadges({ a, quiet = false }: { a: ItemSummary; quiet?:
   const s = a.status && a.status !== "graded" && !(quiet && a.status === "unsubmitted") ? STATUS[a.status] : null;
   return (
     <>
-      {score && <span title={t("成绩")} className="rounded bg-ok-soft px-1.5 text-[11px] whitespace-nowrap text-ok tabular-nums">{score}</span>}
+      {score && <span title={t("Grades")} className="rounded bg-ok-soft px-1.5 text-[11px] whitespace-nowrap text-ok tabular-nums">{score}</span>}
       {s && <span title={s.hint} className={`rounded px-1.5 text-[11px] whitespace-nowrap ${s.className}`}>{s.text}</span>}
-      {a.late && <span title={t("提交时已过截止时间")} className="rounded bg-warn-soft px-1.5 text-[11px] whitespace-nowrap text-warn">{t("迟交")}</span>}
+      {a.late && <span title={t("Submitted after the due date")} className="rounded bg-warn-soft px-1.5 text-[11px] whitespace-nowrap text-warn">{t("Late")}</span>}
     </>
   );
 }
@@ -389,7 +389,7 @@ export function Empty({ children }: { children: React.ReactNode }) {
 
 function Due({ iso }: { iso: string | null | undefined }) {
   const due = untilDue(iso);
-  if (!due) return <span className="text-xs text-muted">{t("没有截止日期")}</span>;
+  if (!due) return <span className="text-xs text-muted">{t("No due date")}</span>;
   return (
     <span className={`text-xs ${due.urgent ? "font-medium text-warn" : "text-muted"}`}>
       {shortDate(iso)} · {due.text}
@@ -405,7 +405,7 @@ export function AssignmentRow({ a, course, onClick }: { a: ItemSummary; course: 
   return (
     <Row onClick={onClick} thing={docThing(course, a)}>
       <div className="flex items-center gap-2">
-        {a.new && <NewDot label={t("新作业")} />}
+        {a.new && <NewDot label={t("New assignment")} />}
         <span className={`truncate ${a.new ? "font-medium" : ""}`}>{a.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5"><SubmissionBadges a={a} quiet /><Due iso={a.due_at} /></span>
       </div>
@@ -431,8 +431,8 @@ const docEntry = (course: number, it: ItemSummary): CatalogEntry => ({
 function FilterNote({ n, box, narrowing }: { n: number; box: SearchBox; narrowing: ReturnType<typeof useNarrowing> }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-2.5 pt-1 pb-2 text-xs text-muted">
-      <span>{n ? t("找到 {n} 个", { n }) : t("没有找到")}</span>
-      <button onClick={box.onWiden} className="text-accent hover:underline">{t("搜索整门课 ›")}</button>
+      <span>{n ? tn("1 found", "{n} found", { n }) : t("Nothing found")}</span>
+      <button onClick={box.onWiden} className="text-accent hover:underline">{t("Search the whole course ›")}</button>
       <ReadingBar reading={narrowing.reading} names={narrowing.names} courses={narrowing.courses} onQuery={box.onQuery} />
     </div>
   );
@@ -485,11 +485,11 @@ export function CourseModules({ course, focus, only, box }: {
 
   if (list === null) return <Loading />;
   if (list.length === 0) {
-    return <p className="px-6 py-8 text-sm text-muted">{t("还没有模块。（新加的课程同步一次后就会显示。）")}</p>;
+    return <p className="px-6 py-8 text-sm text-muted">{t("No modules yet. (A course you just added shows them after one sync.)")}</p>;
   }
   // Searching: modules whose name matches, whole; elsewhere just the matching items; all open.
   const match = narrowing.scores;
-  if (only !== undefined && !list.some((m) => m.id === only)) return <p className="px-6 py-8 text-sm text-muted">{t("找不到这个模块了")}</p>;
+  if (only !== undefined && !list.some((m) => m.id === only)) return <p className="px-6 py-8 text-sm text-muted">{t("This module isn't there any more")}</p>;
   const shown = only !== undefined
     ? list.filter((m) => m.id === only)
     : match
@@ -507,8 +507,8 @@ export function CourseModules({ course, focus, only, box }: {
           <FilterNote n={found} box={box} narrowing={narrowing} />
         ) : (
           <div className="mb-2 flex justify-end gap-3 text-xs text-muted">
-            <button className="hover:text-fg" onClick={() => setOpen(list.map((m) => m.id))}>{t("全部展开")}</button>
-            <button className="hover:text-fg" onClick={() => setOpen([])}>{t("全部收起")}</button>
+            <button className="hover:text-fg" onClick={() => setOpen(list.map((m) => m.id))}>{t("Expand all")}</button>
+            <button className="hover:text-fg" onClick={() => setOpen([])}>{t("Collapse all")}</button>
           </div>
         )}
         {shown.map((m) => {
@@ -520,17 +520,17 @@ export function CourseModules({ course, focus, only, box }: {
                 <button onClick={() => toggle(m.id)} aria-expanded={isOpen} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   {isOpen ? <ChevronDown className="size-4 shrink-0 text-muted" /> : <ChevronRight className="size-4 shrink-0 text-muted" />}
                   <span className="truncate font-medium">{m.name}</span>
-                  {m.current && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("当前")}</span>}
+                  {m.current && <span className="shrink-0 rounded bg-info-soft px-1.5 text-[11px] text-info">{t("Current")}</span>}
                   {locked && (
                     <span className="flex shrink-0 items-center gap-1 text-xs text-muted">
-                      <Lock className="size-3" />{m.unlock_at ? t("{date} 解锁", { date: shortDate(m.unlock_at) }) : t("未解锁")}
+                      <Lock className="size-3" />{m.unlock_at ? t("Unlocks {date}", { date: shortDate(m.unlock_at) }) : t("Locked")}
                     </span>
                   )}
-                  <span className="ml-auto shrink-0 text-xs text-muted">{t("{n} 项", { n: m.items.filter((i) => i.type !== "SubHeader").length })}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted">{tn("1 item", "{n} items", { n: m.items.filter((i) => i.type !== "SubHeader").length })}</span>
                 </button>
                 {m.folder && (
                   <button
-                    title={t("在“文件”中查看这个模块的文件夹")}
+                    title={t("Show this module's folder in Files")}
                     onClick={() => things.open({ type: "folder", path: m.folder! })}
                     className="shrink-0 rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-chip hover:text-fg focus:opacity-100"
                   >
@@ -540,7 +540,7 @@ export function CourseModules({ course, focus, only, box }: {
               </header>
               {isOpen && (
                 <ul className="border-t border-line px-2 py-1">
-                  {m.items.length === 0 && <li className="px-2 py-2 text-sm text-muted">{t("空的")}</li>}
+                  {m.items.length === 0 && <li className="px-2 py-2 text-sm text-muted">{t("Empty")}</li>}
                   {m.items.map((it, i) => (
                     <ModuleRow key={it.id ?? i} it={it} course={course.id} opening={!!it.tool && pending === `item:${it.tool.module_item_id}`} onClick={() => activate(it)} />
                   ))}
@@ -570,20 +570,20 @@ export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; co
         {...thing(what && { ...what, name: it.title })}
         style={pad}
         title={
-          it.deleted ? t("你删除了这个文件；在 Canvas 中打开")
-            : it.tool ? (it.tool.name ? t("在浏览器中打开 {name}（通过 Canvas 登录）", { name: it.tool.name }) : t("在浏览器中打开这个工具（通过 Canvas 登录）"))
-              : leavesApp ? t("在浏览器中打开") : undefined
+          it.deleted ? t("You deleted this file; opens in Canvas")
+            : it.tool ? (it.tool.name ? t("Open {name} in your browser (signed in through Canvas)", { name: it.tool.name }) : t("Open this tool in your browser (signed in through Canvas)"))
+              : leavesApp ? t("Open in your browser") : undefined
         }
         className={`flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm hover:bg-chip ${it.deleted ? "opacity-55" : ""}`}
       >
         {it.type === "File" ? <FileIcon name={it.title} /> : Icon ? <Icon className="size-4 shrink-0 text-muted" /> : <FileText className="size-4 shrink-0 text-muted" />}
         <span className={`truncate ${it.deleted ? "line-through" : ""} ${it.new ? "font-medium" : ""}`}>{it.title}</span>
         {it.new && <NewDot />}
-        {it.done && <Check className="size-3.5 shrink-0 text-type-sheet" aria-label={t("已完成")} />}
+        {it.done && <Check className="size-3.5 shrink-0 text-type-sheet" aria-label={t("Done")} />}
         <span className="ml-auto flex shrink-0 items-center gap-2">
-          {opening && <span className="text-xs text-muted">{t("正在打开…")}</span>}
+          {opening && <span className="text-xs text-muted">{t("Opening…")}</span>}
           {it.due_at && <Due iso={it.due_at} />}
-          {leavesApp && <ExternalLink className="size-3.5 text-muted" aria-label={t("在浏览器中打开")} />}
+          {leavesApp && <ExternalLink className="size-3.5 text-muted" aria-label={t("Open in your browser")} />}
         </span>
       </button>
     </li>
@@ -674,10 +674,10 @@ export function CourseReader({ course, of, selected, onSelect, onSeen, box }: {
       <ul ref={listEl} tabIndex={0} data-keys onKeyDown={onKeyDown}
         // A row clicked: the list keeps the keys (a row's own would click it again).
         onFocus={(e) => e.target !== listEl.current && (e.target as HTMLElement).closest("[data-item]") && listEl.current?.focus({ preventScroll: true })}
-        className="focus-quiet w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("列表")}>
+        className="focus-quiet w-80 shrink-0 overflow-y-auto border-r border-line p-2" aria-label={t("List")}>
         {searching && !narrowing.loading && <li><FilterNote n={list?.length ?? 0} box={box} narrowing={narrowing} /></li>}
         {list === null && <li><Loading className="px-2 py-3 text-sm" /></li>}
-        {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("什么都没有")}</li>}
+        {list?.length === 0 && !searching && <li className="px-2 py-3 text-sm text-muted">{t("Nothing here")}</li>}
         {of === "assignment" ? <AssignmentList course={course.id} list={list ?? []} current={current} onSelect={onSelect} />
           : of === "ed" ? <EdList course={course.id} list={list ?? []} current={current} onSelect={onSelect} /> : (list ?? []).map((it) => (
           <ListRow key={it.id} it={it} thing={docThing(course.id, it)} active={it.id === current} onClick={() => onSelect(it.id)} />
@@ -707,7 +707,7 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
           {it.new && <NewDot />}
           <span className={`truncate text-sm ${it.new ? "font-medium" : ""}`}>{it.title}</span>
           <SourceTag source={it.source} />
-          {it.front_page && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">{t("首页")}</span>}
+          {it.front_page && <span className="shrink-0 rounded bg-chip px-1 text-[10px] text-muted">{t("Front page")}</span>}
           <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(it.date, false)}</span>
         </div>
         {it.preview && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{it.preview}</p>}
@@ -720,11 +720,11 @@ function ListRow({ it, thing, active, onClick }: { it: ItemSummary; thing: Shown
 // -- Ed ----------------------------------------------------------------------------------
 
 /** (By what it is on Ed: a copy of a Canvas announcement is kept as a post, and is one there.) */
-export const EdAnnouncementMark = () => <Megaphone className="size-3 shrink-0 text-muted" aria-label={t("公告")} />;
+export const EdAnnouncementMark = () => <Megaphone className="size-3 shrink-0 text-muted" aria-label={t("Announcements")} />;
 
 type EdFilter = "all" | "announcements" | "pinned" | "staff" | "new" | "watched";
 const ED_FILTERS: [EdFilter, string][] = [
-  ["all", t("全部")], ["announcements", t("公告")], ["pinned", t("置顶@@heading")], ["staff", t("教师")], ["new", t("未读")], ["watched", t("关注")],
+  ["all", t("All")], ["announcements", t("Announcements")], ["pinned", t("Pinned")], ["staff", t("Staff")], ["new", t("Unread")], ["watched", t("Watching")],
 ];
 const keeps: Record<EdFilter, (p: ItemSummary) => boolean> = {
   all: () => true, announcements: (p) => p.kind === "announcement", pinned: (p) => !!p.ed?.pinned, staff: (p) => !!p.ed?.staff, new: (p) => p.new,
@@ -749,30 +749,30 @@ function EdList({ course, list, current, onSelect }: { course: number; list: Ite
           </button>
         ))}
         {categories.length > 1 && (
-          <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t("分类")}
+          <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t("Category")}
             className="ml-auto max-w-28 rounded-md border border-line bg-bg px-1 py-0.5 text-xs">
-            <option value="">{t("所有分类")}</option>
+            <option value="">{t("All categories")}</option>
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
       </li>
-      {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("没有这样的内容")}</li>}
+      {shown.length === 0 && <li className="px-2 py-3 text-sm text-muted">{t("Nothing like that")}</li>}
       {shown.map((p) => (
         <li key={p.id}>
           <button data-item={p.id} onClick={() => onSelect(p.id)} {...thing(docThing(course, p))}
             className={`block w-full rounded-md px-2.5 py-2 text-left ${p.id === current ? "bg-selected" : "hover:bg-chip"}`}>
             <div className="flex items-center gap-2">
               {p.new && <NewDot />}
-              {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("置顶@@heading")} />}
+              {p.ed?.pinned && <Pin className="size-3 shrink-0 text-muted" aria-label={t("Pinned")} />}
               {p.kind === "announcement" && <EdAnnouncementMark />}
               <span className={`truncate text-sm ${p.new ? "font-medium" : ""}`}>{p.title}</span>
               <span className="ml-auto shrink-0 text-xs text-muted">{shortDate(p.date, false)}</span>
             </div>
             <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
               {p.ed?.staff && <StaffTag />}
-              <span className="truncate">{[p.ed?.category, p.author ?? t("匿名")].filter(Boolean).join(" · ")}</span>
+              <span className="truncate">{[p.ed?.category, p.author ?? t("Anonymous")].filter(Boolean).join(" · ")}</span>
               {!!p.ed?.replies && <span className="flex shrink-0 items-center gap-0.5"><MessageCircle className="size-3" />{p.ed.replies}</span>}
-              {p.ed?.type === "question" && p.ed.answered && <Check className="size-3 shrink-0 text-ok" aria-label={t("已解答")} />}
+              {p.ed?.type === "question" && p.ed.answered && <Check className="size-3 shrink-0 text-ok" aria-label={t("Answered")} />}
             </p>
           </button>
         </li>
@@ -781,17 +781,17 @@ function EdList({ course, list, current, onSelect }: { course: number; list: Ite
   );
 }
 
-const StaffTag = () => <span className="shrink-0 rounded bg-selected px-1 text-[10px] text-accent">{t("教师")}</span>;
+const StaffTag = () => <span className="shrink-0 rounded bg-selected px-1 text-[10px] text-accent">{t("Staff")}</span>;
 
 /** An answer or comment on Ed, and the comments on it (indented). */
 function ReplyView({ r }: { r: Reply }) {
   return (
     <div className={`rounded-lg px-3 py-2.5 ${r.staff ? "bg-selected/50" : ""}`}>
       <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
-        <span className="font-medium text-fg-soft">{r.author ?? t("匿名")}</span>
+        <span className="font-medium text-fg-soft">{r.author ?? t("Anonymous")}</span>
         {r.staff && <StaffTag />}
-        {r.answer && <span>{t("回答")}</span>}
-        {r.endorsed && <span className="flex items-center gap-0.5 text-ok"><Check className="size-3" />{t("被认可")}</span>}
+        {r.answer && <span>{t("Answer")}</span>}
+        {r.endorsed && <span className="flex items-center gap-0.5 text-ok"><Check className="size-3" />{t("Endorsed")}</span>}
         <span>{shortDate(r.date)}</span>
       </div>
       {r.html.trim() && <RichText html={r.html} files={{}} className="text-sm" />}
@@ -810,7 +810,7 @@ function AssignmentList({ course, list, current, onSelect }: { course: number; l
   const thing = useThing();
   const groups = useMemo(() => {
     const now = Date.now();
-    const g: [string, ItemSummary[]][] = [[t("即将截止"), []], [t("已过截止"), []], [t("没有截止日期"), []]];
+    const g: [string, ItemSummary[]][] = [[t("Upcoming"), []], [t("Past due"), []], [t("No due date"), []]];
     for (const a of list) {
       const t = a.due_at ? new Date(a.due_at).getTime() : null;
       g[t === null ? 2 : t >= now ? 0 : 1][1].push(a);
@@ -833,7 +833,7 @@ function AssignmentList({ course, list, current, onSelect }: { course: number; l
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <Due iso={a.due_at} />
-                    {a.points != null && a.status !== "graded" && <span className="text-xs text-muted">· {t("{n} 分", { n: fmt(a.points) })}</span>}
+                    {a.points != null && a.status !== "graded" && <span className="text-xs text-muted">· {tn("1 point", "{n} points", { n: fmt(a.points) })}</span>}
                     <SubmissionBadges a={a} />
                   </div>
                 </button>
@@ -847,8 +847,8 @@ function AssignmentList({ course, list, current, onSelect }: { course: number; l
 }
 
 const SUBMISSION: Record<string, string> = {
-  online_upload: t("上传文件"), online_text_entry: t("在线文本"), online_url: t("网址"), online_quiz: t("测验"),
-  discussion_topic: t("讨论"), external_tool: t("外部工具"), on_paper: t("纸质"), none: t("不需要提交"), media_recording: t("录音/录像"),
+  online_upload: t("File upload"), online_text_entry: t("Text entry"), online_url: t("Website URL"), online_quiz: t("Quiz"),
+  discussion_topic: t("Discussion"), external_tool: t("External tool"), on_paper: t("On paper"), none: t("No submission"), media_recording: t("Media recording"),
 };
 
 function ItemView({ course, kind, id, onLoaded }: {
@@ -866,8 +866,8 @@ function ItemView({ course, kind, id, onLoaded }: {
   if (error) {
     return (
       <div className="p-8 text-sm text-fg-soft">
-        <p>{t("在已同步的内容里找不到它（可能是新的，或者不是公告）。")}</p>
-        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-2 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
+        <p>{t("It isn't in what's been synced (it may be new, or not an announcement).")}</p>
+        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-2 text-accent hover:underline">{t("Open in Canvas")}</button>
       </div>
     );
   }
@@ -876,28 +876,28 @@ function ItemView({ course, kind, id, onLoaded }: {
   return (
     <article className="mx-auto max-w-3xl px-8 py-6">
       <header className="mb-4 border-b border-line pb-4">
-        <h1 className="selectable text-xl font-semibold">{kind === "syllabus" ? t("课程大纲") : it.title}</h1>
+        <h1 className="selectable text-xl font-semibold">{kind === "syllabus" ? t("Syllabus@@full") : it.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
           {kind === "announcement" && !it.ed && <>{it.author && <span>{it.author}</span>}<span>{shortDate(it.date)}</span><SourceTag source={it.source} /></>}
           {it.ed && (
             <>
-              <span className="flex items-center gap-1.5">{it.author ?? t("匿名")}{it.ed?.staff && <StaffTag />}</span>
+              <span className="flex items-center gap-1.5">{it.author ?? t("Anonymous")}{it.ed?.staff && <StaffTag />}</span>
               <span>{shortDate(it.date)}</span>
               {it.ed?.category && <span>{[it.ed.category, it.ed.subcategory].filter(Boolean).join(" / ")}</span>}
-              {it.ed?.private && <span className="flex items-center gap-1"><Lock className="size-3" />{t("私密")}</span>}
+              {it.ed?.private && <span className="flex items-center gap-1"><Lock className="size-3" />{t("Private")}</span>}
               <SourceTag source={it.source} />
             </>
           )}
           {kind === "assignment" && (
             <>
               <Due iso={it.due_at} />
-              {it.points != null && <span>{t("{n} 分", { n: fmt(it.points) })}</span>}
-              {!!it.submission_types?.length && <span>{it.submission_types.map((s) => SUBMISSION[s] ?? s).join(t("、"))}</span>}
+              {it.points != null && <span>{tn("1 point", "{n} points", { n: fmt(it.points) })}</span>}
+              {!!it.submission_types?.length && <span>{it.submission_types.map((s) => SUBMISSION[s] ?? s).join(t(", "))}</span>}
               <span className="flex items-center gap-1"><SubmissionBadges a={it} /></span>
-              {it.submitted_at && <span>{t("提交于 {date}", { date: shortDate(it.submitted_at) })}</span>}
+              {it.submitted_at && <span>{t("Submitted {date}", { date: shortDate(it.submitted_at) })}</span>}
             </>
           )}
-          {kind === "page" && it.date && <span>{t("更新于 {date}", { date: shortDate(it.date) })}</span>}
+          {kind === "page" && it.date && <span>{t("Updated {date}", { date: shortDate(it.date) })}</span>}
           {it.tool ? (
             <span className="ml-auto flex items-center gap-3">
               {it.url && (
@@ -905,16 +905,16 @@ function ItemView({ course, kind, id, onLoaded }: {
               )}
               <button
                 onClick={() => launch("assignment", { assignment_id: it.tool!.assignment_id })}
-                title={t("在浏览器中打开（通过 Canvas 登录）")}
+                title={t("Opens in your browser (signed in through Canvas)")}
                 className="flex items-center gap-1 text-accent hover:underline"
               >
-                {pending === "assignment" ? t("正在打开…") : it.tool.name ? t("在 {name} 中打开", { name: it.tool.name }) : t("在外部工具中打开")}
+                {pending === "assignment" ? t("Opening…") : it.tool.name ? t("Open in {name}", { name: it.tool.name }) : t("Open in the external tool")}
                 <ExternalLink className="size-3.5" />
               </button>
             </span>
           ) : it.url && (
             <button onClick={() => void api.openUrl(it.url!)} className="ml-auto flex items-center gap-1 text-accent hover:underline">
-              {submit ? t("在 Canvas 中提交") : onTheWeb(it.url)}
+              {submit ? t("Submit in Canvas") : onTheWeb(it.url)}
               <ExternalLink className="size-3.5" />
             </button>
           )}
@@ -938,15 +938,15 @@ function ItemView({ course, kind, id, onLoaded }: {
       {it.html.trim() ? (
         <RichText html={it.html} files={it.files} />
       ) : (
-        <p className="text-sm text-muted">{t("没有正文。")}</p>
+        <p className="text-sm text-muted">{t("Nothing written here.")}</p>
       )}
       {it.ed && (it.replies ? it.replies.length > 0 : it.ed.replies > 0) && (
         <section className="mt-6 border-t border-line pt-4">
-          <h2 className="mb-2 text-sm font-medium text-muted">{t("{n} 条回复", { n: it.replies ? countReplies(it.replies) : it.ed.replies })}</h2>
+          <h2 className="mb-2 text-sm font-medium text-muted">{tn("1 reply", "{n} replies", { n: it.replies ? countReplies(it.replies) : it.ed.replies })}</h2>
           {it.replies ? (
             <div className="space-y-2">{it.replies.map((r) => <ReplyView key={r.id} r={r} />)}</div>
           ) : (
-            <p className="text-sm text-muted">{t("回复还没下载：连上网后再打开就有了。")}</p>
+            <p className="text-sm text-muted">{t("The replies aren't downloaded yet: open this again when you're online.")}</p>
           )}
         </section>
       )}
@@ -976,26 +976,26 @@ export function CourseGrades({ course, box }: {
         <section className="mb-5 rounded-xl border border-line bg-panel px-5 py-4">
           {total ? (
             <>
-              <p className="mb-1 text-xs text-muted">{t("当前总评")}</p>
+              <p className="mb-1 text-xs text-muted">{t("Current grade")}</p>
               <TotalLine total={total} big />
               <p className="mt-1.5 text-xs text-muted">
-                {t("只算已经评分的作业，按 Canvas 的计算方式；每次同步时更新。")}
+                {t("Graded work only, worked out the way Canvas does; updated on every sync.")}
                 {total.final_score != null && total.final_score !== total.current_score && (
-                  <> {t("未评分的都按 0 分算的话是 {score}%。", { score: fmt(total.final_score) })}</>
+                  <> {t("Counting everything ungraded as 0, it's {score}%.", { score: fmt(total.final_score) })}</>
                 )}
               </p>
             </>
           ) : (
-            <p className="text-sm text-muted">{t("这门课在 Canvas 上不显示总评。")}</p>
+            <p className="text-sm text-muted">{t("This course doesn't show a total grade on Canvas.")}</p>
           )}
         </section>
         {match && <FilterNote n={rows.length} box={box} narrowing={narrowing} />}
         {rows.length === 0 && !match ? (
-          <p className="text-sm text-muted">{t("还没有作业。")}</p>
+          <p className="text-sm text-muted">{t("No assignments yet.")}</p>
         ) : (
           <ul className="rounded-xl border border-line bg-panel p-1.5">
             <li className="grid grid-cols-[minmax(0,1fr)_9rem_minmax(7rem,auto)] gap-3 px-2.5 py-1.5 text-[11px] font-medium text-muted">
-              <span>{t("作业")}</span><span>{t("截止")}</span><span className="text-right">{t("成绩")}</span>
+              <span>{t("Assignments")}</span><span>{t("Due")}</span><span className="text-right">{t("Grades")}</span>
             </li>
             {rows.map((a) => (
               <li key={a.id}>

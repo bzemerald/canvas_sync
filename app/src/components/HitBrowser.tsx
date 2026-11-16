@@ -73,7 +73,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
               key={hitKey(h)}
               role="option"
               {...itemProps(h)}
-              title={h.path ? t("双击打开文件") : t("双击在 Canvas 中打开")}
+              title={h.path ? t("Double-click to open the file") : t("Double-click to open in Canvas")}
               className={`group flex items-start gap-2 rounded-lg px-2 py-2 ${shade(h)}`}
             >
               <div className="min-w-0 flex-1">
@@ -81,7 +81,7 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
               </div>
               <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100">
                 {h.path && (
-                  <IconButton title={t("在文件夹中显示")} onClick={() => onReveal(h)}>
+                  <IconButton title={t("Show in folder")} onClick={() => onReveal(h)}>
                     <FolderOpen className="size-4" />
                   </IconButton>
                 )}

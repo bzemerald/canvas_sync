@@ -67,7 +67,7 @@ export function formatTime(seconds: number | null): string {
   if (seconds == null) return "";
   const d = new Date(seconds * 1000);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return t("今天 {time}", { time: d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) });
+  if (d.toDateString() === now.toDateString()) return t("Today {time}", { time: d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) });
   return d.toLocaleDateString(locale, d.getFullYear() === now.getFullYear() ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -215,10 +215,10 @@ export function FileBrowser({
     <div ref={box} tabIndex={0} data-keys onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
       {mode === "list" && (
         <div className="grid grid-cols-[minmax(0,1fr)_10rem_7.5rem_5rem] gap-3 border-b border-line px-6 py-1.5 text-xs text-muted">
-          <SortHeader label={t("名称")} k="name" sort={sort} setSort={setSort} />
-          <span>{t("状态")}</span>
-          <SortHeader label={t("修改日期")} k="date" sort={sort} setSort={setSort} />
-          <SortHeader label={t("大小")} k="size" sort={sort} setSort={setSort} right />
+          <SortHeader label={t("Name")} k="name" sort={sort} setSort={setSort} />
+          <span>{t("Status")}</span>
+          <SortHeader label={t("Date modified")} k="date" sort={sort} setSort={setSort} />
+          <SortHeader label={t("Size")} k="size" sort={sort} setSort={setSort} right />
         </div>
       )}
       <div
@@ -234,10 +234,10 @@ export function FileBrowser({
       >
         <MarqueeBox box={marquee.box} />
         {error && <p className="px-3 py-6 text-sm text-danger whitespace-pre-wrap">{error}</p>}
-        {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("这个文件夹是空的")}</p>}
+        {empty && !error && <p className="px-3 py-10 text-center text-sm text-muted">{t("This folder is empty")}</p>}
         {missing && !error && (
           <p className="px-3 py-10 text-center text-sm text-muted">
-            {path === root && missingNote ? missingNote : t("找不到这个文件夹了")}
+            {path === root && missingNote ? missingNote : t("This folder is gone")}
           </p>
         )}
 
@@ -255,7 +255,7 @@ export function FileBrowser({
                   {e.type === "dir" && !e.deleted ? (
                     <button
                       tabIndex={-1}
-                      aria-label={expanded.has(e.path) ? t("收起") : t("展开")}
+                      aria-label={expanded.has(e.path) ? t("Collapse") : t("Expand")}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         toggle(e.path);
@@ -266,7 +266,7 @@ export function FileBrowser({
                     </button>
                   ) : (
                     <span className="flex w-4.5 shrink-0 justify-center">
-                      {e.new && <NewDot label={e.new === "updated" ? t("有新版本，你还没打开过") : t("新文件，你还没打开过")} />}
+                      {e.new && <NewDot label={e.new === "updated" ? t("A new version you haven't opened yet") : t("New, and you haven't opened it yet")} />}
                     </span>
                   )}
                   {e.type === "dir" ? (
@@ -282,8 +282,8 @@ export function FileBrowser({
                   {showChanges && e.renamed_from && <WasNamed name={e.renamed_from} className="min-w-0 shrink-[100] truncate text-xs" />}
                   {marked?.[e.path] && <span className="min-w-0 shrink-[100] truncate text-xs text-muted">{marked[e.path].note}</span>}
                   {e.link && (
-                    <span title={t("快捷方式，原文件在 {link}", { link: e.link })}>
-                      <CornerUpRight className="size-3 shrink-0 text-muted" aria-label={t("快捷方式")} />
+                    <span title={t("Shortcut; the file is at {link}", { link: e.link })}>
+                      <CornerUpRight className="size-3 shrink-0 text-muted" aria-label={t("Shortcut")} />
                     </span>
                   )}
                 </span>
@@ -300,7 +300,7 @@ export function FileBrowser({
                 key={e.path}
                 role="option"
                 {...itemProps(e)}
-                title={e.link ? t("{name}（快捷方式，原文件在 {link}）", { name: e.name, link: e.link }) : e.name}
+                title={e.link ? t("{name} (shortcut; the file is at {link})", { name: e.name, link: e.link }) : e.name}
                 className={`flex flex-col items-center gap-1.5 rounded-lg p-2 ${shade(e)} ${e.deleted ? "opacity-55" : ""}`}
               >
                 <div className="relative">
@@ -309,7 +309,7 @@ export function FileBrowser({
                   ) : (
                     <Thumb path={e.path} name={e.name} mtime={e.mtime} size={72} iconClass="size-12" />
                   )}
-                  {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label={t("快捷方式")} />}
+                  {e.link && <CornerUpRight className="absolute bottom-0 left-0 size-4 rounded bg-panel p-0.5 text-muted shadow" aria-label={t("Shortcut")} />}
                   <IconMarks entry={e} showChanges={showChanges} />
                 </div>
                 {renaming === e.path ? (
@@ -335,7 +335,7 @@ function MarkedIcon({ e, marked, className }: { e: Entry; marked: Props["marked"
 
 /** A folder's name on disk, if you renamed it in the app, struck through. */
 function WasNamed({ name, className }: { name: string; className: string }) {
-  return <s title={t("磁盘上叫“{name}”", { name })} className={`text-muted ${className}`}>{name}</s>;
+  return <s title={t("Called “{name}” on disk", { name })} className={`text-muted ${className}`}>{name}</s>;
 }
 
 function SortHeader({ label, k, sort, setSort, right }: {

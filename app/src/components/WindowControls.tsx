@@ -25,13 +25,13 @@ export function WindowControls() {
       Canvas Sync
     </div>
     <div className="fixed top-0 right-0 z-[45] flex h-13">
-      <button title={t("最小化")} aria-label={t("最小化")} onClick={() => void w.minimize()} className={`${button} hover:bg-chip`}>
+      <button title={t("Minimize")} aria-label={t("Minimize")} onClick={() => void w.minimize()} className={`${button} hover:bg-chip`}>
         <Minus className="size-4" aria-hidden />
       </button>
-      <button title={maximized ? t("还原") : t("最大化")} aria-label={maximized ? t("还原") : t("最大化")} onClick={() => void w.toggleMaximize()} className={`${button} hover:bg-chip`}>
+      <button title={maximized ? t("Restore") : t("Maximize")} aria-label={maximized ? t("Restore") : t("Maximize")} onClick={() => void w.toggleMaximize()} className={`${button} hover:bg-chip`}>
         {maximized ? <Copy className="size-3.5 -scale-x-100" aria-hidden /> : <Square className="size-3.5" aria-hidden />}
       </button>
-      <button title={t("关闭")} aria-label={t("关闭")} onClick={() => void w.close()} className={`${button} hover:bg-[#e81123] hover:text-white`}>
+      <button title={t("Close")} aria-label={t("Close")} onClick={() => void w.close()} className={`${button} hover:bg-[#e81123] hover:text-white`}>
         <X className="size-4" aria-hidden />
       </button>
     </div>

@@ -30,15 +30,15 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
 
   return (
     <Dialog
-      title={t("更换“{name}”的图标", { name: course.label })}
+      title={t("Icon for “{name}”", { name: course.label })}
       onClose={onClose}
       width="max-w-xl"
       footer={
         <>
-          <Button className="mr-auto" onClick={() => (setChoice(automatic), setAuto(true))} disabled={auto}>{t("自动")}</Button>
-          <Button onClick={() => pick({ none: true })} disabled={"none" in choice}>{t("不显示图标")}</Button>
-          <Button onClick={onClose}>{t("取消")}</Button>
-          <Button primary onClick={() => void save()}>{t("保存")}</Button>
+          <Button className="mr-auto" onClick={() => (setChoice(automatic), setAuto(true))} disabled={auto}>{t("Automatic")}</Button>
+          <Button onClick={() => pick({ none: true })} disabled={"none" in choice}>{t("No icon")}</Button>
+          <Button onClick={onClose}>{t("Cancel")}</Button>
+          <Button primary onClick={() => void save()}>{t("Save")}</Button>
         </>
       }
     >
@@ -46,11 +46,11 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
         <IconView choice={choice} size={24} />
         <span className="truncate font-medium">{course.label}</span>
         <span className="ml-auto shrink-0 text-xs text-muted">
-          {auto ? t("自动选择（按课程科目）") : "none" in choice ? t("不显示图标") : ""}
+          {auto ? t("Picked from the course's subject") : "none" in choice ? t("No icon") : ""}
         </span>
       </div>
 
-      <h3 className="mb-1.5 text-xs text-muted">{t("图标@@heading")}</h3>
+      <h3 className="mb-1.5 text-xs text-muted">{t("Icon")}</h3>
       <div className="mb-4 grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1">
         {Object.keys(ICONS).map((name) => {
           const on = "icon" in choice && choice.icon === name;
@@ -63,7 +63,7 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
         })}
       </div>
 
-      <h3 className="mb-1.5 text-xs text-muted">{t("颜色")}</h3>
+      <h3 className="mb-1.5 text-xs text-muted">{t("Color")}</h3>
       <div className="mb-4 flex flex-wrap gap-2">
         {Object.entries(COLORS).map(([name, value]) => (
           <button key={name} title={name} aria-label={name} onClick={() => pick({ icon: "icon" in choice ? choice.icon : "icon" in automatic ? automatic.icon : "book", color: name })}
@@ -73,7 +73,7 @@ export function CourseIconDialog({ course, onClose, onDone }: { course: Course; 
       </div>
 
       <label className="block">
-        <span className="mb-1.5 block text-xs text-muted">{t("或者用一个表情")}</span>
+        <span className="mb-1.5 block text-xs text-muted">{t("Or use an emoji")}</span>
         <input
           value={"emoji" in choice ? choice.emoji : ""}
           onChange={(e) => {

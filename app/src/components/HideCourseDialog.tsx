@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as api from "../lib/api";
 import type { Course } from "../lib/api";
 import { friendly } from "../lib/errors";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 import { Button, Dialog } from "./Dialog";
 
 /** Hide a course you don't need to see (an orientation, a finished training), or a whole past
@@ -29,26 +29,26 @@ export function HideCourseDialog({ courses, term, onClose, onDone }: {
   };
   return (
     <Dialog
-      title={one ? t("隐藏“{name}”？", { name: courses[0].label }) : t("隐藏“{term}”的 {n} 门课？", { term: term ?? "", n: courses.length })}
+      title={one ? t("Hide “{name}”?", { name: courses[0].label }) : tn("Hide the 1 course in “{term}”?", "Hide the {n} courses in “{term}”?", { term: term ?? "", n: courses.length })}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{t("取消")}</Button>
-          <Button primary autoFocus disabled={busy} onClick={() => void hide()}>{t("隐藏")}</Button>
+          <Button onClick={onClose}>{t("Cancel")}</Button>
+          <Button primary autoFocus disabled={busy} onClick={() => void hide()}>{t("Hide")}</Button>
         </>
       }
     >
       <p className="text-fg-soft">
         {one
-          ? t("它会从侧栏、搜索和新内容提醒里消失。随时可以在侧栏最下面的“已隐藏的课程”里找回。")
-          : t("它们会从侧栏、搜索和新内容提醒里消失。随时可以在侧栏最下面的“已隐藏的课程”里找回。")}
+          ? t("It leaves the sidebar, search and what's new. You can bring it back anytime from “Hidden courses” at the bottom of the sidebar.")
+          : t("They leave the sidebar, search and what's new. You can bring them back anytime from “Hidden courses” at the bottom of the sidebar.")}
       </p>
-      {!one && <p className="mt-2 text-xs text-muted">{courses.map((c) => c.label).join(t("、"))}</p>}
+      {!one && <p className="mt-2 text-xs text-muted">{courses.map((c) => c.label).join(t(", "))}</p>}
       <label className="mt-3 flex items-start gap-2 text-fg-soft">
         <input type="checkbox" className="mt-1" checked={stopSyncing} onChange={(e) => setStopSyncing(e.target.checked)} />
         <span>
-          {one ? t("同时停止同步这门课") : t("同时停止同步这些课")}
-          <span className="block text-xs text-muted">{t("Canvas 上的新内容不再下载；已经下载的文件留在原处。")}</span>
+          {one ? t("Also stop syncing this course") : t("Also stop syncing these courses")}
+          <span className="block text-xs text-muted">{t("Nothing new downloads from Canvas; the files you have stay where they are.")}</span>
         </span>
       </label>
       {error && <p className="mt-2 text-danger">{error}</p>}

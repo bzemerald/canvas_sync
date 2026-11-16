@@ -5,7 +5,7 @@ import * as api from "../lib/api";
 import type { CourseChoice, SyncState } from "../lib/api";
 import { CourseIcon } from "../lib/courseIcons";
 import { friendly } from "../lib/errors";
-import { t } from "../lib/i18n";
+import { t, tn } from "../lib/i18n";
 import { currentCourses, ongoing, termRank } from "../lib/terms";
 import { Button } from "./Dialog";
 
@@ -82,8 +82,8 @@ export function ChooseCourses({ submitLabel, onDone, onCancel, onBack }: {
 
   return (
     <div className="text-sm">
-      {!list && !error && <p className="py-8 text-center text-muted">{t("正在读取 Canvas 上的课程…")}</p>}
-      {list && list.courses.length === 0 && <p className="py-8 text-center text-muted">{t("Canvas 上没有找到你的课程。")}</p>}
+      {!list && !error && <p className="py-8 text-center text-muted">{t("Getting your courses from Canvas…")}</p>}
+      {list && list.courses.length === 0 && <p className="py-8 text-center text-muted">{t("No courses of yours on Canvas.")}</p>}
       {list && list.courses.length > 0 && (
         <div className="max-h-[52vh] overflow-y-auto rounded-lg border border-line">
           {grouped.map((term) => {
@@ -93,9 +93,9 @@ export function ChooseCourses({ submitLabel, onDone, onCancel, onBack }: {
               <div key={term.name ?? ""} className="border-b border-line last:border-b-0">
                 <label className="sticky top-0 z-10 flex items-center gap-2.5 bg-panel px-3 py-2 font-medium">
                   <Check checked={on === ids.length} mixed={on > 0 && on < ids.length} onChange={(v) => toggle(ids, v)} />
-                  <span className="truncate">{term.name ?? t("没有学期")}</span>
-                  {term.now && <span className="shrink-0 rounded bg-selected px-1.5 py-px text-[11px] font-normal text-accent">{t("进行中")}</span>}
-                  <span className="ml-auto shrink-0 text-xs font-normal text-muted">{t("{on}/{n} 门", { on, n: ids.length })}</span>
+                  <span className="truncate">{term.name ?? t("No term@@choose")}</span>
+                  {term.now && <span className="shrink-0 rounded bg-selected px-1.5 py-px text-[11px] font-normal text-accent">{t("Now")}</span>}
+                  <span className="ml-auto shrink-0 text-xs font-normal text-muted">{t("{on} of {n}", { on, n: ids.length })}</span>
                 </label>
                 {term.courses.map((c) => (
                   <label key={c.id} className="flex items-center gap-2.5 py-1.5 pr-3 pl-8 hover:bg-chip">
@@ -112,19 +112,19 @@ export function ChooseCourses({ submitLabel, onDone, onCancel, onBack }: {
       )}
       {list && (
         <p className="mt-2 text-xs leading-relaxed text-muted">
-          {t("随时可以在设置里重新选。")}
+          {t("You can choose again in Settings any time.")}
         </p>
       )}
       {error && (
         <p className="mt-3 text-danger">
           {error}
-          {!list && <button onClick={load} className="ml-2 text-accent hover:underline">{t("重试")}</button>}
+          {!list && <button onClick={load} className="ml-2 text-accent hover:underline">{t("Try again")}</button>}
         </p>
       )}
       <div className="flex items-center justify-end gap-2 pt-4">
-        {list && <span className="mr-auto text-xs text-muted">{t("已选 {n} 门课", { n: picked.size })}</span>}
-        {onCancel && <Button onClick={onCancel}>{t("取消")}</Button>}
-        {onBack && <Button disabled={busy} onClick={onBack}>{t("上一步")}</Button>}
+        {list && <span className="mr-auto text-xs text-muted">{tn("1 course chosen", "{n} courses chosen", { n: picked.size })}</span>}
+        {onCancel && <Button onClick={onCancel}>{t("Cancel")}</Button>}
+        {onBack && <Button disabled={busy} onClick={onBack}>{t("Back")}</Button>}
         <Button primary disabled={!list || busy || picked.size === 0} onClick={() => void save()}>{submitLabel}</Button>
       </div>
     </div>
