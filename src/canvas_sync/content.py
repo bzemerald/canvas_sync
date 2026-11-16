@@ -20,7 +20,6 @@ from urllib.parse import urlsplit
 
 from .discover import file_refs
 from .layout import Layout, sanitize
-from .config import set_title
 from .courses import course_label, term_label
 from .documents import DOC_BODY, canvas_copy, on_ed, relative_url
 from .state import NEWS_KINDS, FileRecord, State
@@ -47,24 +46,6 @@ TOOL_NAMES = {"gradescope": "Gradescope", "edstem": "Ed", "quiz-lti": "New Quizz
               "theexpertta": "Expert TA", "rollcall": "Roll Call", "iclicker": "iClicker", "mcgraw": "McGraw Hill",
               "pearson": "Pearson", "macmillan": "Macmillan", "wiley": "Wiley", "hypothes": "Hypothesis"}
 HOSTING = {"instructure", "amazonaws", "herokuapp", "azurewebsites", "cloudfront", "edu"}
-
-
-def rename_course(e: Engine, course: int, title: str) -> None:
-    """What the app calls a course. Its own name, or none: it goes back to that."""
-    c = e.state.course(course)
-    if c is None:
-        raise LookupError(f"no course {course}")
-    title = title.strip()
-    own = title in ("", e.settings.course_names.get(c.id) or c.code)
-    set_title(e.config_file, "course_titles", str(course), None if own else title)
-
-
-def rename_term(e: Engine, term: str, title: str) -> None:
-    """What the app calls a term, by its name on Canvas ("": the courses without one)."""
-    if not any((c.term or "") == term for c in e.state.courses()):
-        raise LookupError(f"no term {term}")
-    title = title.strip()
-    set_title(e.config_file, "term_titles", term, None if title in ("", term) else title)
 
 
 def courses(e: Engine) -> list[dict[str, Any]]:

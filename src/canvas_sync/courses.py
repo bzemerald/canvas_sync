@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
-from .config import Settings
+from .config import Settings, set_title
 from .models import Course
+
+if TYPE_CHECKING:
+    from .engine import Engine
 
 # Department names as registrars write them -> what students type.
 DEPARTMENTS: dict[str, list[str]] = {
@@ -67,3 +71,21 @@ def code_keys(code: str) -> set[str]:
                 keys |= set(DEPARTMENTS.get(d, []))
             return keys
     return set()  # no course number: only the full code/name match
+
+
+def rename_course(e: Engine, course: int, title: str) -> None:
+    """What the app calls a course. Its own name, or none: it goes back to that."""
+    c = e.state.course(course)
+    if c is None:
+        raise LookupError(f"no course {course}")
+    title = title.strip()
+    own = title in ("", e.settings.course_names.get(c.id) or c.code)
+    set_title(e.config_file, "course_titles", str(course), None if own else title)
+
+
+def rename_term(e: Engine, term: str, title: str) -> None:
+    """What the app calls a term, by its name on Canvas ("": the courses without one)."""
+    if not any((c.term or "") == term for c in e.state.courses()):
+        raise LookupError(f"no term {term}")
+    title = title.strip()
+    set_title(e.config_file, "term_titles", term, None if title in ("", term) else title)

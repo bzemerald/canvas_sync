@@ -53,7 +53,7 @@ from .local import MoveError, move_sync_folder, open_path
 from .paths import META_DIR, config_file
 from .places import as_course, course_layout, course_place, describe, hide_courses
 from .plan import TRANSFERS, Kind, Scope
-from .courses import course_label
+from .courses import course_label, rename_course, rename_term
 from .things import NOTE_ID, PLACES, Entry, once, parse_entry
 from .thumbs import thumbnail
 
@@ -957,7 +957,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def course_title(course_id: int, req: TitleRequest) -> None:
         with engine() as e:
             try:
-                content.rename_course(e, course_id, req.title)
+                rename_course(e, course_id, req.title)
             except LookupError as err:
                 raise HTTPException(404, str(err))
 
@@ -965,7 +965,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def term_title(req: TitleRequest) -> None:
         with engine() as e:
             try:
-                content.rename_term(e, req.term, req.title)
+                rename_term(e, req.term, req.title)
             except LookupError as err:
                 raise HTTPException(404, str(err))
 
