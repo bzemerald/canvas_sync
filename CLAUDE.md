@@ -14,7 +14,7 @@ without the Canvas website or Finder.
   should be able to make every course look alike. Within a course, be extremely flexible:
   anything of it can be put anywhere in it, and most things can be renamed or hidden. Between
   courses, keep a clear border: a course's places hold only its own things (and web links);
-  置顶 is the one place where courses meet. Build new features on the one model below (things
+  Pinned is the one place where courses meet. Build new features on the one model below (things
   in places), not beside it; a special case for one kind of thing or one place is a smell.
 - Frontend and UX decisions are Claude's: make them, say what was decided in the report, and
   don't ask the user to choose.
@@ -26,14 +26,14 @@ without the Canvas website or Finder.
 - Work on a feature branch, never on main.
 - Merge into main (fast-forward) only when asked; never push unless asked.
 - Commit messages: the subject says what changed for the user, as a plain sentence ("Pin almost
-  anything, by dragging it to 置顶"); the body explains the behavior; end with the
+  anything, by dragging it to Pinned"); the body explains the behavior; end with the
   Co-Authored-By line.
 
 ## Layout
 
 - `src/canvas_sync/`: the Python package.
   - `things.py`: what can be put somewhere (a thing), and how it's written down; the old formats.
-  - `places.py`: the places (置顶; a course's tabs, overview, 工具与链接), their rules.
+  - `places.py`: the places (Pinned; a course's tabs, overview, Tools and links), their rules.
   - `cli.py`: the `canvas` command.
   - `engine.py`, `plan.py`, `execute.py`: sync. `sync.py`: what a sync does after Canvas (Ed,
     the index, meaning), for the app and `canvas pull` alike.
@@ -56,12 +56,12 @@ without the Canvas website or Finder.
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
     you open (`POST /opened`).
-  - `meaning.py`: search by meaning (English; off unless turned on in 设置: a small model is
+  - `meaning.py`: search by meaning (English; off unless turned on in Settings: a small model is
     downloaded to the app's folder, `models/`; passages and their vectors go in index.db).
   - `content.py`: what the app shows (overview, items, modules, tools).
   - `notes.py`: the notes typed in the app (`.canvas/notes`).
   - `server.py`: the app's HTTP API (`canvas serve`): it puts `routes/` together (`account.py`:
-    设置, the account, Ed, AI apps; `courses.py`: courses, their pages and places, 置顶;
+    Settings, the account, Ed, AI apps; `courses.py`: courses, their pages and places, Pinned;
     `files.py`; `search.py`, with search by meaning; `opening.py`: opening things outside the
     app). `backend.py`: what they share (`Backend`: the account, the sync running, an Engine per
     request). Routes stay thin: what they do is in the modules, so the command line and
@@ -77,7 +77,7 @@ without the Canvas website or Finder.
   - `src/lib/useSync.ts`: the sync as the window follows it (polling, starting one, signing in
     again quietly when a browser sign-in expired).
   - `src/MainWindow.tsx`: the window: its state, going places, menus, pinning. What it's
-    drawn with: `src/components/Sidebar.tsx` (置顶's list, terms, rows, the sync status),
+    drawn with: `src/components/Sidebar.tsx` (Pinned's list, terms, rows, the sync status),
     `Toolbar.tsx` (breadcrumb, search box), `Notice.tsx`, `Results.tsx` (a smart folder's).
   - `src/components/CourseView.tsx`: tabs, readers, modules, grades.
   - `src/components/Overview.tsx`: the overview's cards.
@@ -97,7 +97,7 @@ without the Canvas website or Finder.
   - `src/lib/useLoaded.ts`: what's loaded, remembered by key; `reload(...keys)` says what
     changed (nothing named: everything, as after a sync), and what follows those keys
     (`useLoaded(…, { follow: true })`, `useReloads`) loads again. No `version` props.
-  - `src/lib/update.ts`: 检查更新 (Tauri's updater, from GitHub's releases; checks by itself
+  - `src/lib/update.ts`: Check for updates (Tauri's updater, from GitHub's releases; checks by itself
     in a release build).
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/lib/kinds.ts`: each kind of thing as both windows show it (icon, what one is called,
@@ -106,8 +106,8 @@ without the Canvas website or Finder.
     an address (as urls.py).
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
   - `src/components/Place.ts`: what's done in any place (`usePlace`: put, move, rename, hide,
-    take away with 撤销, its part of a menu) and its dragging (`usePlaceDrag`). 置顶, the tabs,
-    the cards and 工具与链接 all go through it: a new place should too.
+    take away with Undo, its part of a menu) and its dragging (`usePlaceDrag`). Pinned, the tabs,
+    the cards and Tools and links all go through it: a new place should too.
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin` (on Windows `python -m
     canvas_sync`: Smart App Control may block `.venv\Scripts\canvas.exe`, which is unsigned; the
     command line too, there).
@@ -128,7 +128,7 @@ without the Canvas website or Finder.
   `scripts/build-backend.mjs`, `src-tauri/tauri.bundle.json`).
 - A release: `npm run release -- <version>` in `app/` writes the version everywhere, commits and
   tags; pushing the tag runs `.github/workflows/release.yml` (Mac and Windows, a draft release
-  with `latest.json`); publishing the draft is what 检查更新 sees. Updates are signed with
+  with `latest.json`); publishing the draft is what Check for updates sees. Updates are signed with
   `~/.tauri/canvas-sync.key` (the GitHub secret `TAURI_SIGNING_PRIVATE_KEY`); its public half
   is in tauri.conf.json, so a lost key means apps already out can't update.
 - Running the app: `npm run tauri dev` in `app/`. It's usually already running in the user's
@@ -140,18 +140,20 @@ without the Canvas website or Finder.
 
 ## Conventions
 
-- **UI strings are Chinese, translated:**
-  - Write `t("中文")`, or `tx()` when the string holds elements. The English goes in
-    `app/src/lib/en.ts`, as `[singular, plural]` when the string counts `{n}`.
-  - The same Chinese needing different English gets a context suffix: `t("置顶@@heading")`
+- **UI strings are English, translated:**
+  - Write `t("English")`, or `tx()` when the string holds elements, or `tn("1 item", "{n}
+    items", { n })` when it counts `{n}`. The Chinese goes in `app/src/lib/zh.ts`, keyed by the
+    English (by the plural, for `tn`).
+  - The same English needing different Chinese gets a context suffix: `t("Restore@@file")`
     (the part after `@@` only tells them apart).
-  - `i18n-ignore` on a line exempts it from the check.
+  - No Chinese in the code outside zh.ts, except data (words students type, a language's own
+    name): `i18n-ignore` on a line exempts it from the check.
 - **Comments are short and plain:** what something is, or why. Match the file's density.
 - **Things and places** (the model everything is built on):
   - A *thing* is `{type, ...}`: course, folder, file, doc (announcement / assignment / page; post,
     on Ed; Ed's ids are `ed-<id>`), module, tool, link, search (a smart folder is a search pinned),
     note, view (one of a course's views: overview, modules, announcements, ed (what it has on
-    Ed), assignments, grades, files, syllabus, pages, tools = 工具与链接, canvas). Same
+    Ed), assignments, grades, files, syllabus, pages, tools = Tools and links, canvas). Same
     fields in config.toml, the API and the app.
   - `post` is a kind, a thread on Ed that isn't an announcement. The `ed` view is where things are
     from (`on_ed` in content.py, `fromEd` in the app: an announcement or post whose id starts `ed-`), not a kind: what's new
@@ -161,7 +163,7 @@ without the Canvas website or Finder.
     hold only the course's things (`Place.holds`, `ofCourse` in the app): its views, documents,
     modules, tools, notes, folders and files in its folder, searches of just it; web links.
   - A course's places have *own* things (its views; in links its tools, syllabus, Canvas):
-    hidden, never taken away. The rest were put there, and can be taken away (with 撤销).
+    hidden, never taken away. The rest were put there, and can be taken away (with Undo).
   - A course's tabs and overview follow the default (app.toml) until arranged: then what's
     stored has own things in it. `Place.arranged/settle/added` in places.py; the app sends
     whole lists (`PUT /pinned`, `PUT /courses/<id>/layout/<place>`), the backend settles them.
@@ -180,13 +182,13 @@ without the Canvas website or Finder.
   - `lib/dropZones.ts` (`useDropZone`): places that take drops. The innermost under the pointer
     takes it; places inside one another don't take each other's items.
   - `useThing()(entry)` (components/Things.tsx) makes anything on screen draggable to a place,
-    with `ways` + 置顶 in its right-click menu.
+    with `ways` + Pin in its right-click menu.
   - `lib/dragOut.ts` (trackDrag's `out`): files, folders and courses dragged past the window's
     edge become the system's drag (Finder, the desktop, other apps); back over the window, a
     place can still take them.
 - **Where settings live:**
   - `<sync folder>/.canvas/config.toml`: sync rules, and app things tied to courses:
-    - `[[pinned]]`: 置顶, entries of any thing.
+    - `[[pinned]]`: Pinned, entries of any thing.
     - `[course_layouts.<id>]`: `tabs`, `overview`, `links`, each a list of entries (the
       course's own things leave out `course`).
     - `[course_titles]` (by course id), `[term_titles]` (by the term's name on Canvas),
