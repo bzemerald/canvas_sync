@@ -29,7 +29,7 @@ import tomlkit
 from .api import Auth
 from .paths import under
 from .things import (
-    PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, parse_entry,
+    PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, once, parse_entry,
 )
 
 # Another home (CANVAS_SYNC_HOME: trying the app out as someone new) keeps its sign-ins apart too.
@@ -298,11 +298,7 @@ def _writes(fn: F) -> F:
 def _pinned(data: dict[str, Any]) -> list[Entry]:
     """置顶. ([[smart_folders]] is where smart folders were before anything could be pinned.)"""
     tables = [x for x in [*data.get("pinned", []), *data.get("smart_folders", [])] if isinstance(x, dict)]
-    out: list[Entry] = []
-    for e in (old_pinned(x) if is_old(x) else parse_entry(x) for x in tables):
-        if e is not None and all(x.thing != e.thing for x in out):
-            out.append(e)
-    return out
+    return once(old_pinned(x) if is_old(x) else parse_entry(x) for x in tables)
 
 
 def load_pinned(path: Path) -> list[Entry]:

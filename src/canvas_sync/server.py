@@ -56,7 +56,7 @@ from .paths import META_DIR, config_file, note_file
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
 from .search import course_label
-from .things import NOTE_ID, Entry, parse_entry
+from .things import NOTE_ID, Entry, once, parse_entry
 from .thumbs import forget_old_thumbnails, thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
@@ -935,9 +935,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             entry = parse_entry(d, home)
             if entry is None:
                 raise HTTPException(400, f"that doesn't make sense: {d}")
-            if all(x.thing != entry.thing for x in out):
-                out.append(entry)
-        return out
+            out.append(entry)
+        return once(out)
 
     @api.get("/pinned")
     def pinned() -> list[dict[str, Any]]:

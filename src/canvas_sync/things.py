@@ -13,6 +13,7 @@ that say which one it is. In a course's own places, `course` is left out for tha
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -183,14 +184,18 @@ def parse_entry(d: Any, home: int | None = None, *, template: bool = False) -> E
     return Entry(thing, title.strip()[:TITLE_MAX] if isinstance(title, str) else "", d.get("hidden") is True)
 
 
+def once(items: Iterable[Entry | None]) -> list[Entry]:
+    """Entries with each thing once (where it's first), and none that aren't any (None)."""
+    out: dict[Thing, Entry] = {}
+    for e in items:
+        if e is not None:
+            out.setdefault(e.thing, e)
+    return list(out.values())
+
+
 def entries(items: Any, home: int | None = None, *, template: bool = False) -> list[Entry]:
     """The entries of a list as written down: what makes sense, each thing once."""
-    out: list[Entry] = []
-    for d in items if isinstance(items, list) else []:
-        e = parse_entry(d, home, template=template)
-        if e is not None and all(x.thing != e.thing for x in out):
-            out.append(e)
-    return out
+    return once(parse_entry(d, home, template=template) for d in (items if isinstance(items, list) else []))
 
 
 # -- as canvas-sync wrote them before things had a type ---------------------------------------
@@ -281,14 +286,6 @@ def _old_card(d: Any, course: int) -> Entry | None:
     return Entry(thing, title) if thing else None
 
 
-def _once(items: list[Entry | None]) -> list[Entry]:
-    out: list[Entry] = []
-    for e in items:
-        if e is not None and all(x.thing != e.thing for x in out):
-            out.append(e)
-    return out
-
-
 def old_layout(d: dict[str, Any], course: int, tools: list[int] | None = None) -> dict[str, list[Entry]]:
     """A [course_layouts.<id>] table from then: `tabs` as names (and "x:<id>" for `tab_items`),
     `hidden_tabs`, `cards` (shown ones; or `extra_cards` after the default ones), `hidden_links`
@@ -300,16 +297,16 @@ def old_layout(d: dict[str, Any], course: int, tools: list[int] | None = None) -
         hidden = set(d.get("hidden_tabs") or [])
         names = [x for x in d.get("tabs") or [] if isinstance(x, str)]
         names += [x for x in (*OLD_TABS, *items) if x not in names]
-        out["tabs"] = _once([Entry(view(course, x), hidden=x in hidden) if x in OLD_TABS else items.get(x) for x in names])
+        out["tabs"] = once([Entry(view(course, x), hidden=x in hidden) if x in OLD_TABS else items.get(x) for x in names])
     else:
-        out["tabs"] = _once(list(items.values()))
+        out["tabs"] = once(list(items.values()))
     if "cards" in d:
-        shown = _once([_old_card(c, course) for c in d.get("cards") or []])
+        shown = once([_old_card(c, course) for c in d.get("cards") or []])
         # A built-in card left out was hidden.
         out["overview"] = shown + [Entry(view(course, v), hidden=True) for v in (*OLD_CARDS.values(), "syllabus")
                                    if all(e.thing != view(course, v) for e in shown)]
     else:
-        out["overview"] = _once([_old_card(c, course) for c in d.get("extra_cards") or []])
+        out["overview"] = once([_old_card(c, course) for c in d.get("extra_cards") or []])
     # 工具与链接: the course's tools, its syllabus and Canvas, hidden by name; then links you added.
     hidden = [str(x) for x in d.get("hidden_links") or []]
     order = tools or []
@@ -320,7 +317,7 @@ def old_layout(d: dict[str, Any], course: int, tools: list[int] | None = None) -
     for n, x in enumerate(d.get("links") or []):
         thing = parse({"type": "link", "url": x.get("url")}) if isinstance(x, dict) else None
         links.append(Entry(thing, str(x.get("title", "")), f"link:{n}" in hidden) if thing else None)
-    out["links"] = _once(links)
+    out["links"] = once(links)
     return out
 
 

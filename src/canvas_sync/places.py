@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from . import content
 from .paths import under
 from .search import course_label
-from .things import PLACES, Entry, Thing, at_home, course_thing, view
+from .things import PLACES, Entry, Thing, at_home, course_thing, once, view
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -154,11 +154,8 @@ def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
 def as_course(entries: list[Entry], dirs: dict[str, int]) -> list[Entry]:
     """A course's own folder, pinned, is the course (pinned before courses could be, or dragged
     from 全部文件)."""
-    out: list[Entry] = []
-    for x in entries:
-        if x.thing.type == "folder" and x.thing.path in dirs:
-            x = Entry(course_thing(dirs[x.thing.path]), x.title, x.hidden)
-        if all(y.thing != x.thing for y in out):
-            out.append(x)
-    return out
+    return once(
+        Entry(course_thing(dirs[x.thing.path]), x.title, x.hidden) if x.thing.type == "folder" and x.thing.path in dirs else x
+        for x in entries
+    )
 
