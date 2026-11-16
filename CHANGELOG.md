@@ -6,6 +6,8 @@ new version.
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-15
+
 - Copy files and folders with ⌘C (Ctrl+C on Windows), or Copy in their right-click menu, to paste
   them in Finder or Explorer, or attach them in a chat.
 - Right-click menus on macOS are the system's own.
