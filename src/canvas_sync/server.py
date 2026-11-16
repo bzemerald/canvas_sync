@@ -52,11 +52,11 @@ from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
 from .local import MoveError, move_sync_folder, open_path
+from .paths import META_DIR, config_file, note_file
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
 from .search import course_label
-from .state import META_DIR
-from .things import Entry, parse_entry
+from .things import NOTE_ID, Entry, parse_entry
 from .thumbs import forget_old_thumbnails, thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
@@ -287,10 +287,10 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             if account is not None:
                 migrate_folder_names(account.root)
                 forget_old_thumbnails(account.root)
-            if account is not None and needs_migration(cfg := account.root / META_DIR / "config.toml"):
+            if account is not None and needs_migration(cfg := config_file(account.root)):
                 with Engine(account.root) as e:
                     migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
-            if account is not None and needs_titles(cfg := account.root / META_DIR / "config.toml"):
+            if account is not None and needs_titles(cfg := config_file(account.root)):
                 with Engine(account.root) as e:
                     add_titles(cfg, *titles_of_folders(e.settings, e.state.courses()))
             AppPrefs.migrate(prefs_path)
@@ -335,7 +335,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
 
     def missing() -> bool:
         """The sync folder isn't where it was (moved, renamed or deleted)."""
-        return account is not None and not moving and not (account.root / META_DIR / "config.toml").exists()
+        return account is not None and not moving and not config_file(account.root).exists()
 
     def prefs() -> AppPrefs:
         return AppPrefs.load(prefs_path)
@@ -393,7 +393,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             if req.select is not None:
                 if account is None:
                     raise HTTPException(409, "not set up")
-                set_course_select(account.root / META_DIR / "config.toml", req.select)
+                set_course_select(config_file(account.root), req.select)
         except ConfigError as err:
             raise HTTPException(400, str(err))
         return get_prefs()
@@ -453,7 +453,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         before (only that, unless `new`)."""
         if root.exists() and not root.is_dir():
             raise HTTPException(400, "not a folder")
-        ours = (root / META_DIR / "config.toml").is_file()
+        ours = config_file(root).is_file()
         if not new and not ours:
             raise HTTPException(400, "not a sync folder")
         if root.exists() and not ours and any(not p.name.startswith(".") for p in root.iterdir()):
@@ -599,14 +599,14 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 for cid in ed.match([x for x in e.state.ed_courses() if x["id"] == req.ed], e.state.courses()):
                     if cid not in e.settings.ed_courses:  # (its match, which isn't linked yet: not later either)
                         changes[cid] = 0
-            set_ed_courses(e.root / META_DIR / "config.toml", changes)
+            set_ed_courses(e.config_file, changes)
         return ed_info()
 
     @api.post("/open/config")
     def open_config() -> dict[str, str]:
         """The sync folder's config.toml, in your text editor: the settings the app doesn't show."""
         assert account is not None
-        target = account.root / META_DIR / "config.toml"
+        target = config_file(account.root)
         open_path(target)
         return {"opened": str(target)}
 
@@ -927,10 +927,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def config() -> Path:
         """The sync folder's config.toml (pinned items live there)."""
         assert account is not None
-        return account.root / META_DIR / "config.toml"
-
-    def course_dirs(e: Engine) -> dict[str, int]:
-        return {e.layout.course_dir(c).as_posix(): c.id for c in e.state.courses()}
+        return config_file(account.root)
 
     def place_entries(req: PlaceRequest, home: int | None = None) -> list[Entry]:
         out: list[Entry] = []
@@ -946,7 +943,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
     def pinned() -> list[dict[str, Any]]:
         """置顶: what's pinned, in order, each as it's called now."""
         with engine() as e:
-            items = as_course(e.settings.pinned, course_dirs(e))
+            items = as_course(e.settings.pinned, e.layout.course_dirs(e.state.courses()))
             if items != e.settings.pinned:
                 save_pinned(config(), items)
             return describe(items, e)
@@ -956,7 +953,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """置顶 as it should be: anything, in this order."""
         items = place_entries(req)
         with engine() as e:
-            save_pinned(config(), as_course(items, course_dirs(e)))
+            save_pinned(config(), as_course(items, e.layout.course_dirs(e.state.courses())))
         return pinned()
 
     @api.post("/courses/{course_id}/icon")
@@ -1041,15 +1038,15 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             save_course_place(config(), course_id, name, p.settle(items))
         return layout_of(course_id)
 
-    def note_file(course_id: int, note: str) -> Path:
-        if not re.fullmatch(r"[a-z0-9-]{1,40}", note):
+    def note_at(course_id: int, note: str) -> Path:
+        if not NOTE_ID.fullmatch(note):
             raise HTTPException(400, "not a note id")
         assert account is not None
-        return account.root / META_DIR / "notes" / str(course_id) / f"{note}.md"
+        return note_file(account.root, course_id, note)
 
     @api.get("/courses/{course_id}/notes/{note}")
     def read_note(course_id: int, note: str) -> dict[str, str]:
-        f = note_file(course_id, note)
+        f = note_at(course_id, note)
         return {"text": f.read_text(encoding="utf-8") if f.exists() else ""}
 
     @api.put("/courses/{course_id}/notes/{note}")
@@ -1057,7 +1054,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         """A note card's text, as typed (kept in the sync folder, under .canvas/notes)."""
         if len(req.text) > 1_000_000:
             raise HTTPException(413, "too long")
-        f = note_file(course_id, note)
+        f = note_at(course_id, note)
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".tmp")
         tmp.write_text(req.text, encoding="utf-8")

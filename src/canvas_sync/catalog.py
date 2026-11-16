@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import content
 from .search import DEFAULT_ABBREVIATIONS, canvas_copy, code_keys, course_label, doc_url, normalized, relative_url
-from .state import META_DIR
+from .paths import note_file
 from .things import Entry, Thing, course_thing, view
 
 if TYPE_CHECKING:
@@ -112,7 +112,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
 
     # Files synced for the courses (where they are, not their links in other folders), and the
     # folders they're in (a course's own folder is the course).
-    dirs = {e.layout.course_dir(c).as_posix(): c.id for c in courses}
+    dirs = e.layout.course_dirs(courses)
     links: dict[int, list[str]] = {}
     for path, fid in e.state.db.execute("SELECT path, file_id FROM links"):
         links.setdefault(fid, []).append(path)
@@ -159,8 +159,8 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             d["title"] = d["title"] or entry.title
             if entry.title not in d["aliases"]:
                 d["aliases"].append(entry.title)
-        if t.type == "note" and t.course is not None and "text" not in d:
-            d["text"] = _note_start(e.root / META_DIR / "notes" / str(t.course) / f"{t.id}.md")
+        if t.type == "note" and t.course is not None and t.id and "text" not in d:
+            d["text"] = _note_start(note_file(e.root, t.course, t.id))
     return list(out.values())
 
 

@@ -15,7 +15,8 @@ from .api import CanvasClient, CanvasError
 from .local import clone_file, is_regular, prune_empty_dirs
 from .models import RemoteFile
 from .plan import Action, Kind, Plan
-from .state import META_DIR, NEWS_KINDS, State
+from .paths import META_DIR
+from .state import NEWS_KINDS, State
 
 # Called after each action with (action, error message or None).
 EventHandler = Callable[[Action, str | None], None]

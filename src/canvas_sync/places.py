@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import content
+from .paths import under
 from .search import course_label
 from .things import PLACES, Entry, Thing, at_home, course_thing, view
 
@@ -59,7 +60,7 @@ class Place:
         if thing.type == "course":
             return False
         if thing.type in ("folder", "file"):
-            return self.dir is not None and thing.path is not None and (thing.path == self.dir or thing.path.startswith(self.dir + "/"))
+            return self.dir is not None and thing.path is not None and under(thing.path, self.dir)
         if thing.type == "search":
             return thing.courses == (self.course,)
         return thing.course == self.course
@@ -113,11 +114,11 @@ def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
     or the sync folder calls it; None for what the app names), whether it's still there, and the
     course it's in."""
     courses = {c.id: c for c in e.state.courses()}
-    dirs = {e.layout.course_dir(c).as_posix(): c.id for c in courses.values()}
+    dirs = e.layout.course_dirs(courses.values())
     tools: dict[int, dict[int, str | None]] = {}
 
     def in_course(path: str) -> int | None:
-        return next((cid for d, cid in dirs.items() if path == d or path.startswith(d + "/")), None)
+        return next((cid for d, cid in dirs.items() if under(path, d)), None)
 
     def one(sql: str, *args: Any) -> str | None:
         row = e.state.db.execute(sql, args).fetchone()

@@ -20,6 +20,7 @@ from .discover import CourseSnapshot
 from .layout import Layout, Placement
 from .local import is_regular, occupied, sha256_file, sibling
 from .models import RemoteFile
+from .paths import under
 from .state import FileRecord, State
 
 
@@ -74,7 +75,7 @@ class Scope:
     def contains(self, path: str | None) -> bool:
         if path is None:
             return False
-        return any(p == "" or path == p or path.startswith(p + "/") for p in self.paths)
+        return any(p == "" or under(path, p) for p in self.paths)
 
     def overlaps(self, folder: str) -> bool:
         """`folder` is inside the scope, or the scope is inside `folder`."""

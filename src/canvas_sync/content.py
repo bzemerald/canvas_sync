@@ -54,7 +54,7 @@ def rename_course(e: Engine, course: int, title: str) -> None:
         raise LookupError(f"no course {course}")
     title = title.strip()
     own = title in ("", e.settings.course_names.get(c.id) or c.code)
-    set_title(e.meta / "config.toml", "course_titles", str(course), None if own else title)
+    set_title(e.config_file, "course_titles", str(course), None if own else title)
 
 
 def rename_term(e: Engine, term: str, title: str) -> None:
@@ -62,7 +62,7 @@ def rename_term(e: Engine, term: str, title: str) -> None:
     if not any((c.term or "") == term for c in e.state.courses()):
         raise LookupError(f"no term {term}")
     title = title.strip()
-    set_title(e.meta / "config.toml", "term_titles", term, None if title in ("", term) else title)
+    set_title(e.config_file, "term_titles", term, None if title in ("", term) else title)
 
 
 def courses(e: Engine) -> list[dict[str, Any]]:

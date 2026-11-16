@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
+from .paths import under
+
 # A course's views: what its built-in tabs and cards show. `tools` is its tools and links (工具与
 # 链接); `canvas` the course on Canvas.
 # `ed` is what it has on Ed: its posts and announcements there.
@@ -75,7 +77,7 @@ class Thing:
 
     def moved(self, old: str, new: str) -> Thing:
         """The same thing after the folder at `old` was renamed to `new`."""
-        if self.path is not None and (self.path == old or self.path.startswith(old + "/")):
+        if self.path is not None and under(self.path, old):
             return Thing(self.type, path=new + self.path[len(old):])
         return self
 

@@ -16,7 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from .layout import Layout
-from .state import META_DIR, FileRecord, State
+from .paths import META_DIR
+from .state import FileRecord, State
 
 # Local changes `restore` undoes.
 RESTORABLE = {"modified", "missing", "ignored"}
@@ -84,7 +85,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
     at = {s.path: s for s in statuses if s.path and not GONE & set(s.states)}  # where files are now
     tracked = {r.path: r for r in (state.all_files() if records is None else records) if r.path and not r.ignored}
     links = {row[0]: row[1] for row in state.db.execute("SELECT path, file_id FROM links")}
-    course_dirs = {layout.course_dir(c).as_posix(): c.id for c in state.courses()}
+    course_dirs = layout.course_dirs(state.courses())
     changed = [s.path for s in statuses if s.path and RESTORABLE & set(s.states)]
     modified = [s.path for s in statuses if s.path and "modified" in s.states]
     gone = [s.path for s in statuses if s.path and GONE & set(s.states)]

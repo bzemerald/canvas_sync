@@ -23,6 +23,7 @@ from urllib.parse import unquote_plus
 
 from .config import Rule, Settings
 from .models import Course, RemoteFile, Source
+from .paths import under
 
 _INVALID = re.compile(r'[\x00-\x1f/\\:*?"<>|]')
 
@@ -89,7 +90,11 @@ class Layout:
     def skipped(self, path: PurePosixPath) -> bool:
         """Under a folder in `skip_folders`."""
         p = path.as_posix()
-        return any(p == s or p.startswith(s + "/") for s in self.s.skip_folders)
+        return any(under(p, s) for s in self.s.skip_folders)
+
+    def course_dirs(self, courses: Iterable[Course]) -> dict[str, int]:
+        """Each course's folder (its path), and the course whose it is."""
+        return {self.course_dir(c).as_posix(): c.id for c in courses}
 
     def course_dir(self, course: Course) -> PurePosixPath:
         """The course's folder."""

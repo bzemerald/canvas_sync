@@ -40,6 +40,8 @@ without the Canvas website or Finder.
   - `discover.py`: finding files through modules and pages.
   - `ed.py`: Ed (edstem.org): its unofficial API (read-only, a token from Ed's settings), which
     Canvas course each Ed course is.
+  - `paths.py`: where canvas-sync's own things are in a sync folder (`.canvas`, its config.toml,
+    notes), and `under` (whether a path is in a folder).
   - `state.py`: `.canvas/state.db` (SQLite).
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what

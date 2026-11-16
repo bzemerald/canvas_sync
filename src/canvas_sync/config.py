@@ -27,6 +27,7 @@ import keyring.errors
 import tomlkit
 
 from .api import Auth
+from .paths import under
 from .things import (
     PLACES, Entry, Thing, entries, is_old, is_old_layout, old_defaults, old_layout, old_pinned, parse_entry,
 )
@@ -383,7 +384,7 @@ def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str]
     doc = tomlkit.parse(path.read_text(encoding="utf-8"))
     layout = doc.setdefault("layout", tomlkit.table())
     current = [str(x) for x in layout.get("skip_folders", [])]
-    gone = lambda p: p in remove or any(p == r or p.startswith(r + "/") for r in remove_under)  # noqa: E731
+    gone = lambda p: p in remove or any(under(p, r) for r in remove_under)  # noqa: E731
     wanted = list(dict.fromkeys([*(p for p in current if not gone(p)), *add]))
     if wanted != current:
         arr = tomlkit.array()

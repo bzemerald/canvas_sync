@@ -21,7 +21,6 @@ from . import __version__
 from .config import set_ed_courses
 from .models import Course, Document
 from .search import canvas_copy, code_keys
-from .state import META_DIR
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -372,7 +371,7 @@ async def refresh(e: Engine, client: EdClient) -> list[dict[str, Any]]:
     new = {cid: eid for cid, eid in match([x for x in found if x["id"] not in linked], e.state.courses()).items()
            if cid not in e.settings.ed_courses}
     if new:
-        set_ed_courses(e.root / META_DIR / "config.toml", new)
+        set_ed_courses(e.config_file, new)
         e.settings.ed_courses.update(new)
     return found
 

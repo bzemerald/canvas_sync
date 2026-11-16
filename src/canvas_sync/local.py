@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .state import META_DIR
+from .paths import META_DIR
 
 _clonefile = None
 if sys.platform == "darwin":

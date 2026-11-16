@@ -23,7 +23,8 @@ from .local import can_symlink, clone_file, is_regular, sha256_file
 from .models import Course
 from .plan import Action, Inspector, Plan, Planner, Scope, narrow
 from .search import Hit, Index, IndexStats, ProgressHandler
-from .state import META_DIR, FileRecord, State
+from .paths import META_DIR, config_file, under
+from .state import FileRecord, State
 
 
 log = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class NotInitialized(Exception):
 def migrate_folder_names(root: Path) -> None:
     """A sync folder from when renaming a folder renamed it on disk, as it is now. Once, where the
     app, the command line and `canvas mcp` start (not when an Engine opens: most only read)."""
-    cfg = root.expanduser() / META_DIR / "config.toml"
+    cfg = config_file(root.expanduser())
     if cfg.exists() and (names := old_folder_names(cfg)) is not None:
         with Engine(root) as e:
             e.undo_folder_names(names)
@@ -54,7 +55,8 @@ class Engine:
     def __init__(self, root: Path, client: CanvasClient | None = None):
         self.root = root.expanduser().resolve()
         self.meta = self.root / META_DIR
-        if not (self.meta / "config.toml").exists():
+        self.config_file = config_file(self.root)
+        if not self.config_file.exists():
             raise NotInitialized(f"{self.root} is not set up yet (run `canvas init`)")
         self.settings = self._settings()
         self.state = State(self.meta / "state.db")
@@ -67,8 +69,8 @@ class Engine:
         root = root.expanduser().resolve()
         meta = root / META_DIR
         meta.mkdir(parents=True, exist_ok=True)
-        if not (meta / "config.toml").exists():
-            (meta / "config.toml").write_text(SETTINGS_TEMPLATE, encoding="utf-8")
+        if not config_file(root).exists():
+            config_file(root).write_text(SETTINGS_TEMPLATE, encoding="utf-8")
         State(meta / "state.db").close()
         return root
 
@@ -268,7 +270,7 @@ class Engine:
         for rel in rels:
             if (self.root / rel).is_dir() and not (self.root / rel).is_symlink():
                 folders.append(rel)
-                ids |= {fid for fid, p in where.items() if _under(p, rel)}
+                ids |= {fid for fid, p in where.items() if under(p, rel)}
             elif rel in links:
                 ids.add(links[rel])
             else:
@@ -276,9 +278,9 @@ class Engine:
         return {fid: where[fid] for fid in ids if fid in where}, folders
 
     def _has_canvas_content(self, folder: str) -> bool:
-        if any(r.path and _under(r.path, folder) for r in self.state.all_files()):
+        if any(r.path and under(r.path, folder) for r in self.state.all_files()):
             return True
-        return any(_under(row[0], folder) for row in self.state.db.execute("SELECT path FROM links"))
+        return any(under(row[0], folder) for row in self.state.db.execute("SELECT path FROM links"))
 
     def _stop_syncing(self, files: dict[int, str], keep_links_in: list[str] = ()) -> None:  # type: ignore[assignment]
         """Mark files as not synced. Their view links go: sync won't put them there any more.
@@ -286,7 +288,7 @@ class Engine:
         already not synced): they stay, pointing at the file."""
         for fid in files:
             for path, linked in list(self.state.db.execute("SELECT path, file_id FROM links")):
-                kept = any(_under(path, k) for k in keep_links_in)
+                kept = any(under(path, k) for k in keep_links_in)
                 if linked == fid and not kept and not self.layout.skipped(PurePosixPath(path)):
                     if (self.root / path).is_symlink():
                         (self.root / path).unlink()
@@ -326,7 +328,7 @@ class Engine:
         files, folders = self._affected(rels)
         skip = [f for f in folders if self._has_canvas_content(f)] if stop_syncing_folders else []
         for path, _ in list(self.state.db.execute("SELECT path, file_id FROM links")):
-            if any(_under(path, f) for f in folders):
+            if any(under(path, f) for f in folders):
                 self.state.remove_link(path)  # goes to the Trash with its folder
         self._stop_syncing(files)
         self.state.commit()
@@ -334,11 +336,11 @@ class Engine:
         done = []
         for rel in trash:
             p = self.root / rel
-            if os.path.lexists(p) and not any(_under(rel, d) for d in done):
+            if os.path.lexists(p) and not any(under(rel, d) for d in done):
                 send2trash(p)
                 done.append(rel)
         if skip:
-            update_skip_folders(self.meta / "config.toml", add=skip)
+            update_skip_folders(self.config_file, add=skip)
             self._reload()
         return done
 
@@ -353,7 +355,7 @@ class Engine:
         self._stop_syncing(files, keep_links_in=folders)
         self.state.commit()
         if skip:
-            update_skip_folders(self.meta / "config.toml", add=skip)
+            update_skip_folders(self.config_file, add=skip)
             self._reload()
         return len(files)
 
@@ -363,7 +365,7 @@ class Engine:
         rels = [self._checked(r, gone_ok=True) for r in rels]
         n = 0
         for r in self.state.all_files():
-            if r.ignored and r.path and is_regular(self.root / r.path) and any(_under(r.path, rel) for rel in rels):
+            if r.ignored and r.path and is_regular(self.root / r.path) and any(under(r.path, rel) for rel in rels):
                 self.state.update(r.id, ignored=0)
                 n += 1
         self.state.commit()
@@ -389,8 +391,8 @@ class Engine:
                 for part in c[len(s) + 1:].split("/"):
                     keep += [d for d in self._subfolders(here) if d != f"{here}/{part}"]
                     here = f"{here}/{part}"
-        keep = [k for k in keep if not any(_under(k, c) or _under(c, k) for c in rels)]
-        update_skip_folders(self.meta / "config.toml", remove_under=rels, remove=above, add=keep)
+        keep = [k for k in keep if not any(under(k, c) or under(c, k) for c in rels)]
+        update_skip_folders(self.config_file, remove_under=rels, remove=above, add=keep)
         self._reload()
 
     def _subfolders(self, rel: str) -> list[str]:
@@ -404,7 +406,7 @@ class Engine:
         return sorted(f"{rel}/{n}" for n in names)
 
     def _settings(self) -> Settings:
-        s = Settings.load(self.meta / "config.toml")
+        s = Settings.load(self.config_file)
         if not can_symlink(self.meta):  # Windows without Developer Mode: files only in their first view
             s = replace(s, link_other_views=False)
         return s
@@ -468,7 +470,7 @@ class Engine:
         if not src.is_dir() or src.is_symlink():
             raise LookupError(f"{rel} is not a folder")
         title = name.strip()
-        set_folder_title(self.meta / "config.toml", rel, title if title and title != src.name else None)
+        set_folder_title(self.config_file, rel, title if title and title != src.name else None)
         self._reload()
 
     def undo_folder_names(self, names: dict[str, str]) -> None:
@@ -478,10 +480,10 @@ class Engine:
         called that is yours. Each folder is committed by itself and [folder_names] goes last, so
         an interrupted run runs again. One you deleted only has its records put right; one that
         can't go back stays where it is, and the next sync moves its files (their layout changed)."""
-        cfg = self.meta / "config.toml"
+        cfg = self.config_file
         dirs = [self.layout.course_dir(c).as_posix() for c in self.state.courses()]
         live = {k: v for k, v in names.items()
-                if not dirs or any(d == k or d.startswith(k + "/") or k.startswith(d + "/") for d in dirs)}
+                if not dirs or any(under(d, k) or under(k, d) for d in dirs)}
 
         def on_disk(key: str) -> str:
             parts = key.split("/")
@@ -516,7 +518,7 @@ class Engine:
     def _repath(self, old: str, new: str) -> None:
         """Every path we've recorded at or under `old` now starts with `new`."""
         def moved(p: str | None) -> str | None:
-            if p is not None and (p == old or p.startswith(old + "/")):
+            if p is not None and under(p, old):
                 return new + p[len(old):]
             return None
 
@@ -549,7 +551,3 @@ class Engine:
         """A folder's contents as the app shows them; see `browse.list_dir`."""
         records = self.state.all_files()
         return list_dir(self.root, self.state, self.layout, self.status(records), rel.strip("/"), records)
-
-
-def _under(path: str, folder: str) -> bool:
-    return path == folder or path.startswith(folder + "/")

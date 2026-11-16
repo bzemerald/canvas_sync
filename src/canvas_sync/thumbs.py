@@ -14,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .state import META_DIR
+from .paths import META_DIR
 from .text import PDFIUM_LOCK
 
 IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}

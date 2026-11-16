@@ -20,10 +20,10 @@ from .config import PREFS_FILE, Account, ConfigError, set_course_listed
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import open_path
 from .models import Course
+from .paths import config_file
 from .plan import Kind, Plan, Scope
 from .search import Hit
 from .search import pick_courses as matching
-from .state import META_DIR
 from .sync import other_sources
 from .sync import reindex as sync_reindex
 
@@ -120,7 +120,7 @@ def init(
     acc.save()
     acc.set_auth(auth)
     console.print(f"Logged in as [bold]{me.get('name')}[/]. Syncing into [bold]{acc.root}[/].")
-    console.print(f"Settings: {acc.root / META_DIR / 'config.toml'}")
+    console.print(f"Settings: {config_file(acc.root)}")
     console.print("Next: `canvas courses` to check the course list, then `canvas pull`.")
 
 
@@ -130,7 +130,7 @@ def courses(
     skip: Annotated[Optional[list[int]], typer.Option("--skip", help="Never sync this course id")] = None,
 ) -> None:
     """List your courses and which ones `pull` syncs."""
-    cfg = account().root / META_DIR / "config.toml"
+    cfg = config_file(account().root)
     for cid in sync or []:
         set_course_listed(cfg, cid, sync=True)
     for cid in skip or []:
