@@ -166,7 +166,7 @@ export function MainWindow() {
   }, [titlesReloaded]);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   // The sync: where it's got to, starting one; when one ends, what it changed is loaded again.
-  const { sync, label: syncLabel, busy: syncBusy, run: runSync, renewing } = useSync({
+  const { sync, label: syncLabel, busy: syncBusy, run: runSync, renewing, stale } = useSync({
     account, onAccount: setAccount, onFinished: refresh, signIn: (site) => browserSignIn(site, true),
   });
   useEffect(() => {
@@ -1060,6 +1060,11 @@ export function MainWindow() {
         {signedOut ? (
           <button onClick={() => setSigningIn(true)} className="mx-4 mb-2 rounded-md bg-warn-soft px-2.5 py-2 text-left text-xs text-warn hover:opacity-90">
             {t("Not signed in to Canvas, so nothing syncs. Click to sign in.")}
+          </button>
+        ) : stale && !renewing && !sync?.running ? (
+          // (Found as the window opened, before any sync: the same words as a sync that found it.)
+          <button onClick={() => setSigningIn(true)} className="mx-4 mb-2 rounded-md bg-warn-soft px-2.5 py-2 text-left text-xs text-warn hover:opacity-90">
+            {account?.auth === "session" ? t("Sign-in expired. Click to sign in again") : t("Canvas token expired. Click to replace it")}
           </button>
         ) : (
           <SyncStatus sync={sync} label={syncLabel} onFix={() => go({ kind: "settings" })}

@@ -1,6 +1,7 @@
 // The sync, as the main window follows it: where it's got to (asked often while one runs, now and
-// then otherwise: the backend syncs by itself too, Settings → Sync automatically), starting one, and signing in
-// again quietly when a browser sign-in has expired.
+// then otherwise: the backend syncs by itself too, Settings → Sync automatically), starting one,
+// whether the sign-in still works (asked as the window opens), and signing in again quietly when
+// a browser sign-in has expired.
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import type { AccountInfo, Scope, SyncState } from "./api";
@@ -79,5 +80,35 @@ export function useSync({ account, onAccount, onFinished, signIn }: {
       .finally(() => setRenewing(false));
   }, [sync?.expired, sync?.finished_at, account?.auth]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { sync, label, busy: !!sync?.running, run, renewing };
+  // Whether Canvas still takes the sign-in, asked as the window opens (and again once you've signed
+  // in again), not left for the next sync to find out. An expired browser sign-in is renewed
+  // quietly first, as after a sync; once a run of the app (it failing, the window says so).
+  const [stale, setStale] = useState(false);
+  const renewedAtCheck = useRef(false);
+  useEffect(() => {
+    if (!account?.signed_in || !account.base_url) return;
+    let live = true;
+    void api.checkAccount().then(async (c) => {
+      const expired = !c.ok && /rejected/.test(c.error ?? ""); // (not "can't reach the site": offline, say)
+      if (live && expired && account.auth === "session" && !renewedAtCheck.current) {
+        renewedAtCheck.current = true;
+        setRenewing(true);
+        try {
+          const a = await api.replaceCredentials({ cookies: await signIn(account.base_url!) });
+          if (live) return void onAccount(a); // (asked again, for the new sign-in)
+        } catch {
+          // (It needs typing: the window says so.)
+        } finally {
+          setRenewing(false);
+        }
+      }
+      if (live) setStale(expired);
+    }, () => {});
+    return () => void (live = false);
+  }, [account]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (sync?.phase === "done") setStale(false); // (a sync got through: it's fine)
+  }, [sync?.phase, sync?.finished_at]);
+
+  return { sync, label, busy: !!sync?.running, run, renewing, stale: stale && !sync?.expired };
 }

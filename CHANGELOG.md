@@ -8,6 +8,8 @@ new version.
 
 - The changelog is in the app: Settings → Version → Changelog.
 - After an update, the sidebar says so where it offered the update; click it for what's new.
+- An expired sign-in or token is found as the app opens, not at the next sync: a browser sign-in
+  is renewed quietly if it can be, and otherwise the sidebar's top says so (click to sign in).
 
 ## 0.4.0 — 2026-11-15
 
