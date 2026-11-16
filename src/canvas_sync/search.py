@@ -25,11 +25,12 @@ from rapidfuzz.distance import DamerauLevenshtein
 
 from .config import Settings
 from .courses import code_keys, course_label, normalized
-from .documents import DOC_BODY, canvas_copy, doc_url
+from .documents import DOC_BODY, canvas_copy
 from .layout import Layout
 from .models import Course
 from .state import State
 from .text import extract, html_to_text
+from .urls import document_url, file_url
 
 DEFAULT_ABBREVIATIONS: dict[str, list[str]] = {
     "mt": ["midterm", "mid term", "prelim"],
@@ -417,7 +418,7 @@ class Index:
             raw = raws[r.id]
             yield _Item(
                 key=f"file:{r.id}", course_id=r.course_id, kind="file", title=title,
-                path=r.path if st else None, url=f"/courses/{r.course_id}/files/{r.id}",
+                path=r.path if st else None, url=file_url(r.course_id, r.id),
                 date=raw.get("modified_at") or raw.get("updated_at"),
                 folder=f"file {folder}",
                 content_stamp=f"{st.st_size}:{st.st_mtime_ns}{READ_AGAIN.get(local.suffix.lower(), '')}" if st else "",
@@ -426,11 +427,6 @@ class Index:
         for d in state.documents():
             raw, cid, kind = d.raw, d.course_id, d.kind
             html = raw.get(DOC_BODY.get(kind, ""), "") or ""
-            url = doc_url(raw)
-            if kind == "syllabus":
-                url = f"/courses/{cid}/assignments/syllabus"
-            elif kind == "page" and not url:
-                url = f"/courses/{cid}/pages/{d.id}"
             ed = raw.get("ed") or {}
             # On Ed: what staff answered is part of it (the rest of the replies isn't), and its
             # category is where it is ("cs70 homework" finds what's in Homework).
@@ -442,7 +438,7 @@ class Index:
             texts = said if copy else [html, *said]
             yield _Item(
                 key=f"{kind}:{cid}:{d.id}", course_id=cid, kind=kind, title=d.title,
-                path=None, url=url,
+                path=None, url=document_url(cid, kind, d.id, raw),
                 date=raw.get("due_at") or raw.get("posted_at") or d.updated_at or None,
                 folder=" ".join([kind, *([f"due {raw['due_at'][:10]}"] if raw.get("due_at") else []),
                                  ed.get("category", ""), ed.get("subcategory", "")]).strip(),

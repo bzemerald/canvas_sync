@@ -8,7 +8,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Button } from "./components/Dialog";
 import { FileBrowser, canRename, parentOf, type ViewMode } from "./components/FileBrowser";
 import {
-  CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, canvasUrl, rememberCourse, useCatalog,
+  CompletionGhost, type Finder, FinderContext, FoundHere, type How, actionsFor, rememberCourse, useCatalog,
 } from "./components/Found";
 import { Marked } from "./components/Marked";
 import {
@@ -31,6 +31,7 @@ import {
   ThingIcon, ThingsContext, VIEW_LABEL, onTheWeb, ownName, pinItem, sections, thingName, thingOfEntry, type Things,
 } from "./components/Things";
 import * as api from "./lib/api";
+import { courseUrl, docUrl } from "./lib/canvas";
 import { quickLook } from "./lib/quicklook";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
 import { useDropZone } from "./lib/dropZones";
@@ -411,7 +412,7 @@ export function MainWindow() {
     else if (x.type === "link") void api.openExternal(x.url);
     else if (x.type === "tool") launchTool(x);
     else if (x.type === "search") go({ kind: "search", search: x, found });
-    else if (isView(x, "canvas")) void api.openUrl(`/courses/${x.course}`);
+    else if (isView(x, "canvas")) void api.openUrl(courseUrl(x.course));
     else if (cv && cv.id === x.course) {
       // (On Ed's list, what's from Ed is there: it needn't go to its kind's.)
       go({ ...(x.type === "doc" && fromEd(x) && isView(cv.tab, "ed") ? { ...toTab(cv, viewOf(x.course, "ed")), item: x.id } : toTab(cv, x)), found });
@@ -554,7 +555,7 @@ export function MainWindow() {
       return x ? open(x, query, found) : void api.openHit(f.hit);
     }
     if (how === "canvas") {
-      const url = canvasUrl(f.entry);
+      const url = f.entry.canvas_url;
       if (url) void api.openUrl(url).then(() => api.noteOpened(f.key, query));
       return;
     }
@@ -687,7 +688,7 @@ export function MainWindow() {
       case "course":
         return courseById(x.course) ? [
           openIt,
-          { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${x.course}`) },
+          { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(courseUrl(x.course)) },
           { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(courseById(x.course)!.dir) },
         ] : [];
       case "folder":
@@ -701,8 +702,8 @@ export function MainWindow() {
         ];
       case "doc": {
         if (fromEd(x)) return [openIt, { label: t("在 Ed 中打开"), onSelect: () => void api.item(x.course, x.kind, x.id).then((it) => it.url && api.openUrl(it.url)) }];
-        const where = ({ page: "pages", assignment: "assignments", announcement: "discussion_topics" } as Record<string, string>)[x.kind];
-        return [openIt, { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${x.course}/${where}/${encodeURIComponent(x.id)}`) }];
+        const url = docUrl(x);
+        return [openIt, ...(url ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(url) }] : [])];
       }
       default:
         return [openIt];
@@ -837,7 +838,7 @@ export function MainWindow() {
         { label: t("恢复原版…"), onSelect: () => setRestoring({ scope: { paths: [here] }, label }) },
         { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => void api.openPath(here, { reveal: here !== "" }) },
       ],
-      course ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${course.id}`) }] : [],
+      course ? [{ label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(courseUrl(course.id)) }] : [],
     );
   };
   const entriesMenu = (es: Entry[]): MenuItem[] => {
@@ -929,7 +930,7 @@ export function MainWindow() {
     }, fail(t("操作失败")));
   const hiddenCourseMenu = (c: Course): MenuItem[] => [
     { label: t("打开"), onSelect: () => openCourse(c) },
-    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
+    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(courseUrl(c.id)) },
     "separator",
     { label: c.excluded ? t("取消隐藏并恢复同步") : t("取消隐藏"), onSelect: () => void unhide(c) },
   ];
@@ -938,7 +939,7 @@ export function MainWindow() {
     { label: t("打开"), onSelect: () => openCourse(c) },
     ...markRead({ type: "course", course: c.id }),
     { label: t("查看文件"), onSelect: () => go({ kind: "course", id: c.id, tab: viewOf(c.id, "files"), path: c.dir }) },
-    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(`/courses/${c.id}`) },
+    { label: t("在 Canvas 中打开"), onSelect: () => void api.openUrl(courseUrl(c.id)) },
     { label: t("在 {app} 中显示", { app: fileManager }), onSelect: () => reveal(c.dir) },
     "separator",
     { label: t("立即同步"), disabled: syncBusy, onSelect: () => startSync({ paths: [c.dir] }, c.label) },

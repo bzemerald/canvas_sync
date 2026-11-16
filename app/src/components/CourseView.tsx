@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, Overview, Reply, Total } from "../lib/api";
+import { courseUrl, fileUrl } from "../lib/canvas";
 import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
 import { useLoaded } from "../lib/useLoaded";
@@ -903,7 +904,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
     return (
       <div className="p-8 text-sm text-fg-soft">
         <p>{t("在已同步的内容里找不到它（可能是新的，或者不是公告）。")}</p>
-        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-2 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
+        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-2 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
       </div>
     );
   }
@@ -961,7 +962,7 @@ function ItemView({ course, kind, id, version, onLoaded }: {
           {it.attachments.map((a) => (
             <li key={a.id}>
               <button
-                onClick={() => void (a.path ? api.openPath(a.path) : api.openUrl(`/courses/${course.id}/files/${a.id}`))}
+                onClick={() => void (a.path ? api.openPath(a.path) : api.openUrl(fileUrl(course.id, a.id)))}
                 className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-sm hover:bg-chip"
               >
                 <Paperclip className="size-3.5 text-muted" />

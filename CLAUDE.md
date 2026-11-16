@@ -47,6 +47,7 @@ without the Canvas website or Finder.
   - `courses.py`: what a course is called (`course_label`), and the parts of its code people type.
   - `documents.py`: a document's text, its address on the web, and whether it's from Ed, from
     what Canvas and Ed say of it.
+  - `urls.py`: where things are on Canvas (a course, its views, a file, a module, a document).
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
     you open (`POST /opened`).
@@ -80,6 +81,8 @@ without the Canvas website or Finder.
   - `src/lib/update.ts`: 检查更新 (Tauri's updater, from GitHub's releases; checks by itself
     in a release build).
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
+  - `src/lib/canvas.ts`: where a course and its documents are on Canvas, for what came without
+    an address (as urls.py).
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin` (on Windows `python -m
     canvas_sync`: Smart App Control may block `.venv\Scripts\canvas.exe`, which is unsigned; the
@@ -89,6 +92,8 @@ without the Canvas website or Finder.
     `src-tauri/src/dragout.rs`: dragging files out to other apps, the system's drag (a copy).
     `src-tauri/src/tray.rs`: the tray icon (Windows): closing the window hides it, as on macOS.
 - `tests/`: pytest against `tests/fake_canvas.py`, a fake Canvas served over httpx.
+  `tests/shared/*.json`: cases for what the backend and the app each work out for themselves,
+  run by both (`tests/test_shared.py`, `app/src/lib/shared.test.ts`): they must agree.
 
 ## Commands
 

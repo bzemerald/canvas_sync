@@ -6,7 +6,8 @@ aren't in it, nor anything of theirs.
 
 Names are what Canvas or the sync folder calls things (`name`), or None for what the app names
 (a view, a link, a note); `title` is a name you gave it in a place (置顶, a course's page), and
-`aliases` are the other names it answers to. `canvas_url`: where it is on Canvas (relative).
+`aliases` are the other names it answers to. `canvas_url`: where it is on Canvas (relative; a
+folder's is the course's files; a link, a note, a smart folder are nowhere there).
 A course's `keys` are what it is as one word of a query ("cs70", "53", a name you gave it: what
 the app's query.ts reads as narrowing search to it).
 """
@@ -19,9 +20,10 @@ from typing import TYPE_CHECKING, Any
 
 from . import content, notes
 from .courses import code_keys, course_label, normalized
-from .documents import canvas_copy, doc_url
+from .documents import canvas_copy
 from .search import DEFAULT_ABBREVIATIONS
 from .things import DOC_KINDS, VIEWS, Entry, Thing, course_thing, view
+from .urls import course_url, document_url, file_url, module_url, view_url
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -60,7 +62,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         yours = [label, c.code, e.settings.course_names.get(c.id), e.settings.folder_titles.get(folder),
                  *e.settings.course_aliases.get(c.id, [])]
         keys = {normalized(n) for n in yours if n} | {k for k in code_keys(c.code) if re.search(r"\d", k)}
-        add(course_thing(c.id), name=label, term=c.term, canvas_url=f"/courses/{c.id}",
+        add(course_thing(c.id), name=label, term=c.term, canvas_url=course_url(c.id),
             aliases=list(dict.fromkeys(n for n in names if n and n != label)), keys=sorted(keys - {""}))
         if (g := e.state.grades(c.id)) and g.get("current_score") is not None:
             has[c.id].add("grades")
@@ -79,7 +81,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         ed = raw.get("ed") or {}
         if canvas_copy(kind, raw) or (kind == "post" and not (ed.get("pinned") or ed.get("staff"))):
             continue  # (by name: what's pinned on Ed, and staff's posts; the questions are the index's; a copy of a Canvas announcement is that)
-        fields: dict[str, Any] = {"name": d.title, "canvas_url": doc_url(raw), "source": raw.get("source")}
+        fields: dict[str, Any] = {"name": d.title, "canvas_url": document_url(cid, kind, d.id, raw), "source": raw.get("source")}
         if kind in ("announcement", "post"):
             fields["date"] = raw.get("posted_at")
         elif kind == "assignment":
@@ -88,18 +90,17 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                 has[cid].add("grades")
             fields |= {"date": raw.get("due_at"), "due": raw.get("due_at"), "status": status}
         else:
-            fields |= {"date": raw.get("updated_at") or d.updated_at,
-                       "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{d.id}"}
+            fields["date"] = raw.get("updated_at") or d.updated_at
         add(Thing("doc", course=cid, kind=kind, id=d.id), **fields)
     for c in courses:
         for v in VIEWS:
             if v in has[c.id]:
-                add(view(c.id, v))
+                add(view(c.id, v), canvas_url=view_url(c.id, v))
 
     # Modules, and the external tools in each course's menu.
     for cid, module, name in modules:
         if cid in shown:
-            add(Thing("module", course=cid, module=module), name=name or None, canvas_url=f"/courses/{cid}/modules#module_{module}")
+            add(Thing("module", course=cid, module=module), name=name or None, canvas_url=module_url(cid, module))
     for c in courses:
         for t in content.tools(e.state, c.id):
             add(Thing("tool", course=c.id, tool=t["id"]), name=t["label"], canvas_url=t["url"])
@@ -115,7 +116,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             continue
         raw = raws[r.id]
         add(Thing("file", path=path), course=cid, name=PurePosixPath(path).name,
-            date=raw.get("created_at") or raw.get("updated_at"), canvas_url=f"/courses/{cid}/files/{r.id}")
+            date=raw.get("created_at") or raw.get("updated_at"), canvas_url=file_url(cid, r.id))
         for p in [path, *links.get(r.id, [])]:
             for parent in PurePosixPath(p).parents:
                 folder = parent.as_posix()
@@ -126,7 +127,8 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
         if (e.root / folder).is_dir():
             own = PurePosixPath(folder).name  # (it answers to that too, if you renamed it)
             title = e.settings.folder_titles.get(folder)
-            add(Thing("folder", path=folder), course=cid, name=title or own, aliases=[own] if title else None)
+            add(Thing("folder", path=folder), course=cid, name=title or own, aliases=[own] if title else None,
+                canvas_url=view_url(cid, "files"))
 
     # What you put in places: 置顶, and each course's tabs, overview and 工具与链接. What's there
     # answers to the names you gave it; links, notes and smart folders are only there.

@@ -1,0 +1,14 @@
+{
+  "about": "Where things are on Canvas, relative to the site (null: nowhere there). src/canvas_sync/urls.py (tests/test_shared.py) and app/src/lib/canvas.ts (app/src/lib/shared.test.ts) must both say this.",
+  "cases": [
+    {"thing": {"type": "course", "course": 7}, "url": "/courses/7"},
+    {"thing": {"type": "doc", "course": 7, "kind": "page", "id": "office-hours"}, "url": "/courses/7/pages/office-hours"},
+    {"thing": {"type": "doc", "course": 7, "kind": "page", "id": "第3讲 notes (v2)"}, "url": "/courses/7/pages/%E7%AC%AC3%E8%AE%B2%20notes%20(v2)"},
+    {"thing": {"type": "doc", "course": 7, "kind": "page", "id": "ed-discussion"}, "url": "/courses/7/pages/ed-discussion"},
+    {"thing": {"type": "doc", "course": 7, "kind": "assignment", "id": "55"}, "url": "/courses/7/assignments/55"},
+    {"thing": {"type": "doc", "course": 7, "kind": "announcement", "id": "123"}, "url": "/courses/7/discussion_topics/123"},
+    {"thing": {"type": "doc", "course": 7, "kind": "announcement", "id": "ed-9001"}, "url": null},
+    {"thing": {"type": "doc", "course": 7, "kind": "post", "id": "ed-9002"}, "url": null},
+    {"file": 31, "course": 7, "url": "/courses/7/files/31"}
+  ]
+}

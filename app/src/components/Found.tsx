@@ -79,20 +79,6 @@ export const describeEntry = (courses: Course[]): Describe => (e) => {
   return { names: [thingName(e, courses), e.name ?? ""], aliases, kind: KIND_WORDS[kind] ? inBoth(KIND_WORDS[kind]) : [] };
 };
 
-// Where a course's views are on Canvas.
-const VIEW_PATH: Record<ViewName, string> = {
-  overview: "", modules: "/modules", announcements: "/announcements", ed: "", assignments: "/assignments", grades: "/grades",
-  files: "/files", syllabus: "/assignments/syllabus", pages: "/pages", tools: "", canvas: "",
-};
-
-/** Where it is on Canvas, if anywhere (a link, a note, a smart folder: nowhere). */
-export function canvasUrl(e: CatalogEntry): string | null {
-  if (e.canvas_url) return e.canvas_url;
-  if (e.type === "view") return `/courses/${e.course}${VIEW_PATH[e.view]}`;
-  if (e.type === "folder" && e.in_course !== null) return `/courses/${e.in_course}/files`;
-  return null;
-}
-
 const NOTHING: Usage = { opened: {}, picks: [] };
 
 /** The catalog, made ready for finding, what reading a query knows of it, and what you open;

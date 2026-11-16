@@ -22,10 +22,11 @@ from .discover import file_refs
 from .layout import Layout, sanitize
 from .config import set_title
 from .courses import course_label, term_label
-from .documents import DOC_BODY, canvas_copy, doc_url, on_ed, relative_url
+from .documents import DOC_BODY, canvas_copy, on_ed, relative_url
 from .state import NEWS_KINDS, FileRecord, State
 from .text import html_to_text
 from .times import time_of
+from .urls import document_url, file_url
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -156,7 +157,7 @@ def submission(assignment: dict[str, Any]) -> dict[str, Any]:
 
 
 def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, Any], new: bool = False) -> dict[str, Any]:
-    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": doc_url(raw), "new": new}
+    out: dict[str, Any] = {"kind": kind, "id": doc_id, "title": title, "url": document_url(course_id, kind, doc_id, raw), "new": new}
     if raw.get("source"):
         out["source"] = raw["source"]  # (from elsewhere: Ed)
     if "ed" in raw:  # where it is on Ed, who wrote it, how it's going (see ed.document)
@@ -184,9 +185,6 @@ def _summary(course_id: int, kind: str, doc_id: str, title: str, raw: dict[str, 
             out["tool"] = {"assignment_id": int(doc_id), "name": tool_name(tag.get("url"))}
     elif kind == "page":
         out |= {"date": raw.get("updated_at"), "front_page": bool(raw.get("front_page"))}
-        out["url"] = out["url"] or f"/courses/{course_id}/pages/{doc_id}"
-    elif kind == "syllabus":
-        out["url"] = f"/courses/{course_id}/assignments/syllabus"
     return out
 
 
@@ -411,7 +409,7 @@ def modules(state: State, root: Path, layout: Layout, course_id: int, now: datet
                 return {"deleted": True, "url": canvas}
             if rec.path and (root / rec.path).exists():
                 return {"file": rec.path}
-            return {"url": canvas or f"/courses/{course_id}/files/{cid}"}
+            return {"url": canvas or file_url(course_id, cid)}
         if kind == "Page" and ("page", item.get("page_url")) in docs:
             return {"doc": {"kind": "page", "id": item["page_url"]}}
         if kind == "Assignment" and ("assignment", str(cid)) in docs:

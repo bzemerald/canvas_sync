@@ -348,7 +348,7 @@ export type CatalogEntry = Shown & {
   due?: string | null;
   status?: SubmissionStatus;
   text?: string; // a note's first line
-  canvas_url?: string; // (in full when it's elsewhere: Ed)
+  canvas_url?: string; // where it is on Canvas, if anywhere (a link, a note, a smart folder: nowhere); in full when it's elsewhere: Ed
   source?: "ed"; // a document from Ed
 };
 /** What you open: how often and when last, by thingKey; and what you'd typed in search for what. */

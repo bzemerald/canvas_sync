@@ -8,11 +8,12 @@ import { Command } from "cmdk";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CompletionGhost, FoundList, type How, ReadingBar, actionsFor, canvasUrl, completion, moreKeys, useAsked, useCatalog, useChosen, useFinding,
+  CompletionGhost, FoundList, type How, ReadingBar, actionsFor, completion, moreKeys, useAsked, useCatalog, useChosen, useFinding,
 } from "./components/Found";
 import { isMac } from "./components/Result";
 import * as api from "./lib/api";
 import type { Hit } from "./lib/api";
+import { courseUrl } from "./lib/canvas";
 import type { Found } from "./lib/find";
 import { useLoaded } from "./lib/useLoaded";
 import { friendly } from "./lib/errors";
@@ -125,7 +126,7 @@ export function Launcher() {
     }
     const e = f.entry;
     if (how === "canvas") {
-      const url = canvasUrl(e);
+      const url = e.canvas_url;
       return void (url && (await api.openUrl(url), await done(f.key)));
     }
     if (how === "reveal" && e.type === "file") {
@@ -135,7 +136,7 @@ export function Launcher() {
     if (e.type === "file") await api.openPath(e.path);
     else if (e.type === "link") await api.openExternal(e.url);
     else if (e.type === "tool") await api.launch(e.course, { tool_id: e.tool });
-    else if (isView(e, "canvas")) await api.openUrl(`/courses/${e.course}`);
+    else if (isView(e, "canvas")) await api.openUrl(courseUrl(e.course));
     else return there(thingNamed(e), foundIn(f.hit));
     await done(f.key);
   };

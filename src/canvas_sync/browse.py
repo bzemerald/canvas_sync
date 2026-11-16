@@ -18,6 +18,7 @@ from typing import Protocol
 from .layout import Layout
 from .paths import META_DIR
 from .state import FileRecord, State
+from .urls import file_url
 
 # Local changes `restore` undoes.
 RESTORABLE = {"modified", "missing", "ignored"}
@@ -100,7 +101,7 @@ def list_dir(root: Path, state: State, layout: Layout, statuses: Iterable[Status
 
     def canvas(fid: int, cid: int, path: str) -> dict[str, object]:
         s = by_id.get(fid)
-        return {"file_id": fid, "course_id": cid, "url": f"/courses/{cid}/files/{fid}",
+        return {"file_id": fid, "course_id": cid, "url": file_url(cid, fid),
                 "states": list(s.states) if s else [], "skipped": skipped(path),
                 "new": ("updated" if unseen[fid] else "new") if fid in unseen else None}
 

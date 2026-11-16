@@ -9,6 +9,7 @@ import { FolderOpen, Pin, Plus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { Course, DocKind, Hit, Module, NewsView, Overview } from "../lib/api";
+import { courseUrl } from "../lib/canvas";
 import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
@@ -243,7 +244,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
       <div className="mx-auto max-w-md px-6 py-16 text-sm text-fg-soft">
         <p className="mb-2 text-base text-fg">{t("这门课在 Canvas 上几乎没有内容。")}</p>
         <p className="text-muted">{t("很多课程把材料放在课程网站、Ed 或 Gradescope 上。")}</p>
-        <button onClick={() => void api.openUrl(`/courses/${course.id}`)} className="mt-4 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
+        <button onClick={() => void api.openUrl(courseUrl(course.id))} className="mt-4 text-accent hover:underline">{t("在 Canvas 中打开")}</button>
       </div>
     );
   }
