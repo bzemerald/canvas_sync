@@ -10,17 +10,17 @@
 
 from __future__ import annotations
 
-import functools
 import os
 import re
 import shlex
 import subprocess
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import keyring
 import keyring.errors
@@ -281,18 +281,21 @@ def _strings(v: Any) -> list[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
-F = TypeVar("F", bound=Callable[..., Any])
 _writing = threading.RLock()
 
 
-def _writes(fn: F) -> F:
-    """config.toml read, changed and written back, one change at a time (the app's requests come
-    in on threads of their own)."""
-    @functools.wraps(fn)
-    def locked(*args: Any, **kwargs: Any) -> Any:
-        with _writing:
-            return fn(*args, **kwargs)
-    return locked  # type: ignore[return-value]
+@contextmanager
+def _editing(path: Path, *, spaced: bool = False) -> Iterator[Any]:
+    """config.toml, to change: read (its comments stay), handed over, and written back if that
+    changed it. One change at a time: the app's requests come in on threads of their own.
+    `spaced`: written with a blank line before each table (`_dump`: for what adds tables)."""
+    with _writing:
+        text = path.read_text(encoding="utf-8")
+        doc = tomlkit.parse(text)
+        yield doc
+        changed = _dump(doc) if spaced else tomlkit.dumps(doc)
+        if changed != text:
+            path.write_text(changed, encoding="utf-8")
 
 
 def _pinned(data: dict[str, Any]) -> list[Entry]:
@@ -326,81 +329,71 @@ def _rows(items: list[Entry], home: int | None = None) -> Any:
     return a.multiline(True)
 
 
-@_writes
 def save_pinned(path: Path, items: list[Entry]) -> None:
     """置顶, in order."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    for key in ("pinned", "smart_folders"):
-        if key in doc:
-            del doc[key]
-    if items:
-        aot = tomlkit.aot()
-        for e in items:
-            t = tomlkit.table()
-            t.update(e.to_dict(compact=True))
-            aot.append(t)
-        doc["pinned"] = aot
-    path.write_text(_dump(doc), encoding="utf-8")
+    with _editing(path, spaced=True) as doc:
+        for key in ("pinned", "smart_folders"):
+            if key in doc:
+                del doc[key]
+        if items:
+            aot = tomlkit.aot()
+            for e in items:
+                t = tomlkit.table()
+                t.update(e.to_dict(compact=True))
+                aot.append(t)
+            doc["pinned"] = aot
 
 
-@_writes
 def change_things(path: Path, change: Callable[[Thing], Thing]) -> None:
     """Every thing in every place (置顶, courses' pages) as `change` makes it."""
-    s = Settings.load(path)
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    pinned = [Entry(change(e.thing), e.title, e.hidden) for e in s.pinned]
-    for course, layout in s.course_layouts.items():
-        for place in PLACES:
-            now = getattr(layout, place)
-            moved = [Entry(change(e.thing), e.title, e.hidden) for e in now]
-            if moved != now:
-                _put_place(doc, course, place, moved)
-    path.write_text(_dump(doc), encoding="utf-8")
-    if pinned != s.pinned:
-        save_pinned(path, pinned)
+    with _writing:  # (the courses' pages, then 置顶: as one change)
+        s = Settings.load(path)
+        pinned = [Entry(change(e.thing), e.title, e.hidden) for e in s.pinned]
+        with _editing(path, spaced=True) as doc:
+            for course, layout in s.course_layouts.items():
+                for place in PLACES:
+                    now = getattr(layout, place)
+                    moved = [Entry(change(e.thing), e.title, e.hidden) for e in now]
+                    if moved != now:
+                        _put_place(doc, course, place, moved)
+        if pinned != s.pinned:
+            save_pinned(path, pinned)
 
 
-@_writes
 def save_sidebar_order(path: Path, terms: list[str] | None = None, courses: list[int] | None = None) -> None:
     """The sidebar's order of terms and of courses (within their terms), as dragged in the app."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    table = doc.setdefault("sidebar", tomlkit.table())
-    if terms is not None:
-        table["term_order"] = list(dict.fromkeys(terms))
-    if courses is not None:
-        table["course_order"] = list(dict.fromkeys(courses))
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        table = doc.setdefault("sidebar", tomlkit.table())
+        if terms is not None:
+            table["term_order"] = list(dict.fromkeys(terms))
+        if courses is not None:
+            table["course_order"] = list(dict.fromkeys(courses))
 
 
-@_writes
 def update_skip_folders(path: Path, add: list[str] = (), remove_under: list[str] = (),  # type: ignore[assignment]
                         remove: list[str] = ()) -> None:  # type: ignore[assignment]
     """Drop from [layout] skip_folders those at or under `remove_under`, and those in `remove`;
     then add `add`."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    layout = doc.setdefault("layout", tomlkit.table())
-    current = [str(x) for x in layout.get("skip_folders", [])]
-    gone = lambda p: p in remove or any(under(p, r) for r in remove_under)  # noqa: E731
-    wanted = list(dict.fromkeys([*(p for p in current if not gone(p)), *add]))
-    if wanted != current:
-        arr = tomlkit.array()
-        arr.extend(wanted)
-        layout["skip_folders"] = arr
-        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        current = [str(x) for x in doc.get("layout", {}).get("skip_folders", [])]
+        gone = lambda p: p in remove or any(under(p, r) for r in remove_under)  # noqa: E731
+        wanted = list(dict.fromkeys([*(p for p in current if not gone(p)), *add]))
+        if wanted != current:
+            arr = tomlkit.array()
+            arr.extend(wanted)
+            doc.setdefault("layout", tomlkit.table())["skip_folders"] = arr
 
 
-@_writes
 def set_folder_title(path: Path, folder: str, title: str | None) -> None:
     """What the app calls the folder at `folder` (None: its own name)."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    titles = doc.get("folder_titles")
-    if titles is None:
-        titles = doc["folder_titles"] = tomlkit.table()
-    if title is None:
-        titles.pop(folder, None)
-    else:
-        titles[folder] = title
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        titles = doc.get("folder_titles")
+        if titles is None:
+            titles = doc["folder_titles"] = tomlkit.table()
+        if title is None:
+            titles.pop(folder, None)
+        else:
+            titles[folder] = title
 
 
 def old_folder_names(path: Path) -> dict[str, str] | None:
@@ -413,19 +406,17 @@ def old_folder_names(path: Path) -> dict[str, str] | None:
     return None if names is None else {str(k).strip("/"): str(v) for k, v in names.items()}
 
 
-@_writes
 def replace_folder_names(path: Path, titles: dict[str, str]) -> None:
     """[folder_names] gone, what it called folders in [folder_titles]; `sync.on_local_move` too."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    doc.pop("folder_names", None)
-    if "sync" in doc:
-        doc["sync"].pop("on_local_move", None)
-    table = doc.get("folder_titles")
-    if table is None:
-        table = doc["folder_titles"] = tomlkit.table()
-    for folder, title in titles.items():
-        table[folder] = title
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        doc.pop("folder_names", None)
+        if "sync" in doc:
+            doc["sync"].pop("on_local_move", None)
+        table = doc.get("folder_titles")
+        if table is None:
+            table = doc["folder_titles"] = tomlkit.table()
+        for folder, title in titles.items():
+            table[folder] = title
 
 
 def _rule(r: dict[str, Any]) -> Rule:
@@ -440,40 +431,43 @@ def _rule(r: dict[str, Any]) -> Rule:
     )
 
 
-@_writes
 def set_course_select(path: Path, select: str) -> None:
     """Sync the active courses or the favorites, keeping the file's comments."""
     if select not in CHOICES["select"]:
         raise ConfigError(f"select must be one of {sorted(CHOICES['select'])}")
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    doc.setdefault("courses", tomlkit.table())["select"] = select
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        doc.setdefault("courses", tomlkit.table())["select"] = select
 
 
-@_writes
+def _course_lists(doc: Any, *keys: str) -> Any:
+    """[courses], with these lists of course ids in it (empty ones, if they weren't there)."""
+    courses = doc.setdefault("courses", tomlkit.table())
+    for key in keys:
+        if key not in courses:
+            courses[key] = tomlkit.array()
+    return courses
+
+
+def _put(courses: Any, key: str, course_id: int, present: bool) -> None:
+    """A course in one of [courses]'s lists (`key`), or out of it."""
+    if present and course_id not in courses[key]:
+        courses[key].append(course_id)
+    elif not present and course_id in courses[key]:
+        courses[key].remove(course_id)
+
+
 def set_courses_syncing(path: Path, sync: list[int], skip: list[int], *, include: bool = False) -> None:
     """Which courses sync, as chosen from the list of them: `skip` into `exclude`, `sync` out of
     it (and into `include` too, if `select` wouldn't pick them)."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    courses = doc.setdefault("courses", tomlkit.table())
-    for key in ("exclude", "include"):
-        if key not in courses:
-            courses[key] = tomlkit.array()
-
-    def put(key: str, course_id: int, present: bool) -> None:
-        if present and course_id not in courses[key]:
-            courses[key].append(course_id)
-        elif not present and course_id in courses[key]:
-            courses[key].remove(course_id)
-
-    for course_id in sync:
-        put("exclude", course_id, False)
-        if include:
-            put("include", course_id, True)
-    for course_id in skip:
-        put("exclude", course_id, True)
-        put("include", course_id, False)
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        courses = _course_lists(doc, "exclude", "include")
+        for course_id in sync:
+            _put(courses, "exclude", course_id, False)
+            if include:
+                _put(courses, "include", course_id, True)
+        for course_id in skip:
+            _put(courses, "exclude", course_id, True)
+            _put(courses, "include", course_id, False)
 
 
 def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool | None = None) -> None:
@@ -482,66 +476,48 @@ def set_course_hidden(path: Path, course_id: int, hidden: bool, *, syncing: bool
     set_courses_hidden(path, [course_id], hidden, syncing=syncing)
 
 
-@_writes
 def set_courses_hidden(path: Path, course_ids: list[int], hidden: bool, *, syncing: bool | None = None) -> None:
     """set_course_hidden for several courses at once (a whole term)."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    courses = doc.setdefault("courses", tomlkit.table())
-    for key in ("hidden", "exclude", "include"):
-        if key not in courses:
-            courses[key] = tomlkit.array()
-
-    def put(key: str, course_id: int, present: bool) -> None:
-        if present and course_id not in courses[key]:
-            courses[key].append(course_id)
-        elif not present and course_id in courses[key]:
-            courses[key].remove(course_id)
-
-    for course_id in course_ids:
-        put("hidden", course_id, hidden)
-        if syncing is not None:
-            put("exclude", course_id, not syncing)
-            if not syncing:
-                put("include", course_id, False)
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        courses = _course_lists(doc, "hidden", "exclude", "include")
+        for course_id in course_ids:
+            _put(courses, "hidden", course_id, hidden)
+            if syncing is not None:
+                _put(courses, "exclude", course_id, not syncing)
+                if not syncing:
+                    _put(courses, "include", course_id, False)
 
 
-@_writes
 def set_course_icon(path: Path, course_id: int, icon: dict[str, str] | None) -> None:
     """A course's icon in the app ({icon, color} or {emoji}); None: back to the app's pick."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    icons = doc.setdefault("course_icons", tomlkit.table())
-    key = str(course_id)
-    if icon is None:
-        if key in icons:
-            del icons[key]
-    else:
-        value = tomlkit.inline_table()
-        value.update({k: v for k, v in icon.items() if k in ICON_KEYS and v})
-        icons[key] = value
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        icons = doc.setdefault("course_icons", tomlkit.table())
+        key = str(course_id)
+        if icon is None:
+            if key in icons:
+                del icons[key]
+        else:
+            value = tomlkit.inline_table()
+            value.update({k: v for k, v in icon.items() if k in ICON_KEYS and v})
+            icons[key] = value
 
 
-@_writes
 def set_title(path: Path, table: str, key: str, title: str | None) -> None:
     """What the app calls a course or a term (`table`: course_titles, term_titles); None: its own name."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    titles = doc.setdefault(table, tomlkit.table())
-    if title is None:
-        titles.pop(key, None)
-    else:
-        titles[key] = title
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        titles = doc.setdefault(table, tomlkit.table())
+        if title is None:
+            titles.pop(key, None)
+        else:
+            titles[key] = title
 
 
-@_writes
 def set_ed_courses(path: Path, links: dict[int, int]) -> None:
     """Which Ed course is each of these courses' ([ed.courses]; 0: none)."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    courses = doc.setdefault("ed", tomlkit.table()).setdefault("courses", tomlkit.table())
-    for course_id, ed_id in links.items():
-        courses[str(course_id)] = ed_id
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        courses = doc.setdefault("ed", tomlkit.table()).setdefault("courses", tomlkit.table())
+        for course_id, ed_id in links.items():
+            courses[str(course_id)] = ed_id
 
 
 def _put_place(doc: Any, course_id: int, place: str, items: list[Entry]) -> None:
@@ -558,14 +534,12 @@ def _put_place(doc: Any, course_id: int, place: str, items: list[Entry]) -> None
         del layouts[key]
 
 
-@_writes
 def save_course_place(path: Path, course_id: int, place: str, items: list[Entry]) -> None:
     """One of a course's places as arranged for it (tabs, overview, links); [] : nothing of its own."""
     if place not in PLACES:
         raise ConfigError(f"no place {place!r}; places are {PLACES}")
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    _put_place(doc, course_id, place, items)
-    path.write_text(_dump(doc), encoding="utf-8")
+    with _editing(path, spaced=True) as doc:
+        _put_place(doc, course_id, place, items)
 
 
 def needs_titles(path: Path) -> bool:
@@ -573,17 +547,15 @@ def needs_titles(path: Path) -> bool:
     return "course_titles" not in tomlkit.parse(path.read_text(encoding="utf-8"))
 
 
-@_writes
 def add_titles(path: Path, courses: dict[int, str], terms: dict[str, str]) -> None:
     """The names courses and terms had from their folders, as titles. (The folders stay as they are.)"""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    doc["course_titles"] = tomlkit.table()
-    doc["term_titles"] = tomlkit.table()
-    for course, title in courses.items():
-        doc["course_titles"][str(course)] = title
-    for term, title in terms.items():
-        doc["term_titles"][term] = title
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        doc["course_titles"] = tomlkit.table()
+        doc["term_titles"] = tomlkit.table()
+        for course, title in courses.items():
+            doc["course_titles"][str(course)] = title
+        for term, title in terms.items():
+            doc["term_titles"][term] = title
 
 
 def needs_migration(path: Path) -> bool:
@@ -593,42 +565,33 @@ def needs_migration(path: Path) -> bool:
     return "smart_folders" in data or any(is_old(x) for x in data.get("pinned", [])) or any(map(is_old_layout, layouts))
 
 
-@_writes
 def migrate(path: Path, tools: Callable[[int], list[int]] | None = None) -> bool:
     """Write what config.toml has the old way the new way. `tools`: a course's tools, in Canvas's
     order. True if there was any."""
-    if not needs_migration(path):
-        return False
-    data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
-    old_layouts = {int(k): v for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict) and is_old_layout(v)}
-    s = Settings.load(path)
-    save_pinned(path, s.pinned)
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    for course, table in old_layouts.items():
-        doc["course_layouts"][str(course)] = tomlkit.table()
-        layout = CourseLayout.parse(table, course, tools(course) if tools else None)
-        for place in PLACES:
-            _put_place(doc, course, place, getattr(layout, place))
-        if str(course) in doc["course_layouts"] and not doc["course_layouts"][str(course)]:
-            del doc["course_layouts"][str(course)]
-    path.write_text(_dump(doc), encoding="utf-8")
-    return True
+    with _writing:  # (置顶, then the courses' pages: as one change)
+        if not needs_migration(path):
+            return False
+        data = tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
+        old_layouts = {int(k): v for k, v in data.get("course_layouts", {}).items() if isinstance(v, dict) and is_old_layout(v)}
+        save_pinned(path, Settings.load(path).pinned)
+        with _editing(path, spaced=True) as doc:
+            for course, table in old_layouts.items():
+                doc["course_layouts"][str(course)] = tomlkit.table()
+                layout = CourseLayout.parse(table, course, tools(course) if tools else None)
+                for place in PLACES:
+                    _put_place(doc, course, place, getattr(layout, place))
+                if str(course) in doc["course_layouts"] and not doc["course_layouts"][str(course)]:
+                    del doc["course_layouts"][str(course)]
+        return True
 
 
-@_writes
 def set_course_listed(path: Path, course_id: int, *, sync: bool) -> None:
     """Move a course id into `include` (sync=True) or `exclude`, keeping the file's comments."""
-    doc = tomlkit.parse(path.read_text(encoding="utf-8"))
-    courses = doc.setdefault("courses", tomlkit.table())
     add, remove = ("include", "exclude") if sync else ("exclude", "include")
-    for key in (add, remove):
-        if key not in courses:
-            courses[key] = tomlkit.array()
-    if course_id in courses[remove]:
-        courses[remove].remove(course_id)
-    if course_id not in courses[add]:
-        courses[add].append(course_id)
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    with _editing(path) as doc:
+        courses = _course_lists(doc, add, remove)
+        _put(courses, remove, course_id, False)
+        _put(courses, add, course_id, True)
 
 
 # -- account ------------------------------------------------------------------
