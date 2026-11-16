@@ -227,13 +227,11 @@ export interface CourseLayout {
 }
 
 export const courseLayout = (course: number) => api<CourseLayout>(`/courses/${course}/layout`);
-const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "PUT", body: JSON.stringify(body) });
 /** One of a course's places as it should be (its own things it leaves out come back). */
 export const arrangeCourse = (course: number, place: Place, entries: Shown[]) =>
   put<CourseLayout>(`/courses/${course}/layout/${place}`, { entries });
 export const note = (course: number, id: string) => api<{ text: string }>(`/courses/${course}/notes/${id}`);
-export const saveNote = (course: number, id: string, text: string) =>
-  api<{ text: string }>(`/courses/${course}/notes/${id}`, { method: "PUT", body: JSON.stringify({ text }) });
+export const saveNote = (course: number, id: string, text: string) => put<{ text: string }>(`/courses/${course}/notes/${id}`, { text });
 
 /** A term, course, folder or file: what a sync or restore applies to. */
 export interface Scope {
@@ -307,18 +305,32 @@ const folderGone = new Set<() => void>();
 export const onFolderMissing = (f: () => void) => (folderGone.add(f), () => void folderGone.delete(f));
 export const isFolderMissing = (e: unknown) => e instanceof ApiError && e.message === MISSING;
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
+/** A request to the backend, as this app (it takes no one else's). */
+async function request(path: string, init?: RequestInit): Promise<Response> {
   const { port, token } = await getBackend();
-  const res = await fetch(`http://127.0.0.1:${port}/api${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init?.headers },
-  });
+  return fetch(`http://127.0.0.1:${port}/api${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...init?.headers } });
+}
+
+/** What the backend answers (JSON); an ApiError if it says no. */
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await request(path, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 409 && body.detail === MISSING) folderGone.forEach((f) => f());
     throw new ApiError(body.detail ?? `${res.status} ${res.statusText}`, res.status);
   }
   return res.json();
+}
+function post<T>(path: string, body: unknown) {
+  return api<T>(path, { method: "POST", body: JSON.stringify(body) });
+}
+function put<T>(path: string, body: unknown) {
+  return api<T>(path, { method: "PUT", body: JSON.stringify(body) });
+}
+/** What a path answers with (an image), as an object URL; null if it has none. */
+async function blob(path: string): Promise<string | null> {
+  const res = await request(path);
+  return res.ok ? URL.createObjectURL(await res.blob()) : null;
 }
 
 export function search(
@@ -396,17 +408,10 @@ export const newFiles = () => api<string[]>("/new/files");
 /** The views that count what's new in them. */
 export type NewsView = Exclude<keyof NewCounts, "total">;
 /** Mark everything new in a course as seen (or only what's in one of its views). */
-export const markSeen = (course: number, of?: NewsView) =>
-  api<NewCounts>(`/courses/${course}/seen`, { method: "POST", body: JSON.stringify({ views: of ? [of] : null }) });
+export const markSeen = (course: number, of?: NewsView) => post<NewCounts>(`/courses/${course}/seen`, { views: of ? [of] : null });
 
 /** An image in a page (needs the Canvas login, or is on another site), as an object URL. */
-export async function media(url: string): Promise<string | null> {
-  const { port, token } = await getBackend();
-  const res = await fetch(`http://127.0.0.1:${port}/api/media?${new URLSearchParams({ url })}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.ok ? URL.createObjectURL(await res.blob()) : null;
-}
+export const media = (url: string) => blob(`/media?${new URLSearchParams({ url })}`);
 /** `choosing`: signed in to a folder that has never synced, so which courses sync is asked first.
  * `folder_missing`: the sync folder isn't where it was (`root`). */
 export const health = () =>
@@ -425,16 +430,10 @@ export function tree(path: string): Promise<Entry[]> {
 const listing = new Map<string, Promise<Entry[]>>();
 
 export const syncState = () => api<SyncState>("/sync");
-export const startSync = (scope: Scope = {}) => api<SyncState>("/sync", { method: "POST", body: JSON.stringify(scope) });
+export const startSync = (scope: Scope = {}) => post<SyncState>("/sync", scope);
 
-export const restorePreview = (scope: Scope) =>
-  api<{ files: FileStatus[] }>("/restore", { method: "POST", body: JSON.stringify({ ...scope, dry_run: true }) });
-export const restore = (scope: Scope) =>
-  api<{ restored: string[] }>("/restore", { method: "POST", body: JSON.stringify(scope) });
-
-function post<T>(path: string, body: unknown) {
-  return api<T>(path, { method: "POST", body: JSON.stringify(body) });
-}
+export const restorePreview = (scope: Scope) => post<{ files: FileStatus[] }>("/restore", { ...scope, dry_run: true });
+export const restore = (scope: Scope) => post<{ restored: string[] }>("/restore", scope);
 
 /** 置顶: what's pinned, in order (smart folders are searches pinned). */
 export const pinned = () => api<Placed[]>("/pinned");
@@ -499,15 +498,10 @@ export const rename = (path: string, name: string) => post<{ ok: boolean }>("/re
 export const folderTitles = () => api<Record<string, string>>("/folder-titles");
 
 /** A JPEG preview as an object URL, or null if the file has none. */
-export async function thumb(path: string, size: number): Promise<string | null> {
-  const { port, token } = await getBackend();
-  const params = new URLSearchParams({ path, size: String(size) });
-  const res = await fetch(`http://127.0.0.1:${port}/api/thumb?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-  return res.ok ? URL.createObjectURL(await res.blob()) : null;
-}
+export const thumb = (path: string, size: number) => blob(`/thumb?${new URLSearchParams({ path, size: String(size) })}`);
 
 export function openPath(path: string, how: { reveal?: boolean; preview?: boolean } = {}) {
-  return api("/open", { method: "POST", body: JSON.stringify({ path, ...how }) });
+  return post<unknown>("/open", { path, ...how });
 }
 
 /** A file was seen in the app itself (in Quick Look): mark it seen. */
@@ -516,7 +510,7 @@ export const sawFile = (path: string) => post("/open", { path, seen: true });
 /** A page on Canvas (relative to the site), or anywhere on the web (in full: Ed's). */
 export function openUrl(url: string) {
   if (/^https?:\/\//.test(url)) return openExternal(url);
-  return api("/open", { method: "POST", body: JSON.stringify({ url }) });
+  return post<unknown>("/open", { url });
 }
 
 /** Open an external tool in the browser, signed in where Canvas allows (else its page on Canvas). */
@@ -525,7 +519,7 @@ export const launch = (course: number, target: LaunchTarget) =>
 
 /** A link to anywhere on the web, in the browser. */
 export function openExternal(url: string) {
-  return api("/open", { method: "POST", body: JSON.stringify({ external: url }) });
+  return post<unknown>("/open", { external: url });
 }
 
 let canvasBase: Promise<string | null> | null = null;
