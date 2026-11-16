@@ -137,6 +137,9 @@ export function putAt<E extends Shown>(list: E[], entry: E, index: number): E[] 
   const i = Math.max(0, Math.min(was >= 0 && was < index ? index - 1 : index, rest.length));
   return [...rest.slice(0, i), kept, ...rest.slice(i)];
 }
+/** `entry` put in `list`, shown: at `slot` among `shown` (some of the list), or last of all. */
+export const putIn = <E extends Shown>(list: E[], shown: Thing[], entry: E, slot?: number): E[] =>
+  putAt(list, { ...entry, hidden: false }, slot === undefined ? list.length : slotIndex(list, shown, slot));
 export const without = <E extends Thing>(list: E[], t: Thing) => list.filter((x) => !same(x, t));
 export const changed = <E extends Shown>(list: E[], t: Thing, change: { title?: string; hidden?: boolean }) =>
   list.map((x) => (same(x, t) ? { ...x, ...change } : x));

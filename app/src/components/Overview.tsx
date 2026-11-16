@@ -10,22 +10,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import * as api from "../lib/api";
 import type { Course, DocKind, Hit, Module, NewsView, Overview } from "../lib/api";
 import { courseUrl } from "../lib/canvas";
-import { useDropZone } from "../lib/dropZones";
 import { shortDate } from "../lib/dates";
 import { t } from "../lib/i18n";
 import { GLIDE, useFlip } from "../lib/flip";
 import { Settling, lineIn, slotInColumn } from "../lib/slot";
-import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
-import {
-  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, putAt, refill, same, slotIndex, thingKey, thingOfHit, view,
-  without,
-} from "../lib/things";
+import { type Shown, type Thing, type ThingOf, isView, ofCourse, thingKey, thingOfHit, view } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
 import { Button, Dialog } from "./Dialog";
 import { AssignmentRow, EdAnnouncementMark, Empty, ModuleRow, Row, SubmissionBadges, TotalLine, docThing, useItemOpener } from "./CourseView";
 import { FileIcon } from "./FileIcon";
 import type { MenuItem } from "./Menu";
+import { type Place, usePlace, usePlaceDrag } from "./Place";
 import { RenameInput } from "./RenameInput";
 import { RichText } from "./RichText";
 import { Loading, NewDot } from "./Status";
@@ -89,20 +85,31 @@ const LOADING = "px-2 py-3 text-sm"; // (as Empty)
 const hasCard = (e: Thing) =>
   e.type === "view" ? !["overview", "pages", "canvas"].includes(e.view) : !["tool", "link", "course"].includes(e.type);
 
+type Say = (message: string, action?: { label: string; run: () => void }) => void;
+
+/** 工具与链接 as a place: the course's tools, its syllabus (if it has one) and Canvas, which can
+ * be hidden; and what you put there. */
+function useLinks(links: Shown[], syllabus: boolean, onArrange: (next: Shown[]) => void, onSay: Say) {
+  const things = useThings();
+  return usePlace({
+    entries: links, shown: links.filter((e) => !e.hidden && (!isView(e, "syllabus") || syllabus)), onArrange, onSay,
+    name: (e) => thingName(e, things.courses), taken: (name) => t("已移除“{name}”", { name }),
+  });
+}
+
 export function CourseOverview({ course, overview, cards, links, onArrange, onSay, onMarkSeen }: {
   course: Course;
   overview: Overview | null;
   cards: Shown[] | null; // the overview's, in order, hidden ones too
   links: Shown[]; // 工具与链接's
   onArrange: (place: "overview" | "links", entries: Shown[]) => void;
-  onSay: (message: string, action?: { label: string; run: () => void }) => void;
+  onSay: Say;
   onMarkSeen: (of: NewsView) => void;
 }) {
   const things = useThings();
   const thing = useThing();
   const { activate, pending } = useItemOpener(course.id);
   const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState<{ place: "overview" | "links"; entry: Shown } | null>(null);
   const [addingLink, setAddingLink] = useState(false);
   // Two columns when there's room. Cards go in order, each into whichever column is shorter so
   // far, so the two come out about even. They're positioned in one box rather than put in two:
@@ -167,11 +174,17 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
             : e.view === "ed" ? !!overview?.counts.ed
               : true;
   const shown = all.filter((e) => !e.hidden && available(e));
-  const add = (entry: Shown, index = all.length) => {
+  const titleOf = (e: Shown) => e.title || (isView(e, "tools") && !overview?.tools.length ? t("链接") : thingName(e, things.courses, "card"));
+  // The two places here: the cards, and 工具与链接 (one of the cards; a tool or a link goes there).
+  const cardPlace = usePlace({
+    entries: all, shown, onArrange: (next) => onArrange("overview", next), onSay, name: titleOf, taken: (name) => t("已移除“{name}”", { name }),
+  });
+  const linkPlace = useLinks(links, !!overview?.counts.syllabus, (next) => onArrange("links", next), onSay);
+  /** A card for it (at `slot` among those shown, or last), outlined for a moment. */
+  const add = (entry: Shown, slot?: number) => {
     setFresh(thingKey(entry));
-    onArrange("overview", putAt(all, { ...entry, hidden: false }, index));
+    cardPlace.put(entry, slot);
   };
-  const linkTo = (entry: Shown, index = links.length) => onArrange("links", putAt(links, { ...entry, hidden: false }, index));
   const keys = shown.map(thingKey);
   // Each card's column, as last drawn (not while dragging), remembered for the course.
   const was = useRef({ course: course.id, cols: loadColumns(course.id) });
@@ -207,27 +220,25 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     showColumn(col);
     return slot;
   };
-  const zone = useDropZone(
-    (entry, slot) => {
-      if (!hasCard(entry)) return linkTo(entry);
-      was.current.cols[thingKey(entry)] = dropColumn.current; // (it stays where it was shown going)
-      add(entry, slotIndex(all, shown, slot));
-    },
+  const { zone, drag } = usePlaceDrag(cardPlace, "cards", {
     slotAt,
-    (e) => ofCourse(e, course) && !isView(e, "overview"),
-  );
-  const inserting = zone.state === "over" && !!zone.entry && hasCard(zone.entry);
-  const drag = useReorder(shown.length, (from, to) => {
-    was.current.cols[keys[from]] = dropColumn.current; // (maybe just to the other column)
-    if (from !== to) onArrange("overview", refill(all, shown, moved(shown, from, to)));
-  }, "cards", {
-    zone: zone.id,
-    thing: (i) => shown[i],
-    slotAt: (x, y, from) => {
+    accepts: (e) => ofCourse(e, course) && !isView(e, "overview"),
+    drop: (entry, slot) => {
+      if (!hasCard(entry)) return linkPlace.put(entry);
+      was.current.cols[thingKey(entry)] = dropColumn.current; // (it stays where it was shown going)
+      add(entry, slot);
+    },
+    moved: (from, to) => {
+      was.current.cols[keys[from]] = dropColumn.current; // (maybe just to the other column)
+      cardPlace.move(from, to);
+    },
+    off: null, // (a card is taken away from its menu)
+    itemSlotAt: (x, y, from) => {
       const { slot, col } = slotFor(keys.filter((_, i) => i !== from), x, y);
       return settling.current!.see(`${slot}:${col}`, { slot, col }).slot;
     },
   });
+  const inserting = zone.state === "over" && !!zone.entry && hasCard(zone.entry);
   reread.current = drag.again;
   const dragging = drag.dragging !== null;
   useEffect(() => {
@@ -237,7 +248,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
   useFlip(grid, placed);
 
   if (!overview || !cards) return <Loading />;
-  const { upcoming, announcements, ed, new_files, counts, grades, tools, current_modules } = overview;
+  const { upcoming, announcements, ed, new_files, counts, grades, current_modules } = overview;
   const empty = !counts.announcements && !counts.assignments && !counts.pages && !counts.files && !counts.syllabus && !counts.ed;
   if (empty && all.every((e) => e.hidden || isOwn(e))) {
     return (
@@ -249,39 +260,14 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     );
   }
 
-  const titleOf = (e: Shown) => e.title || (isView(e, "tools") && !tools.length ? t("链接") : thingName(e, things.courses, "card"));
-  /** Taken away from the overview (or 工具与链接), with 撤销. */
-  const takeAway = (place: "overview" | "links", e: Shown, name: string) => {
-    const before = place === "overview" ? all : links;
-    onArrange(place, without(before, e));
-    onSay(t("已移除“{name}”", { name }), { label: t("撤销"), run: () => onArrange(place, before) });
-  };
   /** The overview, right-clicked between the cards. (Hidden cards come back through 添加卡片.) */
   const overviewMenu = (): MenuItem[] => [
     { label: t("添加卡片…"), onSelect: () => setAdding(true) },
   ];
-  const rename = (place: "overview" | "links", e: Shown, title: string) => {
-    onArrange(place, changed(place === "overview" ? all : links, e, { title }));
-    setRenaming(null);
-  };
-  /** Rename, restore its name, hide (its own) or take away (what you put there). */
-  const placing = (place: "overview" | "links", e: Shown, name: string): MenuItem[] => {
-    const list = place === "overview" ? all : links;
-    return [
-      { label: t("重命名"), onSelect: () => setRenaming({ place, entry: e }) },
-      ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
-      e.own
-        ? { label: t("隐藏“{name}”", { name }), onSelect: () => onArrange(place, changed(list, e, { hidden: true })) }
-        : { label: place === "overview" ? t("删除卡片") : t("删除链接"), danger: true, onSelect: () => takeAway(place, e, name) },
-    ];
-  };
-
-  // 工具与链接: the course's tools, its syllabus, Canvas; and what you put there. Each can be hidden.
-  const linkShown = links.filter((e) => !e.hidden && (!isView(e, "syllabus") || counts.syllabus));
   /** A card, right-clicked: what's to do with it, and with it as a card. */
   const cardMenu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? things.markRead(e) : things.ways(e),
-    placing("overview", e, titleOf(e)),
+    cardPlace.menu(e, { hide: t("隐藏“{name}”", { name: titleOf(e) }), takeAway: t("删除卡片"), danger: true }),
     [pinItem(things, e)],
     isView(e, "tools") ? [{ label: t("添加链接…"), onSelect: () => setAddingLink(true) }] : [],
   );
@@ -399,10 +385,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
           };
         case "tools":
           return {
-            body: <LinksList course={course} links={links} shown={linkShown} menu={(x) => sections(things.ways(x), placing("links", x, thingName(x, things.courses)), [pinItem(things, x)])}
-              listMenu={() => linksMenu(links, (next) => onArrange("links", next), () => setAddingLink(true), things.courses)}
-              onArrange={(next) => onArrange("links", next)} onTakeAway={(x) => takeAway("links", x, thingName(x, things.courses))} onAdd={() => setAddingLink(true)}
-              renaming={renaming?.place === "links" ? renaming.entry : null} onRename={(x, title) => rename("links", x, title)} onRenameCancel={() => setRenaming(null)} />,
+            body: <LinksList course={course} place={linkPlace} onAdd={() => setAddingLink(true)} />,
           };
         case "syllabus":
           return { more: more("syllabus"), body: <DocCard course={course} kind="syllabus" id={String(course.id)} /> };
@@ -450,8 +433,8 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
                 cardRef={drag.ref(i)}
                 grab={drag.handle(i)}
                 title={titleOf(e)}
-                editor={renaming?.place === "overview" && same(renaming.entry, e)
-                  ? <RenameInput initial={titleOf(e)} onSubmit={(title) => rename("overview", e, title)} onCancel={() => setRenaming(null)} className="h-5 flex-1 text-sm" />
+                editor={cardPlace.isRenaming(e)
+                  ? <RenameInput initial={titleOf(e)} onSubmit={(title) => cardPlace.rename(e, title)} onCancel={cardPlace.cancelRename} className="h-5 flex-1 text-sm" />
                   : undefined}
                 icon={<ThingIcon thing={e} courses={things.courses} />}
                 more={s.more}
@@ -484,7 +467,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
         />
       )}
       {addingLink && (
-        <LinkDialog onClose={() => setAddingLink(false)} onAdd={(link) => (setAddingLink(false), linkTo({ type: "link", url: link.url, title: link.title }))} />
+        <LinkDialog onClose={() => setAddingLink(false)} onAdd={(link) => (setAddingLink(false), linkPlace.put({ type: "link", url: link.url, title: link.title }))} />
       )}
     </div>
   );
@@ -533,23 +516,22 @@ function Card({ cardKey, style, flash, title, editor, icon, more, action, cardRe
 }
 
 /** 工具与链接's rows: the course's tools, its syllabus, Canvas, and what you put there. Drag them
- * into your order, or anything in among them; drag one you put there off to take it away. */
-function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway, onAdd, renaming, onRename, onRenameCancel }: {
+ * into your order, or anything in among them; drag one you put there off to take it away.
+ * Right-click one to rename it, hide it (the course's own) or delete it (what you put there). */
+function LinksList({ course, place, onAdd }: {
   course: Course;
-  links: Shown[]; // all of them, hidden ones too
-  shown: Shown[];
-  menu: (e: Shown) => MenuItem[];
-  listMenu: () => MenuItem[]; // right-clicked where there's no link
-
-  onArrange: (next: Shown[]) => void;
-  onTakeAway: (e: Shown) => void;
-  onAdd: () => void;
-  renaming: Shown | null;
-  onRename: (e: Shown, title: string) => void;
-  onRenameCancel: () => void;
+  place: Place; // (useLinks)
+  onAdd: () => void; // asks for a link to add
 }) {
   const things = useThings();
   const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const { shown } = place;
+  const name = (e: Shown) => thingName(e, things.courses);
+  const menu = (e: Shown): MenuItem[] => sections(
+    things.ways(e),
+    place.menu(e, { hide: t("隐藏“{name}”", { name: name(e) }), takeAway: t("删除链接"), danger: true }),
+    [pinItem(things, e)],
+  );
   // Dragged in from elsewhere: it goes where the link it's over (or nearest) was when it came
   // over the list; judged by what's drawn, the links making room would change the answer.
   const before = useRef<{ left: number; top: number; width: number; height: number }[] | null>(null);
@@ -563,16 +545,12 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
     const b = before.current[i]; // (past the middle of the last one: after it)
     return i === before.current.length - 1 && x > r.left + b.left + b.width / 2 ? shown.length : i;
   };
-  const zone = useDropZone((entry, slot) => onArrange(putAt(links, { ...entry, hidden: false }, slotIndex(links, shown, slot))), slotAt,
-    (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"));
+  const { zone, drag } = usePlaceDrag(place, "cards", {
+    slotAt, accepts: (e) => ofCourse(e, course) && !isView(e, "overview") && !isView(e, "tools"),
+  });
   useEffect(() => {
     if (zone.state !== "over") before.current = null;
   }, [zone.state]);
-  const drag = useReorder(shown.length, (from, to) => from !== to && onArrange(refill(links, shown, moved(shown, from, to))), "cards", {
-    zone: zone.id,
-    thing: (i) => shown[i],
-    remove: (i) => (shown[i].own ? null : () => onTakeAway(shown[i])),
-  });
   useFlip(box, true);
   // Drawn as they'd be if what's dragged were let go now: moved among them, or a slot for it.
   const order: (number | null)[] = drag.preview(shown.map((_, i) => i));
@@ -582,7 +560,7 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
       setBox(el);
       zone.ref(el);
     }} className="relative flex flex-wrap rounded-md"
-      onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(listMenu(), ev.clientX, ev.clientY))}>
+      onContextMenu={(ev) => (ev.preventDefault(), ev.stopPropagation(), things.menu(linksMenu(place, onAdd, things.courses), ev.clientX, ev.clientY))}>
       {order.map((i) => i === null ? (
         <div key={DROP} aria-hidden data-link data-placeholder data-flip={DROP} className="h-8 w-28 rounded-md" />
       ) : (
@@ -593,16 +571,16 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
             ev.preventDefault();
             things.menu(menu(shown[i]), ev.clientX, ev.clientY);
           }}>
-          {same(shown[i], renaming) ? (
+          {place.isRenaming(shown[i]) ? (
             <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
               <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
-              <RenameInput initial={thingName(shown[i], things.courses)} onSubmit={(title) => onRename(shown[i], title)} onCancel={onRenameCancel} className="h-5 w-40 text-sm" />
+              <RenameInput initial={name(shown[i])} onSubmit={(title) => place.rename(shown[i], title)} onCancel={place.cancelRename} className="h-5 w-40 text-sm" />
             </div>
           ) : (
             <Row onClick={() => things.open(shown[i])}>
               <span className="flex items-center gap-2">
                 <span className="text-muted"><ThingIcon thing={shown[i]} courses={things.courses} /></span>
-                {thingName(shown[i], things.courses)}
+                {name(shown[i])}
                 {things.opening === thingKey(shown[i]) && <span className="text-xs text-muted">{t("正在打开…")}</span>}
               </span>
             </Row>
@@ -619,12 +597,10 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
 }
 
 /** 工具与链接 right-clicked where there's no link: add one, show the hidden ones again. */
-function linksMenu(links: Shown[], onArrange: (next: Shown[]) => void, onAdd: () => void, courses: Course[]): MenuItem[] {
+function linksMenu(place: Place, onAdd: () => void, courses: Course[]): MenuItem[] {
   return sections(
     [{ label: t("添加链接…"), onSelect: onAdd }],
-    links.filter((x) => x.hidden).map((x) => ({
-      label: t("显示“{name}”", { name: thingName(x, courses) }), onSelect: () => onArrange(changed(links, x, { hidden: false })),
-    })),
+    place.entries.filter((x) => x.hidden).map((x) => ({ label: t("显示“{name}”", { name: thingName(x, courses) }), onSelect: () => place.show(x) })),
   );
 }
 
@@ -641,31 +617,18 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   links: Shown[];
   syllabus: boolean; // the course has one
   onArrange: (next: Shown[]) => void;
-  onSay: (message: string, action?: { label: string; run: () => void }) => void;
+  onSay: Say;
 }) {
   const things = useThings();
   const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState<Shown | null>(null);
-  const shown = links.filter((e) => !e.hidden && (!isView(e, "syllabus") || syllabus));
-  const takeAway = (e: Shown) => {
-    onArrange(without(links, e));
-    onSay(t("已移除“{name}”", { name: thingName(e, things.courses) }), { label: t("撤销"), run: () => onArrange(links) });
-  };
-  const menu = (e: Shown): MenuItem[] => sections(things.ways(e), [
-    { label: t("重命名"), onSelect: () => setRenaming(e) },
-    ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
-    e.own
-      ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
-      : { label: t("删除链接"), danger: true, onSelect: () => takeAway(e) },
-  ], [pinItem(things, e)]);
-  const listMenu = () => linksMenu(links, onArrange, () => setAdding(true), things.courses);
+  const place = useLinks(links, syllabus, onArrange, onSay);
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" onContextMenu={(e) => (e.preventDefault(), things.menu(listMenu(), e.clientX, e.clientY))}>
+    <div className="min-h-0 flex-1 overflow-y-auto"
+      onContextMenu={(e) => (e.preventDefault(), things.menu(linksMenu(place, () => setAdding(true), things.courses), e.clientX, e.clientY))}>
       <div className="mx-auto max-w-3xl px-6 py-6">
-        <LinksList course={course} links={links} shown={shown} menu={menu} listMenu={listMenu} onArrange={onArrange} onTakeAway={takeAway} onAdd={() => setAdding(true)}
-          renaming={renaming} onRename={(e, title) => (onArrange(changed(links, e, { title })), setRenaming(null))} onRenameCancel={() => setRenaming(null)} />
+        <LinksList course={course} place={place} onAdd={() => setAdding(true)} />
       </div>
-      {adding && <LinkDialog onClose={() => setAdding(false)} onAdd={(link) => (setAdding(false), onArrange(putAt(links, { type: "link", url: link.url, title: link.title }, links.length)))} />}
+      {adding && <LinkDialog onClose={() => setAdding(false)} onAdd={(link) => (setAdding(false), place.put({ type: "link", url: link.url, title: link.title }))} />}
     </div>
   );
 }

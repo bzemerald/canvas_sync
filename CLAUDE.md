@@ -84,6 +84,9 @@ without the Canvas website or Finder.
   - `src/lib/canvas.ts`: where a course and its documents are on Canvas, for what came without
     an address (as urls.py).
   - `src/components/Things.tsx`: a thing's name, icon, menu; dragging it (`useThing`).
+  - `src/components/Place.ts`: what's done in any place (`usePlace`: put, move, rename, hide,
+    take away with 撤销, its part of a menu) and its dragging (`usePlaceDrag`). 置顶, the tabs,
+    the cards and 工具与链接 all go through it: a new place should too.
   - `src-tauri/` starts `.venv/bin/canvas serve --exit-with-stdin` (on Windows `python -m
     canvas_sync`: Smart App Control may block `.venv\Scripts\canvas.exe`, which is unsigned; the
     command line too, there).

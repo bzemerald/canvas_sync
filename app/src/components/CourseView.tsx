@@ -10,18 +10,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
 import type { CatalogEntry, Course, DocKind, Grades, Item, ItemSummary, LaunchTarget, ModuleItem, Overview, Reply, Total } from "../lib/api";
 import { courseUrl, fileUrl } from "../lib/canvas";
-import { useDropZone } from "../lib/dropZones";
 import { usePref } from "../lib/prefs";
 import { useLoaded } from "../lib/useLoaded";
 import { shortDate, untilDue } from "../lib/dates";
-import { moved, useReorder } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ThingOf, type ViewName, changed, isView, ofCourse, opensElsewhere, putAt, refill, same, slotIndex, thingKey,
-  thingOf, thingOfItem, view as viewOf, without,
+  type Shown, type Thing, type ThingOf, type ViewName, isView, ofCourse, opensElsewhere, putIn, same, thingKey,
+  thingOf, thingOfItem, view as viewOf,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
 import { ReadingBar, useNarrowing } from "./Found";
 import type { MenuItem } from "./Menu";
+import { usePlace, usePlaceDrag } from "./Place";
 import { RenameInput } from "./RenameInput";
 import { Count, Loading, NewDot } from "./Status";
 import { RichText } from "./RichText";
@@ -115,7 +114,6 @@ export function CourseTabs({
 }) {
   const things = useThings();
   const bar = useRef<HTMLElement>(null);
-  const [renaming, setRenaming] = useState<Shown | null>(null);
   const entries = loaded ?? [];
   const n = overview?.new;
   const fresh: Partial<Record<ViewName, number>> = n ?? {};
@@ -124,6 +122,7 @@ export function CourseTabs({
   const extra = !loaded || !spare || spare === "new" ? null : entries.find((e) => same(e, spare)) ?? (spare as Shown); // (as named there, if hidden)
   const name = (e: Shown) => thingName(e, things.courses, "tab");
   const current = (e: Thing) => !blank && same(tab, e);
+  const place = usePlace({ entries, shown: visible, onArrange, onSay, name, taken: (name) => t("已移除标签“{name}”", { name }) });
 
   // ⌘1…9 and ⌃⇥ (Ctrl elsewhere): the tabs, as clicking them (9 and round: the one at the end
   // too). Going round, not to one that opens somewhere else (a tool, a link). ⌘T: a new tab, if
@@ -158,12 +157,7 @@ export function CourseTabs({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const takeAway = (e: Shown) => {
-    onArrange(without(entries, e));
-    onSay(t("已移除标签“{name}”", { name: name(e) }), { label: t("撤销"), run: () => onArrange(entries) });
-  };
   // Dropped on the tabs: a tab, where it was let go (one already: it moves there, shown).
-  const put = (entry: Shown, slot: number) => onArrange(putAt(entries, { ...entry, hidden: false }, slotIndex(entries, visible, slot)));
   const slotAt = (x: number) => {
     const tabs = Array.from(bar.current?.querySelectorAll<HTMLElement>(":scope > [data-tab]") ?? []);
     const i = tabs.findIndex((el) => {
@@ -172,12 +166,7 @@ export function CourseTabs({
     });
     return i < 0 ? visible.length : Math.min(i, visible.length);
   };
-  const zone = useDropZone(put, (x) => slotAt(x), (e) => ofCourse(e, course));
-  const drag = useReorder(visible.length, (from, to) => onArrange(refill(entries, visible, moved(visible, from, to))), "x", {
-    zone: zone.id,
-    thing: (i) => visible[i],
-    remove: (i) => (isOwn(visible[i]) ? null : () => takeAway(visible[i])),
-  });
+  const { zone, drag } = usePlaceDrag(place, "x", { slotAt, accepts: (e) => ofCourse(e, course) });
 
   // Where a dropped thing would go: a line between two tabs.
   const markerLeft = (() => {
@@ -193,18 +182,12 @@ export function CourseTabs({
   const menu = (e: Shown): MenuItem[] => sections(
     isOwn(e) ? things.markRead(e, fresh[e.view]) : things.ways(e),
     e === extra
-      ? [{ label: t("加为标签"), onSelect: () => onArrange(putAt(entries, { ...e, hidden: false }, slotIndex(entries, visible, visible.length))) }]
-      : [
-          { label: t("重命名"), onSelect: () => setRenaming(e) },
-          ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(entries, e, { title: "" })) }] : []),
-          isOwn(e)
-            ? { label: t("隐藏“{name}”标签", { name: name(e) }), disabled: visible.length <= 1, onSelect: () => onArrange(changed(entries, e, { hidden: true })) }
-            : { label: t("移除这个标签"), onSelect: () => takeAway(e) },
-        ],
+      ? [{ label: t("加为标签"), onSelect: () => place.put(e, visible.length) }]
+      : place.menu(e, { hide: t("隐藏“{name}”标签", { name: name(e) }), takeAway: t("移除这个标签"), last: visible.length <= 1 }),
     [pinItem(things, e)],
   );
 
-  const button = (e: Shown, props: object) => same(e, renaming) ? (
+  const button = (e: Shown, props: object) => place.isRenaming(e) ? (
     <div
       key={thingKey(e)}
       data-tab=""
@@ -215,11 +198,8 @@ export function CourseTabs({
       {!isOwn(e) && <ThingIcon thing={e} courses={things.courses} className="size-3.5" />}
       <RenameInput
         initial={name(e)}
-        onSubmit={(title) => {
-          onArrange(changed(entries, e, { title }));
-          setRenaming(null);
-        }}
-        onCancel={() => setRenaming(null)}
+        onSubmit={(title) => place.rename(e, title)}
+        onCancel={place.cancelRename}
         className="h-5 w-36 text-sm"
       />
     </div>
@@ -326,7 +306,7 @@ export function NewTab({ course, overview, entries, box, typing, found, onOpen, 
   ];
   const pick = (x: Shown) => {
     if (shown.some((e) => same(e, x))) return onShow(thingOf(x));
-    onOpen(putAt(entries, { ...x, hidden: false }, slotIndex(entries, shown, shown.length)), thingOf(x));
+    onOpen(putIn(entries, shown, x, shown.length), thingOf(x));
   };
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${typing ? "" : "justify-center pb-[12vh]"}`}>

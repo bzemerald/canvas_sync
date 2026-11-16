@@ -21,6 +21,7 @@ import { HideCourseDialog } from "./components/HideCourseDialog";
 import { HitBrowser } from "./components/HitBrowser";
 import { KeysDialog } from "./components/KeysDialog";
 import { ContextMenu, type MenuItem, type MenuState } from "./components/Menu";
+import { type Place as PlaceOf, usePlace, usePlaceDrag } from "./components/Place";
 import { KIND } from "./components/Result";
 import { RenameInput } from "./components/RenameInput";
 import { RestoreDialog } from "./components/RestoreDialog";
@@ -34,7 +35,6 @@ import * as api from "./lib/api";
 import { courseUrl, docUrl } from "./lib/canvas";
 import { quickLook } from "./lib/quicklook";
 import type { AccountInfo, Course, CourseLayout, Entry, Hit, Kind, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
-import { useDropZone } from "./lib/dropZones";
 import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
 import { type Reading, read } from "./lib/query";
@@ -47,7 +47,7 @@ import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
 import { termRank } from "./lib/terms";
 import {
-  type Shown, type Thing, type ThingOf, type ViewName, changed, folderTitle, fromEd, isView, ofCourse, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingNamed, thingOf, thingOfHit,
+  type Shown, type Thing, type ThingOf, type ViewName, folderTitle, fromEd, isView, ofCourse, opensElsewhere, putAt, setFolderTitles, same, thingKey, thingNamed, thingOf, thingOfHit,
   view as viewOf, without,
 } from "./lib/things";
 import { ownFrame, useTrafficLights } from "./lib/window";
@@ -622,29 +622,31 @@ export function MainWindow() {
       say(ok ? (isMac ? t("已拷贝 {what}", { what }) : t("已复制 {what}", { what })) : isMac ? t("没能拷贝 {what}", { what }) : t("没能复制 {what}", { what }));
     });
   const copyItem = (paths: string[], names: string[]): Exclude<MenuItem, "separator"> => ({ label: copyName, hint: shortcut.copy, onSelect: () => copy(paths, names) });
-  const undo = (run: () => void): NoticeAction => ({ label: t("撤销"), run });
 
   // -- places: 置顶, and the open course's tabs, overview and 工具与链接 ---------------------------
-  /** 置顶 as it should be; `taken`: what was taken out, to say so (with 撤销). */
-  const savePinned = (next: Shown[], taken?: string) => {
-    const before = pinned;
+  /** 置顶 as it should be. */
+  const savePinned = (next: Shown[]) => {
     setPinned(next);
     api.arrangePinned(next).then(setPinned, fail(t("操作失败")));
-    if (taken) say(taken, undo(() => savePinned(before)));
   };
   const nameOf = (x: Shown) => thingName(x, courseList);
+  // 置顶 is a place like a course's, with nothing of its own. A smart folder is only here: taken
+  // away, it's gone (撤销 brings it back).
+  const pins = usePlace({
+    entries: pinned, onArrange: savePinned, onSay: say, name: nameOf,
+    taken: (name, e) => (e.type === "search" ? t("已删除智能文件夹“{name}”", { name }) : t("已取消置顶“{name}”", { name })),
+  });
   const isPinned = (x: Thing) => pinned.some((p) => same(p, x));
   /** Pinned (at a place in the list: dropped there; else at the end, said so). */
   const pinThing = (x: Shown, at?: number) => {
     if (isCollapsed("pinned")) toggle("pinned");
-    savePinned(putAt(pinned, { ...x, hidden: false }, at ?? pinned.length));
+    pins.put(x, at);
     if (at === undefined) say(t("已置顶“{name}”", { name: nameOf(x) }));
   };
   const unpinThing = (x: Thing) => {
     const e = pinned.find((p) => same(p, x));
     if (!e) return;
-    // A smart folder is only here: taken away, it's gone (撤销 brings it back).
-    savePinned(without(pinned, x), e.type === "search" ? t("已删除智能文件夹“{name}”", { name: nameOf(e) }) : t("已取消置顶“{name}”", { name: nameOf(e) }));
+    pins.takeAway(e);
     if (view.kind === "search" && same(view.search, x)) go({ kind: "browse", path: "" });
   };
   /** One of the open course's places as it should be. */
@@ -720,8 +722,8 @@ export function MainWindow() {
   const moveItems = (x: Shown): MenuItem[] => {
     const i = pinned.findIndex((p) => same(p, x));
     return [
-      { label: t("上移"), disabled: i <= 0, onSelect: () => savePinned(moved(pinned, i, i - 1)) },
-      { label: t("下移"), disabled: i >= pinned.length - 1, onSelect: () => savePinned(moved(pinned, i, i + 1)) },
+      { label: t("上移"), disabled: i <= 0, onSelect: () => pins.move(i, i - 1) },
+      { label: t("下移"), disabled: i >= pinned.length - 1, onSelect: () => pins.move(i, i + 1) },
     ];
   };
 
@@ -978,7 +980,7 @@ export function MainWindow() {
       x.type === "search" ? [{ label: t("编辑…"), onSelect: () => setEditing({ folder: { ...x, title: x.title ?? "" } }) }] : [],
       [
         { label: t("重命名"), onSelect: () => setRenamingHere(`pin:${thingKey(x)}`) },
-        ...(x.title && x.type !== "search" ? [{ label: t("恢复原名"), onSelect: () => savePinned(changed(pinned, x, { title: "" })) }] : []),
+        ...(x.title && x.type !== "search" ? [{ label: t("恢复原名"), onSelect: () => pins.rename(x, "") }] : []),
       ],
       moveItems(x),
       [x.type === "search"
@@ -1074,7 +1076,7 @@ export function MainWindow() {
         title={nameOf(x)}
         editor={c
           ? nameEditor(`pin:${thingKey(x)}`, c.label, (name) => renameCourse(c, name), titleHint)
-          : nameEditor(`pin:${thingKey(x)}`, nameOf(x), (title) => savePinned(changed(pinned, x, { title })))}
+          : nameEditor(`pin:${thingKey(x)}`, nameOf(x), (title) => pins.rename(x, title))}
         subtitle={where}
         count={c?.new}
         muted={gone}
@@ -1222,7 +1224,7 @@ export function MainWindow() {
           <NavItem icon={<FolderTree className="size-4" />} active={view.kind === "browse" && view.path === ""} onClick={() => go({ kind: "browse", path: "" })} title={t("全部文件")} />
 
           <PinnedSection
-            items={pinned}
+            place={pins}
             collapsed={isCollapsed("pinned")}
             header={
               <SectionHeader
@@ -1238,7 +1240,6 @@ export function MainWindow() {
               </p>
             }
             render={renderPinned}
-            onMove={(from, to) => savePinned(moved(pinned, from, to))}
             onPin={(x, at) => pinThing(x, at)}
             onUnpin={(x) => unpinThing(x)}
           />
@@ -1514,16 +1515,16 @@ export function MainWindow() {
 
 /** 置顶: what's pinned, in the order you put it in. Anything dropped on it is pinned where you let
  * go (a line shows where); dragged off it, it's unpinned. */
-function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin, onUnpin }: {
-  items: Shown[];
+function PinnedSection({ place, collapsed, header, empty, render, onPin, onUnpin }: {
+  place: PlaceOf; // 置顶
   collapsed: boolean;
   header: React.ReactNode;
   empty: React.ReactNode;
   render: (item: Shown) => React.ReactNode;
-  onMove: (from: number, to: number) => void;
   onPin: (entry: Shown, at?: number) => void;
   onUnpin: (item: Shown) => void; // dragged off the list
 }) {
+  const items = place.entries;
   const list = useRef<HTMLDivElement>(null);
   const slotAt = (_x: number, y: number) => {
     const rows = Array.from(list.current?.querySelectorAll<HTMLElement>(":scope > [data-pin]") ?? []);
@@ -1533,12 +1534,8 @@ function PinnedSection({ items, collapsed, header, empty, render, onMove, onPin,
     });
     return i < 0 ? rows.length : i;
   };
-  const zone = useDropZone((entry, at) => onPin(entry, collapsed ? undefined : at), slotAt);
-  const drag = useReorder(items.length, onMove, "y", {
-    zone: zone.id,
-    thing: (i) => items[i], // (onto a course's tabs, its overview)
-    remove: (i) => () => onUnpin(items[i]),
-  });
+  // (What's pinned can be dragged onto a course's tabs, its overview, too.)
+  const { zone, drag } = usePlaceDrag(place, "y", { slotAt, drop: (entry, at) => onPin(entry, collapsed ? undefined : at), off: onUnpin });
   const over = zone.state === "over" && !collapsed && items.length > 0;
   const line = (
     <div aria-hidden className="relative h-0">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Shown, putAt, slotIndex, view } from "./things";
+import { type Shown, putAt, putIn, slotIndex, view } from "./things";
 
 const tab = (name: Parameters<typeof view>[1], hidden = false): Shown => ({ ...view(1, name), hidden });
 const views = (l: Shown[]) => l.map((x) => [(x as { view: string }).view, !!x.hidden]);
@@ -16,6 +16,23 @@ describe("a hidden tab brought back", () => {
   it("is the last tab shown, the other hidden ones staying hidden", () => {
     expect(views(back(grades))).toEqual([["overview", false], ["files", false], ["grades", false], ["pages", true]]);
     expect(views(back(pages))).toEqual([["overview", false], ["grades", true], ["files", false], ["pages", false]]);
+  });
+});
+
+describe("something put in a place", () => {
+  const list = [tab("overview"), tab("grades", true), tab("files"), tab("pages", true)];
+  const shown = [list[0], list[2]];
+  const note: Shown = { type: "note", course: 1, id: "n1" };
+  const types = (l: Shown[]) => l.map((x) => (x.type === "view" ? x.view : x.type));
+
+  it("goes where it was dropped among what's shown, the hidden ones staying where they are", () => {
+    expect(types(putIn(list, shown, note, 0))).toEqual(["note", "overview", "grades", "files", "pages"]);
+    expect(types(putIn(list, shown, note, 1))).toEqual(["overview", "grades", "note", "files", "pages"]);
+    expect(types(putIn(list, shown, note, 2))).toEqual(["overview", "grades", "files", "note", "pages"]);
+  });
+  it("goes last of all when nowhere is said, and is shown", () => {
+    expect(types(putIn(list, shown, { ...note, hidden: true }))).toEqual(["overview", "grades", "files", "pages", "note"]);
+    expect(putIn(list, shown, { ...note, hidden: true }).at(-1)?.hidden).toBe(false);
   });
 });
 
