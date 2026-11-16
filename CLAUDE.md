@@ -81,7 +81,8 @@ without the Canvas website or Finder.
     `Toolbar.tsx` (breadcrumb, search box), `Notice.tsx`, `Results.tsx` (a smart folder's).
   - `src/components/CourseView.tsx`: tabs, readers, modules, grades.
   - `src/components/Overview.tsx`: the overview's cards.
-  - `src/components/FileBrowser.tsx`, `HitBrowser.tsx` (search results).
+  - `src/components/FileBrowser.tsx`, `HitBrowser.tsx` (search results); what they share as a
+    file manager (selecting, Quick Look, keys, dragging, the menu) is `Browser.ts` (`useBrowser`).
   - `src/Launcher.tsx`: the search window (⌘⇧Space).
   - `src/lib/query.ts`: what a query says: a course, a kind, a time, a status ("cs70 作业 本周
     未交"), numbered things ("hw3" = Homework 3 = Problem Set 3), words; `src/lib/find.ts`: what

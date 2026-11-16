@@ -2,15 +2,12 @@
 // double-click opens, ⌘/Ctrl/Shift-click and dragging a box select several, and the same
 // keys as the file browser.
 import { ExternalLink, FolderOpen } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
 import * as api from "../lib/api";
 import type { Hit } from "../lib/api";
-import { fileCommand } from "../lib/keys";
-import { quickLook } from "../lib/quicklook";
 import { thingOfHit } from "../lib/things";
-import { onTheWeb, useDragThing } from "./Things";
-import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
-import type { ViewMode } from "./FileBrowser";
+import { onTheWeb } from "./Things";
+import { MarqueeBox } from "../lib/selection";
+import { type ViewMode, useBrowser } from "./Browser";
 import { ContentDivider, KIND, ResultBody, baseName, firstContentMatch, hitKey } from "./Result";
 import { Thumb } from "./Thumb";
 import { t } from "../lib/i18n";
@@ -26,74 +23,19 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
   onDelete: (hits: Hit[]) => void; // only files that are on disk are passed
   onCopy: (hits: Hit[]) => void; // to the clipboard; the same
 }) {
-  const dragThing = useDragThing(); // (置顶 is in their menu)
-  const scroller = useRef<HTMLDivElement>(null);
-  const keys = useMemo(() => hits.map(hitKey), [hits]);
-  const byKey = useMemo(() => new Map(hits.map((h) => [hitKey(h), h])), [hits]);
-  const sel = useSelection(keys);
-  const marquee = useMarquee(scroller, sel);
-  const chosen = () => keys.filter((k) => sel.has(k)).map((k) => byKey.get(k)!);
-
-  // The selected files, for Quick Look; when it's open it follows them, as in Finder.
-  const previewable = hits.filter((h) => h.path && sel.has(hitKey(h)));
-  const preview = (how: "toggle" | "follow") =>
-    quickLook(previewable.map((h) => h.path!), Math.max(0, previewable.findIndex((h) => hitKey(h) === sel.cursor)), how);
-  useEffect(() => {
-    void preview("follow");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewable.map(hitKey).join("\0"), sel.cursor]);
+  const { scroller, marquee, onKeyDown, itemProps, shade } = useBrowser({
+    items: hits, keyOf: hitKey, mode, onOpen, onMenu, onDelete, onCopy,
+    deletable: onDisk, copyable: onDisk, previewPath: (h) => h.path,
+    thing: (h) => thingOfHit(h) && { ...thingOfHit(h)!, name: h.title },
+  });
   const divider = firstContentMatch(hits);
-
-  const onKeyDown = (ev: React.KeyboardEvent) => {
-    const i = keys.indexOf(sel.cursor ?? "");
-    const gridEl = scroller.current?.querySelector<HTMLElement>("[data-grid]");
-    const columns = mode === "grid" && gridEl ? getComputedStyle(gridEl).gridTemplateColumns.split(" ").length : 1;
-    const go = (j: number) => {
-      const k = keys[Math.max(0, Math.min(keys.length - 1, j))];
-      if (k) sel.moveTo(k, ev.shiftKey);
-    };
-    const command = fileCommand(ev);
-    const picked = chosen();
-    let handled = true;
-    if (command === "open") picked.forEach(onOpen);
-    else if (command === "selectAll") sel.all();
-    else if (command === "delete" && picked.some((h) => h.path)) onDelete(picked.filter((h) => h.path));
-    else if (command === "copy" && picked.some((h) => h.path)) onCopy(picked.filter((h) => h.path));
-    else if (command === "preview") void preview("toggle");
-    else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
-    else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
-    else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);
-    else if (ev.key === "ArrowLeft" && mode === "grid") go(i - 1);
-    else if (ev.key === "Escape") sel.clear();
-    else handled = false;
-    if (handled) ev.preventDefault();
-  };
-
-  const itemProps = (h: Hit) => {
-    const k = hitKey(h);
-    return {
-      "data-key": k,
-      "aria-selected": sel.has(k),
-      onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(),
-      onClick: (ev: React.MouseEvent) => sel.click(k, ev),
-      onDoubleClick: () => onOpen(h),
-      ...dragThing(thingOfHit(h) && { ...thingOfHit(h)!, name: h.title }),
-      onContextMenu: (ev: React.MouseEvent) => {
-        ev.preventDefault();
-        const picked = sel.has(k) ? chosen() : [h];
-        if (!sel.has(k)) sel.only(k);
-        onMenu(picked, ev.clientX, ev.clientY);
-      },
-    };
-  };
-  const shade = (h: Hit) => (sel.has(hitKey(h)) ? "bg-selected" : "hover:bg-chip");
 
   return (
     <div
       ref={scroller}
       tabIndex={0}
       data-keys
-      onKeyDown={onKeyDown}
+      onKeyDown={(ev) => onKeyDown(ev)}
       onMouseDown={marquee.onMouseDown}
       className="focus-quiet relative min-h-0 flex-1 overflow-y-auto px-4 py-3 pb-10"
     >
@@ -156,6 +98,8 @@ export function HitBrowser({ hits, mode, showCourse, header, onOpen, onReveal, o
     </div>
   );
 }
+
+const onDisk = (h: Hit) => !!h.path;
 
 function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (

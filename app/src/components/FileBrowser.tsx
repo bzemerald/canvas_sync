@@ -5,18 +5,18 @@
 import { ChevronDown, ChevronRight, ChevronUp, CornerUpRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/api";
-import { quickLook } from "../lib/quicklook";
 import type { Entry } from "../lib/api";
-import { fileCommand, isMac } from "../lib/keys";
-import { thingOfEntry, useDragThing, useThings } from "./Things";
-import { MarqueeBox, useMarquee, useSelection } from "../lib/selection";
+import { isMac } from "../lib/keys";
+import { thingOfEntry, useThings } from "./Things";
+import { MarqueeBox } from "../lib/selection";
+import { type ViewMode, useBrowser } from "./Browser";
 import { FileIcon } from "./FileIcon";
 import { RenameInput } from "./RenameInput";
 import { IconMarks, NewDot, StatusBadges } from "./Status";
 import { Thumb } from "./Thumb";
 import { locale, t } from "../lib/i18n";
 
-export type ViewMode = "list" | "grid";
+export type { ViewMode };
 type SortKey = "name" | "date" | "size";
 
 interface Props {
@@ -42,6 +42,8 @@ interface Props {
 }
 
 export const canRename = (e: Entry) => e.type === "dir" && !e.deleted;
+const pathOf = (e: Entry) => e.path;
+const present = (e: Entry) => !e.deleted;
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -78,7 +80,6 @@ export function FileBrowser({
   path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete, onCopy,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
-  const dragThing = useDragThing(); // (置顶 is in their menus)
   const { courses } = useThings();
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +87,6 @@ export function FileBrowser({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "name", desc: false });
   const box = useRef<HTMLDivElement>(null);
-  const scroller = useRef<HTMLDivElement>(null);
-  const grid = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (dir: string) => {
     try {
@@ -154,19 +153,14 @@ export function FileBrowser({
     return out;
   }, [listed, path, expanded, mode, sorted]);
 
-  const keys = useMemo(() => rows.map((r) => r.entry.path), [rows]);
-  const byPath = useMemo(() => new Map(rows.map((r) => [r.entry.path, r.entry])), [rows]);
-  const sel = useSelection(keys);
-  const marquee = useMarquee(scroller, sel);
-  const chosen = () => keys.filter((k) => sel.has(k)).map((k) => byPath.get(k)!);
-
-  // What's selected, for Quick Look; when it's open it follows the selection, as in Finder.
-  const previewable = rows.filter((r) => sel.has(r.entry.path) && !r.entry.deleted).map((r) => r.entry.path);
-  const preview = (how: "toggle" | "follow") => quickLook(previewable, Math.max(0, previewable.indexOf(sel.cursor ?? "")), how);
-  useEffect(() => {
-    void preview("follow");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewable.join("\0"), sel.cursor]);
+  const activate = (e: Entry) => (e.type === "dir" && !e.deleted ? onNavigate(e.path) : onOpen(e));
+  const entries = useMemo(() => rows.map((r) => r.entry), [rows]);
+  const { scroller, sel, marquee, byKey: byPath, onKeyDown: browserKeys, itemProps, shade } = useBrowser({
+    items: entries, keyOf: pathOf, mode, onOpen: activate, onMenu, onDelete, onCopy,
+    deletable: () => true, copyable: present, previewPath: (e) => (e.deleted ? null : e.path),
+    thing: (e) => (e.deleted ? null : thingOfEntry(e, courses)),
+    files: (picked) => picked.filter(present).map(pathOf),
+  });
 
   // Select `select` once it shows up (a "show original" jump), but only once: later reloads
   // keep whatever you've selected since.
@@ -196,62 +190,24 @@ export function FileBrowser({
     });
   };
 
-  const activate = (e: Entry) => (e.type === "dir" && !e.deleted ? onNavigate(e.path) : onOpen(e));
-
-  const onKeyDown = (ev: React.KeyboardEvent) => {
-    const i = rows.findIndex((r) => r.entry.path === sel.cursor);
+  // What only a folder has: going up, renaming, and folders expanding in the list.
+  const onKeyDown = (ev: React.KeyboardEvent) => browserKeys(ev, (command, { i, go }) => {
     const cur = i >= 0 ? rows[i] : null;
     const focused = cur && sel.has(cur.entry.path) ? cur.entry : null; // (deselected: nothing to rename)
-    const go = (j: number) => {
-      const r = rows[Math.max(0, Math.min(rows.length - 1, j))];
-      if (r) sel.moveTo(r.entry.path, ev.shiftKey);
-    };
-    const columns = mode === "grid" && grid.current ? getComputedStyle(grid.current).gridTemplateColumns.split(" ").length : 1;
-    const command = fileCommand(ev);
-    const picked = chosen();
-    let handled = true;
-    if (command === "open") picked.forEach(activate);
-    else if (command === "parent") path !== root && path && onNavigate(parentOf(path) === inline ? root : parentOf(path));
-    else if (command === "selectAll") sel.all();
-    else if (command === "delete") picked.length ? onDelete(picked) : (handled = false);
-    else if (command === "copy") picked.some((e) => !e.deleted) ? onCopy(picked.filter((e) => !e.deleted)) : (handled = false);
-    else if (command === "rename") focused && canRename(focused) ? onStartRename(focused) : (handled = false);
-    else if (command === "preview") void preview("toggle");
-    else if (ev.key === "ArrowDown") go(i < 0 ? 0 : i + columns);
-    else if (ev.key === "ArrowUp") go(i < 0 ? 0 : i - columns);
-    else if (ev.key === "ArrowRight" && mode === "grid") go(i + 1);
-    else if (ev.key === "ArrowLeft" && mode === "grid") go(i - 1);
-    else if (ev.key === "ArrowRight" && cur?.entry.type === "dir" && !cur.entry.deleted) {
+    if (command === "parent") path !== root && path && onNavigate(parentOf(path) === inline ? root : parentOf(path));
+    else if (command === "rename") return !!focused && canRename(focused) && (onStartRename(focused), true);
+    else if (mode === "list" && ev.key === "ArrowRight" && cur?.entry.type === "dir" && !cur.entry.deleted) {
       if (!expanded.has(cur.entry.path)) toggle(cur.entry.path, true);
       else go(i + 1);
-    } else if (ev.key === "ArrowLeft" && cur) {
+    } else if (mode === "list" && ev.key === "ArrowLeft" && cur) {
       if (cur.entry.type === "dir" && expanded.has(cur.entry.path)) toggle(cur.entry.path, false);
       else if (cur.depth > 0) sel.only(parentOf(cur.entry.path));
-    } else if (ev.key === "Escape") sel.clear();
-    else handled = false;
-    if (handled) ev.preventDefault();
-  };
-
-  const itemProps = (e: Entry) => ({
-    "data-key": e.path,
-    "aria-selected": sel.has(e.path),
-    onMouseDown: (ev: React.MouseEvent) => ev.button === 0 && ev.detail > 1 && ev.preventDefault(), // no word selection on double-click
-    onClick: (ev: React.MouseEvent) => sel.click(e.path, ev),
-    onDoubleClick: () => activate(e),
-    // (Out of the window, what's selected goes with it, as from Finder.)
-    ...dragThing(e.deleted ? null : thingOfEntry(e, courses), () => (sel.has(e.path) ? chosen() : [e]).filter((x) => !x.deleted).map((x) => x.path)),
-    onContextMenu: (ev: React.MouseEvent) => {
-      ev.preventDefault();
-      // Right-clicking outside the selection acts on that item alone, as in Finder/Explorer.
-      const picked = sel.has(e.path) ? chosen() : [e];
-      if (!sel.has(e.path)) sel.only(e.path);
-      onMenu(picked, ev.clientX, ev.clientY);
-    },
+    } else return false;
+    return true;
   });
 
   const loaded = listings[path] !== undefined;
   const empty = loaded && rows.length === 0;
-  const shade = (e: Entry) => (sel.has(e.path) ? "bg-selected" : "hover:bg-chip");
 
   return (
     <div ref={box} tabIndex={0} data-keys onKeyDown={onKeyDown} className="focus-quiet flex min-h-0 flex-1 flex-col">
@@ -336,7 +292,7 @@ export function FileBrowser({
             ))}
           </ul>
         ) : (
-          <div ref={grid} role="listbox" aria-multiselectable className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1 py-2">
+          <div data-grid role="listbox" aria-multiselectable className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1 py-2">
             {rows.map(({ entry: e }) => (
               <div
                 key={e.path}
