@@ -22,10 +22,11 @@ from mcp.types import ToolAnnotations
 
 from . import __version__, content
 from .config import PREFS_FILE, Account, ConfigError
+from .courses import course_label, pick_courses
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import inside
 from .models import Course
-from .search import Hit, course_label, pick_courses
+from .search import Hit
 from .text import extract, html_to_text, slides
 from .things import Thing, of_item
 from .times import time_of

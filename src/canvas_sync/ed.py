@@ -18,8 +18,9 @@ import httpx
 
 from . import __version__
 from .config import set_ed_courses
+from .courses import code_keys
+from .documents import canvas_copy
 from .models import Course, Document
-from .search import canvas_copy, code_keys
 from .times import time_of
 
 if TYPE_CHECKING:

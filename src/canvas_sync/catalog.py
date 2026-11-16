@@ -18,8 +18,10 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from . import content
-from .search import DEFAULT_ABBREVIATIONS, canvas_copy, code_keys, course_label, doc_url, normalized, relative_url
+from .courses import code_keys, course_label, normalized
+from .documents import canvas_copy, doc_url
 from .paths import note_file
+from .search import DEFAULT_ABBREVIATIONS
 from .things import Entry, Thing, course_thing, view
 
 if TYPE_CHECKING:

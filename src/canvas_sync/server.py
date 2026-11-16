@@ -55,7 +55,7 @@ from .local import MoveError, move_sync_folder, open_path, write_whole
 from .paths import META_DIR, config_file, note_file
 from .places import PLACES, Place, as_course, describe, usual
 from .plan import Kind, Scope
-from .search import course_label
+from .courses import course_label
 from .things import NOTE_ID, Entry, once, parse_entry
 from .thumbs import forget_old_thumbnails, thumbnail
 

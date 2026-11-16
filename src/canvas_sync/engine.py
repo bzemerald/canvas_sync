@@ -201,7 +201,8 @@ class Engine:
         from .catalog import abbreviations
         from .config import AppPrefs
         from .meaning import Meaning
-        from .search import CourseMatcher, course_label, parse
+        from .courses import course_label
+        from .search import CourseMatcher, parse
 
         named = not literal and not course_ids and parse(query, CourseMatcher(self.state.courses(), self.settings),
                                                          abbreviations(self)).course_ids

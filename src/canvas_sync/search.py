@@ -19,12 +19,13 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlsplit
 
 from rapidfuzz import process
 from rapidfuzz.distance import DamerauLevenshtein
 
 from .config import Settings
+from .courses import code_keys, course_label, normalized
+from .documents import DOC_BODY, canvas_copy, doc_url
 from .layout import Layout
 from .models import Course
 from .state import State
@@ -74,15 +75,6 @@ DEFAULT_ABBREVIATIONS: dict[str, list[str]] = {
     "文件": ["file"],
 }
 
-# Department names as registrars write them -> what students type.
-DEPARTMENTS: dict[str, list[str]] = {
-    "compsci": ["cs"], "comsci": ["cs"], "cmpsc": ["cs"], "eleng": ["ee"], "elecengr": ["ee"],
-    "eecs": ["cs", "ee"], "mathematics": ["math"], "statistics": ["stat", "stats"], "stat": ["stats"],
-    "physics": ["phys"], "chemistry": ["chem"], "chem": ["chemistry"], "economics": ["econ"],
-    "psychology": ["psych"], "biology": ["bio"], "integbi": ["ib"], "mcellbi": ["mcb"],
-    "mecheng": ["me"], "civeng": ["ce"], "bioeng": ["be"], "neurosc": ["neu"],
-}
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY,
@@ -112,7 +104,6 @@ READ_AGAIN = {".pptx": ":2"}
 _ZW = "​"
 _LETTER_DIGIT = re.compile(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])")
 _CJK = re.compile(r"([぀-ヿ㐀-䶿一-鿿가-힯豈-﫿])")
-_NORM = re.compile(r"[\W_]+")
 _HIT_START, _HIT_END = "\x02", "\x03"
 
 ProgressHandler = Callable[[int, int, str], None]  # (done, total, current item)
@@ -120,13 +111,6 @@ ProgressHandler = Callable[[int, int, str], None]  # (done, total, current item)
 
 def _prep(text: str) -> str:
     return _CJK.sub(rf"{_ZW}\1{_ZW}", _LETTER_DIGIT.sub(_ZW, text))
-
-
-def _norm(text: str) -> str:
-    return _NORM.sub("", text.lower())
-
-
-normalized = _norm  # (letters and digits, lower-cased: how course words are compared)
 
 
 def _is_cjk(text: str) -> bool:
@@ -182,51 +166,6 @@ def _fts_term(term: str, exact: bool = False) -> str:
 # -- query parsing -----------------------------------------------------------------
 
 
-def course_label(c: Course, settings: Settings) -> str:
-    """What the app calls a course: the name you gave it, else its course code."""
-    return settings.course_titles.get(c.id) or settings.course_names.get(c.id) or c.code
-
-
-def term_label(c: Course, settings: Settings) -> str | None:
-    """What the app calls a course's term: the name you gave it, else Canvas's."""
-    return settings.term_titles.get(c.term or "") or c.term
-
-
-# A term in a course's code: "Spring", "SP26", "FL25", "2026".
-_TERM = re.compile(r"(spring|summer|fall|autumn|winter|sp|su|sm|fa|fl|wi)\d{0,4}|(19|20)\d\d")
-
-
-def pick_courses(courses: list[Course], wanted: str, settings: Settings | None = None) -> list[Course]:
-    """The courses `wanted` says: an id, or part of a code, name or what the app calls it
-    (case-insensitive)."""
-    w = wanted.strip().lower()
-    return [c for c in courses if w == str(c.id) or w in f"{c.code} {c.name}".lower()
-            or (settings is not None and w in course_label(c, settings).lower())]
-
-
-def code_keys(code: str) -> set[str]:
-    """The parts of a course code people type: "COMPSCI 70-LEC-001" -> compsci, 70;
-    "CS61B SP26" -> cs, 61b, cs61b; "DATA C8" -> data, c8, 8. Only up to the course
-    number, so sections ("001"), terms ("SP26") and "LEC" don't count."""
-    keys: set[str] = set()
-    depts: list[str] = []
-    for chunk in re.split(r"[\W_]+", code.lower()):
-        if _TERM.fullmatch(chunk):  # "BC INTEGBI (Spring 26)": no course number before the term
-            break
-        parts = re.findall(r"[^\W\d_]+|\d+[^\W\d_]*", chunk)
-        number = next((p for p in parts if p[0].isdigit()), None)
-        words = [p for p in parts[: parts.index(number) if number else None] if len(p) > 1]
-        depts += words
-        keys |= set(words)
-        if number:
-            keys |= {chunk, number}
-            for d in depts:  # COMPSCI 70 -> cs70
-                keys |= {alias + number for alias in [d, *DEPARTMENTS.get(d, [])]}
-                keys |= set(DEPARTMENTS.get(d, []))
-            return keys
-    return set()  # no course number: only the full code/name match
-
-
 class CourseMatcher:
     def __init__(self, courses: list[Course], settings: Settings):
         self.exact: dict[str, set[int]] = {}
@@ -237,13 +176,13 @@ class CourseMatcher:
             renamed = settings.folder_titles.get(Layout(settings).course_dir(c).as_posix())
             title = settings.course_titles.get(c.id)
             aliases = [*settings.course_aliases.get(c.id, []), *[n for n in (title, renamed) if n]]
-            keys = {_norm(n) for n in [*names, *aliases] if n} | code_keys(c.code)
+            keys = {normalized(n) for n in [*names, *aliases] if n} | code_keys(c.code)
             for k in keys - {""}:
                 self.exact.setdefault(k, set()).add(c.id)
-            self.prefixable += [(_norm(n), c.id) for n in [*names, *aliases] if n]
+            self.prefixable += [(normalized(n), c.id) for n in [*names, *aliases] if n]
 
     def match(self, token: str, allow_prefix: bool) -> set[int]:
-        t = _norm(token)
+        t = normalized(token)
         if not t:
             return set()
         if t in self.exact:
@@ -421,36 +360,11 @@ class _Item:
                            self.source, *([] if self.named else ["unnamed"])])
 
 
-def relative_url(url: str | None) -> str | None:
-    if not url:
-        return None
-    parts = urlsplit(url)
-    return parts.path + (f"?{parts.query}" if parts.query else "")
-
-
-def canvas_copy(kind: str, raw: dict[str, Any]) -> bool:
-    """What staff put on Ed that's one of the course's Canvas announcements too, as an announcement
-    or a post: on Ed it's listed as itself; elsewhere, and in search, it's Canvas's. (A student's
-    question with the same title is just that.)"""
-    ed = raw.get("ed") or {}
-    return bool(ed.get("on_canvas")) and (kind == "announcement" or bool(ed.get("staff")))
-
-
-DOC_BODY = {"page": "body", "assignment": "description", "announcement": "message", "syllabus": "syllabus_body",
-            "post": "message"}
-
-
 def _replies(rs: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
     """Replies on Ed, and theirs."""
     for r in rs:
         yield r
         yield from _replies(r.get("replies") or [])
-
-
-def doc_url(raw: dict[str, Any]) -> str | None:
-    """Where a document is on the web: on Canvas, relative to the site; from elsewhere (Ed),
-    in full."""
-    return raw.get("html_url") if raw.get("source") else relative_url(raw.get("html_url"))
 
 
 # The words of each index, kept until it changes: (what it was then, the words sorted, how many

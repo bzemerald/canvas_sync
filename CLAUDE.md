@@ -44,6 +44,9 @@ without the Canvas website or Finder.
     notes), and `under` (whether a path is in a folder).
   - `state.py`: `.canvas/state.db` (SQLite).
   - `times.py`: reading the times Canvas and Ed write (`time_of`).
+  - `courses.py`: what a course is called (`course_label`), and the parts of its code people type.
+  - `documents.py`: a document's text, its address on the web, and whether it's from Ed, from
+    what Canvas and Ed say of it.
   - `search.py`: `.canvas/index.db` (FTS5): the text inside.
   - `catalog.py`: everything search can go to by name (`GET /catalog`); `state.py` keeps what
     you open (`POST /opened`).

@@ -21,7 +21,8 @@ from urllib.parse import urlsplit
 from .discover import file_refs
 from .layout import Layout, sanitize
 from .config import set_title
-from .search import DOC_BODY, canvas_copy, course_label, doc_url, relative_url, term_label
+from .courses import course_label, term_label
+from .documents import DOC_BODY, canvas_copy, doc_url, on_ed, relative_url
 from .state import NEWS_KINDS, FileRecord, State
 from .text import html_to_text
 from .times import time_of
@@ -112,12 +113,6 @@ def tools(state: State, course_id: int) -> list[dict[str, Any]]:
 
 def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
     return [(d.kind, d.id, d.title, d.raw) for d in state.documents(course_id, kind or None)]
-
-
-def on_ed(kind: str, doc_id: str) -> bool:
-    """Whether a document is from Ed (see ed.document), whatever its kind: what the `ed` view has.
-    (Not a page: its id comes from its title, and "Ed Discussion" is ed-discussion.)"""
-    return kind in ("announcement", "post") and doc_id.startswith("ed-")
 
 
 # The views that count what's new in them: whether (kind, id) is in each.

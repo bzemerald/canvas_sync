@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 from canvas_sync import Engine, cli
 from canvas_sync.config import Account, set_course_hidden
 from canvas_sync.server import create_app
-from canvas_sync.search import code_keys
+from canvas_sync.courses import code_keys
 from fake_canvas import BASE, COURSE, FakeCanvas, make_pdf, pull, set_config
 
 

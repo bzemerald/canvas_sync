@@ -17,13 +17,13 @@ from rich.table import Table
 
 from .api import Auth, CanvasClient, CanvasError
 from .config import PREFS_FILE, Account, ConfigError, set_course_listed
+from .courses import pick_courses as matching
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import open_path
 from .models import Course
 from .paths import config_file
 from .plan import Kind, Plan, Scope
 from .search import Hit
-from .search import pick_courses as matching
 from .sync import other_sources
 from .sync import reindex as sync_reindex
 
