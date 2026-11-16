@@ -604,6 +604,21 @@ def test_sync_with_a_browser_sign_in(root, fake):
     assert err.value.signed_out
 
 
+def test_pull_on_the_command_line_keeps_a_renewed_sign_in(root, fake, keychain, monkeypatch):
+    """Canvas renews a browser sign-in's cookies as it goes: `canvas pull` keeps the new ones, as
+    the app's syncs do (else the sign-in the command line has goes stale, and it's signed out)."""
+    from typer.testing import CliRunner
+
+    from canvas_sync import Auth, cli
+    fake.valid_sessions, fake.renew_session = {"s1", "s2"}, "s2"
+    keychain[BASE] = Auth(cookies={"canvas_session": "s1"}).secret()
+    monkeypatch.setattr(Account, "load", classmethod(lambda cls: Account(BASE, root)))
+    monkeypatch.setattr("canvas_sync.cli.CanvasClient", lambda url, auth: CanvasClient(url, auth, transport=httpx.MockTransport(fake.handle)))
+    result = CliRunner().invoke(cli.app, ["pull"])
+    assert result.exit_code == 0, result.output
+    assert keychain[BASE] == '{"cookies": {"canvas_session": "s2"}}'
+
+
 def test_sign_in_with_a_browser(tmp_path, canvas, keychain):
     canvas.valid_sessions = {"s1", "s3"}
     canvas.renew_session = "s2"

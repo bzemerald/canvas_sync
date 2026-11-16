@@ -25,7 +25,7 @@ from .models import Course
 from .paths import config_file
 from .plan import TRANSFERS, Kind, Plan, Scope
 from .search import Hit
-from .sync import other_sources
+from .sync import keep_sign_in, other_sources
 from .sync import reindex as sync_reindex
 
 app = typer.Typer(help="Sync Canvas course files into a local folder.", no_args_is_help=True)
@@ -66,15 +66,18 @@ def with_engine(online: bool, body: Callable[[Engine], Awaitable[T]]) -> T:
 
     async def go() -> T:
         client = None
+        auth = acc.auth() if online else None
         if online:
-            auth = acc.auth()
             if not auth:
                 raise fail("not signed in to Canvas; run `canvas init`")
             client = CanvasClient(acc.base_url, auth)
         try:
             migrate_folder_names(acc.root)
             with Engine(acc.root, client) as engine:
-                return await body(engine)
+                result = await body(engine)
+            if client and auth:
+                keep_sign_in(acc, client, auth)  # (a browser's, renewed on the way: as the app does)
+            return result
         finally:
             if client:
                 await client.aclose()

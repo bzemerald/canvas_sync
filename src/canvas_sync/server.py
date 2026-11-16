@@ -35,7 +35,7 @@ from pydantic import BaseModel
 
 from . import __version__, content
 from . import assistants, ed, meaning, notes
-from .sync import other_sources, reindex
+from .sync import keep_sign_in, other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
 from .models import Course
@@ -1342,10 +1342,7 @@ async def _run_sync(account: Account, auth: Auth, course_ids: list[int] | None, 
     try:
         async with CanvasClient(account.base_url, auth) as client:
             await _sync_canvas(account, client, course_ids, scope, job)
-            # Canvas renews a browser sign-in's cookies as it goes: keep the new ones (unless
-            # you signed in again meanwhile).
-            if (cookies := client.cookies()) and cookies != auth.cookies and account.token() == auth.secret():
-                account.set_auth(Auth(cookies=cookies))
+            keep_sign_in(account, client, auth)
 
         job.phase, job.done, job.total, job.current = "indexing", 0, 0, ""
 
