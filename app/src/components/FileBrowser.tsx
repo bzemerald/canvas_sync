@@ -15,6 +15,7 @@ import { RenameInput } from "./RenameInput";
 import { IconMarks, NewDot, StatusBadges } from "./Status";
 import { Thumb } from "./Thumb";
 import { locale, t } from "../lib/i18n";
+import { useReloads } from "../lib/useLoaded";
 
 export type { ViewMode };
 type SortKey = "name" | "date" | "size";
@@ -25,7 +26,6 @@ interface Props {
   inline?: string; // a folder in `root` shown as `root` itself: its contents there, in its place
   missing?: string; // what to say when `root` isn't there (a course with no files)
   marked?: Record<string, { icon: React.ComponentType<{ className?: string }>; note: string }>; // folders listed first, with what they are
-  version: number; // bump to reload (after a sync, a restore, or the window regaining focus)
   mode: ViewMode;
   showChanges: boolean; // what you changed: deleted files, and badges for your changes
   select?: string | null; // a path to select once it's listed
@@ -77,7 +77,7 @@ export function parentOf(path: string): string {
 }
 
 export function FileBrowser({
-  path, root, inline, missing: missingNote, marked, version, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete, onCopy,
+  path, root, inline, missing: missingNote, marked, mode, showChanges, select, onNavigate, onOpen, onMenu, onFolderMenu, onDelete, onCopy,
   renaming, onStartRename, onRename, onRenameCancel,
 }: Props) {
   const { courses } = useThings();
@@ -103,7 +103,8 @@ export function FileBrowser({
     }
   }, [path]);
 
-  // New folder: start fresh. Same folder, new version: reload it and everything expanded.
+  // New folder: start fresh. Same folder, reloaded ("tree": after a sync, a restore, the window
+  // regaining focus): load it and everything expanded again.
   useEffect(() => {
     setExpanded(new Set());
     setListings({});
@@ -111,13 +112,14 @@ export function FileBrowser({
     // (Not from a text box: clearing the search box brings this back, and typing goes on there.)
     if (!(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) box.current?.focus();
   }, [path]);
+  const reloaded = useReloads("tree");
   const merged = inline !== undefined && path === root ? inline : null; // (its contents are the root's)
   useEffect(() => {
     void load(path);
     if (merged !== null) void load(merged);
     expanded.forEach((d) => void load(d));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, version, load, merged]);
+  }, [path, reloaded, load, merged]);
   const listed = useCallback(
     (dir: string) => (dir === path && merged !== null && listings[path]
       ? [...listings[path].filter((e) => e.path !== merged || e.deleted), ...(listings[merged] ?? [])]

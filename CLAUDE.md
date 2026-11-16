@@ -94,6 +94,9 @@ without the Canvas website or Finder.
   - `src/lib/marks.ts`: what a query's words look like in text; `src/components/Marked.tsx`: marks
     them on the page search opened, whatever the page (`found` on the view, so going back has them).
   - `src/lib/api.ts`: every backend call and its types.
+  - `src/lib/useLoaded.ts`: what's loaded, remembered by key; `reload(...keys)` says what
+    changed (nothing named: everything, as after a sync), and what follows those keys
+    (`useLoaded(…, { follow: true })`, `useReloads`) loads again. No `version` props.
   - `src/lib/update.ts`: 检查更新 (Tauri's updater, from GitHub's releases; checks by itself
     in a release build).
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.

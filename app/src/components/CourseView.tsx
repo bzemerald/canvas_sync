@@ -29,10 +29,10 @@ import { SourceTag, ThingIcon, onTheWeb, opensHint, pinItem, sections, thingName
 import { t } from "../lib/i18n";
 import { shortcut, tabCommand } from "../lib/keys";
 
-/** The overview, loaded once per course and version (it also says which tabs to show).
- * `seen` changes when you open something, so the counts of what's new follow. */
-export function useOverview(courseId: number | null, version: number, seen: number) {
-  return useLoaded(courseId === null ? null : `overview:${courseId}`, () => api.overview(courseId!), [version, seen]).value ?? null;
+/** The overview, loaded once per course, and again when reloaded (it also says which tabs to
+ * show): after a sync, and when you open something, so the counts of what's new follow. */
+export function useOverview(courseId: number | null) {
+  return useLoaded(courseId === null ? null : `overview:${courseId}`, () => api.overview(courseId!), { follow: true }).value ?? null;
 }
 
 /** Open external tools; `pending` is the one on its way (asking Canvas for a link takes a moment). */
@@ -456,14 +456,13 @@ const itemEntry = (course: number, m: api.Module, it: ModuleItem, i: number): Ca
 
 /** The course as the instructor laid it out. Opens with the current modules expanded
  * (newest upload, next deadline); what you expand or collapse is remembered per course. */
-export function CourseModules({ course, version, focus, only, box }: {
+export function CourseModules({ course, focus, only, box }: {
   course: Course;
-  version: number;
   focus?: number; // a module to show: opened, and scrolled to (as from 置顶)
   only?: number; // just this module, open (a tab of its own)
   box: SearchBox; // only the modules, or items, matching what's typed
 }) {
-  const list = useLoaded(`modules:${course.id}`, () => api.modules(course.id).catch(() => []), [version]).value ?? null;
+  const list = useLoaded(`modules:${course.id}`, () => api.modules(course.id).catch(() => []), { follow: true }).value ?? null;
   const entries = useMemo(() => list && list.flatMap((m) => [moduleEntry(course.id, m), ...m.items.map((it, i) => itemEntry(course.id, m, it, i))]), [list, course.id]);
   const narrowing = useNarrowing(only === undefined ? box.query : "", entries);
   const [open, setOpen] = usePref<number[] | null>(`modules-open:${course.id}`, null);
@@ -594,31 +593,29 @@ export function ModuleRow({ it, course, opening, onClick }: { it: ModuleItem; co
 // -- 公告 / 作业 / 页面 / 大纲 --------------------------------------------------------------
 
 /** One announcement, assignment or page (or the syllabus) as a tab of its own. */
-export function CourseDoc({ course, kind, id, version, onSeen }: {
+export function CourseDoc({ course, kind, id, onSeen }: {
   course: Course;
   kind: DocKind;
   id: string;
-  version: number;
   onSeen: () => void; // it was new, and now it's been opened
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <ItemView key={`${kind}:${id}`} course={course} kind={kind} id={id} version={version} onLoaded={(it) => it.new && onSeen()} />
+      <ItemView key={`${kind}:${id}`} course={course} kind={kind} id={id} onLoaded={(it) => it.new && onSeen()} />
     </div>
   );
 }
 
 /** A list on the left, the selected item on the right, like a mail client. */
-export function CourseReader({ course, of, selected, version, onSelect, onSeen, box }: {
+export function CourseReader({ course, of, selected, onSelect, onSeen, box }: {
   course: Course;
   of: DocKind | "ed"; // what it lists
   selected: string | null;
-  version: number;
   onSelect: (id: string) => void;
   onSeen: () => void;
   box: SearchBox; // the list shows what matches, best first (by name, and the text inside)
 }) {
-  const items = useLoaded(`items:${course.id}:${of}`, () => (of === "ed" ? api.edItems(course.id) : api.items(course.id, of)).catch(() => []), [version]).value ?? null;
+  const items = useLoaded(`items:${course.id}:${of}`, () => (of === "ed" ? api.edItems(course.id) : api.items(course.id, of)).catch(() => []), { follow: true }).value ?? null;
   // Opened here: no dot, even if the list was fetched before opening it marked it seen.
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const all = useMemo(() => items && items.map((x) => (x.new && opened.has(x.id) ? { ...x, new: false } : x)), [items, opened]);
@@ -668,7 +665,7 @@ export function CourseReader({ course, of, selected, version, onSelect, onSeen, 
   if (of === "syllabus") {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ItemView course={course} kind="syllabus" id={String(course.id)} version={version} />
+        <ItemView course={course} kind="syllabus" id={String(course.id)} />
       </div>
     );
   }
@@ -693,7 +690,6 @@ export function CourseReader({ course, of, selected, version, onSelect, onSeen, 
             course={course}
             kind={kind}
             id={current}
-            version={version}
             onLoaded={(it) => it.new && seen(it.id)}
           />
         )}
@@ -855,17 +851,16 @@ const SUBMISSION: Record<string, string> = {
   discussion_topic: t("讨论"), external_tool: t("外部工具"), on_paper: t("纸质"), none: t("不需要提交"), media_recording: t("录音/录像"),
 };
 
-function ItemView({ course, kind, id, version, onLoaded }: {
+function ItemView({ course, kind, id, onLoaded }: {
   course: Course;
   kind: DocKind;
   id: string;
-  version: number;
   onLoaded?: (it: Item) => void; // (loading it marked it seen)
 }) {
   const { value: it, error } = useLoaded(`item:${course.id}:${kind}:${id}`, () => api.item(course.id, kind, id).then((x) => {
     onLoaded?.(x);
     return x;
-  }), [version]);
+  }), { follow: true });
   const { launch, pending } = useLaunch(course.id);
 
   if (error) {
@@ -962,14 +957,13 @@ function ItemView({ course, kind, id, version, onLoaded }: {
 // -- 成绩 ----------------------------------------------------------------------------------
 
 /** Your total as Canvas computes it, and every assignment's grade, latest due first. */
-export function CourseGrades({ course, version, box }: {
+export function CourseGrades({ course, box }: {
   course: Course;
-  version: number;
   box: SearchBox; // only the assignments matching what's typed
 }) {
   const thing = useThing();
   const things = useThings();
-  const g = useLoaded(`grades:${course.id}`, () => api.grades(course.id).catch((): Grades => ({ total: null, assignments: [] })), [version]).value;
+  const g = useLoaded(`grades:${course.id}`, () => api.grades(course.id).catch((): Grades => ({ total: null, assignments: [] })), { follow: true }).value;
   const entries = useMemo(() => (g ? g.assignments.map((a) => docEntry(course.id, a)) : null), [g, course.id]);
   const narrowing = useNarrowing(box.query, entries, { course: course.id, kind: "assignment" });
   if (!g) return <Loading />;

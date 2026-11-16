@@ -30,7 +30,7 @@ export function Launcher() {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(0); // times it came forward: what it knows is loaded again
   const input = useRef<HTMLInputElement>(null);
-  const courses = useLoaded("courses", api.courses, [shown]).value ?? NO_COURSES; // (their icons)
+  const courses = useLoaded("courses", api.courses, { again: [shown] }).value ?? NO_COURSES; // (their icons)
   const { catalog, vocab, usage, names } = useCatalog([shown], courses);
   const actions = useMemo(() => actionsFor(names, [{ id: "main", label: t("打开主窗口"), names: [t("打开主窗口"), t("主窗口")] }]), [names]);
   const { reading, results, lately, due, listed, first, nothing, error, loading, words } = useFinding(query, catalog, vocab, usage, actions);

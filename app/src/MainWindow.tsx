@@ -59,7 +59,7 @@ import { startUpdateChecks } from "./lib/update";
 import { friendly } from "./lib/errors";
 import { SignInDialog, browserSignIn } from "./components/SignIn";
 import { t } from "./lib/i18n";
-import { useLoaded } from "./lib/useLoaded";
+import { reload, useLoaded, useReloads } from "./lib/useLoaded";
 
 /** The open course's page: its places, each with all they hold (as last loaded, or as just changed). */
 type Layout = { [P in Place]: Shown[] } & { own: CourseLayout["own"] };
@@ -114,8 +114,6 @@ export function MainWindow() {
     setLayout({ id, layout: l });
   };
   const [changes, setChanges] = useState<Record<number, number>>({});
-  const [version, setVersion] = useState(0);
-  const [seenTick, setSeenTick] = useState(0); // you opened something: what's new changed
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [restoring, setRestoring] = useState<{ scope: Scope; label: string } | null>(null);
   const [showingKeys, setShowingKeys] = useState(false); // the keyboard shortcuts
@@ -140,25 +138,32 @@ export function MainWindow() {
   const step = (d: number) => setHist((h) => stepped(h, d));
   /** Change where we are without a new history entry (picking an item in a list). */
   const replaceView = (v: View) => setHist((h) => replaced(h, v));
-  const refresh = () => setVersion((n) => n + 1);
-  const seenChanged = () => setSeenTick((n) => n + 1);
-  const newFiles = useLoaded("new-files", api.newFiles, [version, seenTick]).value; // (what a file's menu can mark read)
+  /** Everything shown loads again (a sync ended, the window came back, something was changed). */
+  const refresh = () => reload();
+  /** You opened something: what says what's new loads again. */
+  const seenChanged = () => reload("courses", "overview", "new-files");
+  const newFiles = useLoaded("new-files", api.newFiles, { follow: true }).value; // (what a file's menu can mark read)
 
   useEffect(startUpdateChecks, []);
 
   // -- data ------------------------------------------------------------------------
+  const coursesReloaded = useReloads("courses");
+  const pinnedReloaded = useReloads("pinned");
+  const sidebarReloaded = useReloads("sidebar");
+  const titlesReloaded = useReloads("folder-titles");
+  const statusReloaded = useReloads("status");
   useEffect(() => {
     api.courses().then(setCourseList, (e) => api.isFolderMissing(e) || setStartupError(String(e.message ?? e)));
-  }, [version, seenTick]);
-  useEffect(() => void api.pinned().then(setPinned, () => {}), [version]);
-  useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [version]);
+  }, [coursesReloaded]);
+  useEffect(() => void api.pinned().then(setPinned, () => {}), [pinnedReloaded]);
+  useEffect(() => void api.sidebarOrder().then(setOrder, () => {}), [sidebarReloaded]);
   const [, setTitled] = useState(0); // (folder titles came: show them)
   useEffect(() => {
     void api.folderTitles().then((titles) => {
       setFolderTitles(titles);
       setTitled((n) => n + 1);
     }, () => {});
-  }, [version]);
+  }, [titlesReloaded]);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
   // The sync: where it's got to, starting one; when one ends, what it changed is loaded again.
   const { sync, label: syncLabel, busy: syncBusy, run: runSync, renewing } = useSync({
@@ -170,7 +175,7 @@ export function MainWindow() {
       for (const s of all) if (s.states.some((x) => RESTORABLE.has(x))) counts[s.course_id] = (counts[s.course_id] ?? 0) + 1;
       setChanges(counts);
     }, () => {});
-  }, [version]);
+  }, [statusReloaded]);
 
   // Files change behind our back (you edit them in other apps): look again on focus.
   useEffect(() => {
@@ -200,6 +205,7 @@ export function MainWindow() {
   const courseById = (id: number) => courseList.find((c) => c.id === id) ?? null;
   const courseAt = (path: string) => courseList.find((c) => under(path, c.dir)) ?? null;
   const layoutId = raw.kind === "course" ? raw.id : null;
+  const layoutReloaded = useReloads("layout");
   useEffect(() => {
     if (layoutId === null) return;
     let live = true;
@@ -207,7 +213,7 @@ export function MainWindow() {
     return () => {
       live = false;
     };
-  }, [layoutId, version]);
+  }, [layoutId, layoutReloaded]);
   const courseLayout = layout && layout.id === layoutId ? layout.layout : layoutId !== null ? layouts.get(layoutId) ?? null : null;
   const tabs = courseLayout?.tabs ?? [];
   /** Going to one of the course's tabs (or showing something there). */
@@ -325,7 +331,7 @@ export function MainWindow() {
     const x = thingOfHit(h);
     return x ? open(x, "", foundBy(h)) : void api.openHit(h);
   };
-  const overview = useOverview(cv ? cv.id : null, version, seenTick);
+  const overview = useOverview(cv ? cv.id : null);
 
   // The search window asks us to open something (a course's view, an announcement…), to show a
   // file in its folder, or to do something (sync, settings).
@@ -375,10 +381,11 @@ export function MainWindow() {
         : t("搜索");
   // A smart folder's results (typing in its box searches where it is instead: below).
   const smart = searched && !query.trim() ? searched : null;
+  const smartReloaded = useReloads("smart-folder");
   const results = useSearch(
     smart ? thingKey(smart) : "",
     () => (smart ? api.search(smart.query, { courses: smart.courses, kinds: smart.kinds, namesOnly: !smart.content, limit: 500 }) : Promise.resolve([])),
-    [version],
+    [smartReloaded],
   );
   // What's typed is searched as in the search window, where the box is: the folder,
   // the course (what its tab shows a little first), or everything.
@@ -386,7 +393,7 @@ export function MainWindow() {
     if (folderScope !== null) return { under: folderScope, ...(cv ? { courses: [cv.id] } : folderScope && scopeCourses.length ? { courses: scopeCourses } : {}) };
     return cv ? { courses: [cv.id], ...shownOn(cv.blank ? null : tab) } : {};
   }, [folderScope, cv?.id, cv?.blank, scopeCourses.join(","), tab && thingKey(tab)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const { catalog, vocab, usage, names } = useCatalog([version], courseList, query.trim() !== "" || !!smart);
+  const { catalog, vocab, usage, names } = useCatalog([], courseList, query.trim() !== "" || !!smart);
   const finder = useMemo((): Finder => ({ catalog, vocab, usage, names, courses: courseList }), [catalog, vocab, usage, names, courseList]);
   const actions = useMemo(() => actionsFor(names), [names]);
   const box = useMemo(() => ({ query: filtering ? query : "", onQuery: setQuery, onWiden: () => setWide(true) }), [filtering, query]);
@@ -965,7 +972,6 @@ export function MainWindow() {
         <CourseModules
           key={`${course.id}:${thingKey(tab)}`}
           course={course}
-          version={version}
           focus={cv.item ? Number(cv.item) : undefined}
           only={tab.type === "module" ? tab.module : undefined}
           box={box}
@@ -973,7 +979,7 @@ export function MainWindow() {
       );
     }
     if (isView(tab, "grades")) {
-      return <CourseGrades key={course.id} course={course} version={version} box={box} />;
+      return <CourseGrades key={course.id} course={course} box={box} />;
     }
     if (isView(tab, "tools")) {
       return (
@@ -987,14 +993,13 @@ export function MainWindow() {
           course={course}
           of={VIEW_LISTS[tab.view]!}
           selected={cv.item ?? null}
-          version={version}
           onSelect={(id) => replaceView({ ...cv, item: id, found: undefined })}
           onSeen={seenChanged}
           box={box}
         />
       );
     }
-    if (tab.type === "doc") return <CourseDoc course={course} kind={tab.kind} id={tab.id} version={version} onSeen={seenChanged} />;
+    if (tab.type === "doc") return <CourseDoc course={course} kind={tab.kind} id={tab.id} onSeen={seenChanged} />;
     if (tab.type === "note") return <NoteEditor key={thingKey(tab)} course={course.id} id={tab.id} page />;
     if (tab.type === "search") return null; // (its results: below)
     return (
@@ -1005,7 +1010,6 @@ export function MainWindow() {
         missing={course.excluded ? t("这门课没有同步，所以这里没有文件。") : t("这门课还没有文件。Canvas 上有了文件，同步后就会出现在这里。")}
         marked={isView(tab, "files") ? sourceMarks(course) : undefined}
         select={cv.select}
-        version={version}
         mode={mode}
         showChanges={showChanges}
         onNavigate={goPath}
@@ -1236,7 +1240,6 @@ export function MainWindow() {
             path={view.path}
             root=""
             select={view.select}
-            version={version}
             mode={mode}
             showChanges={showChanges}
             onNavigate={goFolder}

@@ -83,9 +83,10 @@ export const describeEntry = (courses: Course[]): Describe => (e) => {
 const NOTHING: Usage = { opened: {}, picks: [] };
 
 /** The catalog, made ready for finding, what reading a query knows of it, and what you open;
- * loaded again when `again` changes (and only while `on`: what was loaded last stays). */
+ * loaded again when `again` changes or "catalog" is reloaded (and only while `on`: what was loaded
+ * last stays). */
 export function useCatalog(again: unknown[], courses: Course[] = [], on = true) {
-  const data = useLoaded(on ? "catalog" : null, api.catalog, again).value;
+  const data = useLoaded(on ? "catalog" : null, api.catalog, { again, follow: true }).value;
   const catalog = useMemo(() => {
     if (!data) return null;
     setFolderTitles(data.folder_titles); // (what comes next is named and found by them)
