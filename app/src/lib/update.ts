@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useSyncExternalStore } from "react";
+import { noteItems } from "./changelog";
 
 export type UpdateState =
   | { phase: "idle" }
@@ -40,18 +41,6 @@ export async function checkForUpdate(quiet = false) {
   } catch (e) {
     set(quiet ? before : { phase: "failed", error: String(e) });
   }
-}
-
-/** A release's notes (its part of CHANGELOG.md: "- " items, wrapped lines indented) as items. */
-export function noteItems(body: string | undefined): string[] {
-  const items: string[] = [];
-  for (const line of (body ?? "").split(/\r?\n/)) {
-    const text = line.trim();
-    if (!text) continue;
-    if (/^\s/.test(line) && items.length) items[items.length - 1] += " " + text;
-    else items.push(text.replace(/^[-*]\s+/, ""));
-  }
-  return items;
 }
 
 /** Downloads the update, installs it, restarts. On Windows installing quits the app itself. */

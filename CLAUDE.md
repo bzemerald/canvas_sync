@@ -100,7 +100,8 @@ without the Canvas website or Finder.
     changed (nothing named: everything, as after a sync), and what follows those keys
     (`useLoaded(…, { follow: true })`, `useReloads`) loads again. No `version` props.
   - `src/lib/update.ts`: Check for updates (Tauri's updater, from GitHub's releases; checks by itself
-    in a release build).
+    in a release build). `src/lib/changelog.ts`: CHANGELOG.md, built in (`?raw`; vite.config.ts
+    allows it), and whether the app was just updated (`useUpdated`); `ChangelogDialog.tsx`.
   - `src/lib/things.ts`: things (as in things.py), their keys, changing a place's list.
   - `src/lib/kinds.ts`: each kind of thing as both windows show it (icon, what one is called,
     what they're called together), and each of a course's views (icon, name as a tab, a card, a row).

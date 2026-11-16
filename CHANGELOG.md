@@ -6,6 +6,9 @@ new version.
 
 ## Unreleased
 
+- The changelog is in the app: Settings → Version → Changelog.
+- After an update, the sidebar says so where it offered the update; click it for what's new.
+
 ## 0.4.0 — 2026-11-15
 
 - Copy files and folders with ⌘C (Ctrl+C on Windows), or Copy in their right-click menu, to paste

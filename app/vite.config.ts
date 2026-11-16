@@ -25,6 +25,8 @@ export default defineConfig(() => ({
           port: 1421,
         }
       : undefined,
+    // 4. what's served from outside app/: the repo's CHANGELOG.md (src/lib/changelog.ts)
+    fs: { allow: [".", "../CHANGELOG.md"] },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

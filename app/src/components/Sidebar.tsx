@@ -1,8 +1,9 @@
 // The sidebar's pieces: Pinned's list, a term and its courses, a row, a section's header; the sync
 // status at its top and the update notice at its foot. What they show and do is the main window's.
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal, X } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
 import type { Course, SidebarOrder, SyncState } from "../lib/api";
+import { useUpdated } from "../lib/changelog";
 import { shortDate } from "../lib/dates";
 import { edSaying, fileSaying, syncSaying } from "../lib/errors";
 import { locale, t, tn } from "../lib/i18n";
@@ -10,6 +11,7 @@ import { moved, useReorder } from "../lib/reorder";
 import { termRank } from "../lib/terms";
 import { type Shown, thingKey } from "../lib/things";
 import { installUpdate, useUpdate } from "../lib/update";
+import { ChangelogDialog } from "./ChangelogDialog";
 import { parentOf } from "./FileBrowser";
 import { type Place, usePlaceDrag } from "./Place";
 import { Count } from "./Status";
@@ -280,10 +282,26 @@ const CHANGE: Record<string, (n: number) => string> = {
   delete: (n) => tn("1 deleted", "{n} deleted", { n }),
 };
 
-/** A new version, at the sidebar's foot once a check found one: click to update (and restart). */
+/** A new version, at the sidebar's foot once a check found one: click to update (and restart).
+ * After an update, the same place says so: click for what's new (which dismisses it), or ×. */
 export function UpdateNotice() {
   const update = useUpdate();
-  if (update.phase !== "available" && update.phase !== "downloading" && update.phase !== "installing") return null;
+  const updated = useUpdated();
+  const [changelog, setChangelog] = useState(false);
+  if (update.phase !== "available" && update.phase !== "downloading" && update.phase !== "installing") {
+    if (!updated) return null;
+    return (
+      <div className="mb-1 flex items-center rounded-md bg-selected text-xs text-accent">
+        <button onClick={() => setChangelog(true)} className="min-w-0 flex-1 px-2.5 py-1.5 text-left hover:opacity-90">
+          {t("Updated to {v} · See what's new", { v: updated.to })}
+        </button>
+        <button onClick={updated.dismiss} title={t("Close")} aria-label={t("Close")} className="mr-1 rounded p-0.5 hover:bg-chip">
+          <X className="size-3.5" />
+        </button>
+        {changelog && <ChangelogDialog since={updated.from} onClose={() => (setChangelog(false), updated.dismiss())} />}
+      </div>
+    );
+  }
   const label = update.phase === "available" ? t("Version {v} · Update and restart", { v: update.version })
     : update.phase === "downloading" ? t("Downloading {v}…", { v: update.version }) + (update.progress === null ? "" : ` ${Math.round(update.progress * 100)}%`)
       : t("Installing, restarting soon…");

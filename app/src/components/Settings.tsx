@@ -13,6 +13,7 @@ import { chooseLauncherKeys, keysLabel, keysOf, setKeys, useLauncherKeys } from 
 import { fileManager, isMac } from "../lib/keys";
 import { termRank } from "../lib/terms";
 import { checkForUpdate, installUpdate, useUpdate } from "../lib/update";
+import { ChangelogDialog } from "./ChangelogDialog";
 import { ChooseCourses } from "./ChooseCourses";
 import { Button, Dialog } from "./Dialog";
 import { LanguagePicker } from "./LanguagePicker";
@@ -369,11 +370,14 @@ function VersionRow() {
   useEffect(() => void getVersion().then(setVersion, () => {}), []);
   const status = update.phase === "failed" ? null : updateSaying(update);
   const available = update.phase === "available" && update.notes.length ? update : null;
+  const [changelog, setChangelog] = useState(false);
   // (The hint is a <p>: what's new is in spans, a line each.)
   return (
     <Row label={t("Version")} hint={version ? (
       <>
         <span className="tabular-nums">{version}</span>
+        {" · "}
+        <button onClick={() => setChangelog(true)} className="text-accent hover:underline">{t("Changelog")}</button>
         {available && (
           <span className="mt-1.5 block text-fg-soft">
             {t("What's new in {v}:", { v: available.version })}
@@ -390,6 +394,7 @@ function VersionRow() {
           ? <Button onClick={() => void installUpdate()}>{t("Update and restart")}</Button>
           : <Button onClick={() => void checkForUpdate()} disabled={update.phase === "checking" || update.phase === "downloading" || update.phase === "installing"}>{t("Check for updates")}</Button>}
       </span>
+      {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
     </Row>
   );
 }
