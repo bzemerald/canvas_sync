@@ -33,7 +33,7 @@ import {
 import * as api from "./lib/api";
 import { courseUrl, docUrl } from "./lib/canvas";
 import { quickLook } from "./lib/quicklook";
-import type { AccountInfo, Course, CourseLayout, Entry, Hit, NewsView, Place, Scope, SidebarOrder, SyncState } from "./lib/api";
+import type { AccountInfo, Course, CourseLayout, Entry, Hit, NewsView, Place, Scope, SidebarOrder } from "./lib/api";
 import type { Found, Scope as Where } from "./lib/find";
 import { markPattern } from "./lib/marks";
 import {
@@ -46,6 +46,7 @@ import { copyFiles } from "./lib/copyFiles";
 import { clickSearchButton, keysLabel, pressSearchButton, showLauncher, useLauncherKeys } from "./lib/launcherKeys";
 import { usePref } from "./lib/prefs";
 import { useSearch } from "./lib/useSearch";
+import { useSync } from "./lib/useSync";
 import { CourseIcon } from "./lib/courseIcons";
 import { moved, useReorder } from "./lib/reorder";
 import {
@@ -99,7 +100,6 @@ export function MainWindow() {
   const [query, setQuery] = useState("");
   const [mode, setMode] = usePref<ViewMode>("viewMode", "list");
   const [showChanges, setShowChanges] = usePref("showChanges", false); // what you changed, in files
-  const [sync, setSync] = useState<SyncState | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [signingIn, setSigningIn] = useState(false); // signed out: signing in again (SignInDialog)
   const [order, setOrder] = useState<SidebarOrder>({ terms: [], courses: [] });
@@ -112,7 +112,6 @@ export function MainWindow() {
     layouts.set(id, l);
     setLayout({ id, layout: l });
   };
-  const [syncLabel, setSyncLabel] = useState("");
   const [changes, setChanges] = useState<Record<number, number>>({});
   const [version, setVersion] = useState(0);
   const [seenTick, setSeenTick] = useState(0); // you opened something: what's new changed
@@ -160,13 +159,10 @@ export function MainWindow() {
     }, () => {});
   }, [version]);
   useEffect(() => void api.account().then(setAccount, () => {}), []);
-  const finished = useRef<string | null>(null); // when the sync we last reloaded for ended
-  useEffect(() => {
-    void api.syncState().then((s) => {
-      finished.current = s.finished_at;
-      setSync(s);
-    }, () => {});
-  }, []);
+  // The sync: where it's got to, starting one; when one ends, what it changed is loaded again.
+  const { sync, label: syncLabel, busy: syncBusy, run: runSync, renewing } = useSync({
+    account, onAccount: setAccount, onFinished: refresh, signIn: (site) => browserSignIn(site, true),
+  });
   useEffect(() => {
     api.status().then((all) => {
       const counts: Record<number, number> = {};
@@ -180,21 +176,6 @@ export function MainWindow() {
     const off = getCurrentWindow().onFocusChanged(({ payload }) => payload && refresh());
     return () => void off.then((f) => f());
   }, []);
-
-  // While a sync runs, poll its progress; when it ends, reload what it changed. Otherwise look
-  // now and then: the backend syncs by itself too (设置 → 自动同步).
-  useEffect(() => {
-    const timer = setInterval(async () => {
-      const next = await api.syncState().catch(() => null);
-      if (!next) return;
-      setSync(next);
-      if (!next.running && next.finished_at !== finished.current) {
-        finished.current = next.finished_at;
-        refresh();
-      }
-    }, sync?.running ? 500 : 15000);
-    return () => clearInterval(timer);
-  }, [sync?.running]);
 
   // Window-wide keys (back, forward, search, show changes, sync, the next course...), per
   // platform; and the mouse's back / forward buttons. (What they do: `onKey`, below, as of now.)
@@ -471,55 +452,16 @@ export function MainWindow() {
     }
     open(thingNamed(f.entry), query, found);
   };
-  /** Whether it started: not if signed out, or if one is already running (that one is shown). */
+  /** Whether it started: not if signed out (then: sign in first; the sidebar offers it too when a
+   * sign-in expired and couldn't be renewed quietly), or if one is already running (that one is
+   * shown). `runSync` starts it already signed in (just now: `signedOut` is still this render's). */
   const startSync = async (scope: Scope, label: string): Promise<boolean> => {
     if (signedOut) {
-      setSigningIn(true); // sign in first
+      setSigningIn(true);
       return false;
     }
     return runSync(scope, label);
   };
-  /** Starting it, already signed in (just now: `signedOut` above is still this render's). */
-  const runSync = async (scope: Scope, label: string): Promise<boolean> => {
-    try {
-      const started = await api.startSync(scope);
-      setSyncLabel(label);
-      setSync(started);
-      return true;
-    } catch (e) {
-      if (e instanceof api.ApiError && e.status === 409) { // (one started since the menu opened)
-        void api.syncState().then(setSync, () => {});
-        return false;
-      }
-      setSyncLabel(label);
-      setSync({ phase: "failed", scope: [], running: false, errors: [String((e as Error).message)], warnings: [], total: 0, done: 0, current: "", changes: {}, finished_at: null, ed_error: null });
-      return false;
-    }
-  };
-  /** The browser sign-in expired: signed in again in a hidden window, if the school still knows
-   * you, and what failed syncs again. Once per sync that failed so, and not again for the sync
-   * that started (it failing so too, quietly signing in doesn't do): then the sidebar offers to
-   * sign in (SignInDialog). */
-  const [renewing, setRenewing] = useState(false);
-  const renewedFor = useRef<string | null>(null);
-  const renewedSync = useRef(false); // the sync now (or last) was started by signing in quietly
-  useEffect(() => {
-    if (sync?.finished_at && !sync.expired) renewedSync.current = false; // (it ended otherwise)
-    if (!sync?.expired || account?.auth !== "session" || !account.base_url || renewedFor.current === sync.finished_at) return;
-    renewedFor.current = sync.finished_at;
-    if (renewedSync.current) return void (renewedSync.current = false);
-    const failed = sync;
-    setRenewing(true);
-    void browserSignIn(account.base_url, true)
-      .then((cookies) => api.replaceCredentials({ cookies }))
-      .then((a) => {
-        setAccount(a);
-        renewedSync.current = true;
-        void runSync(failed.scope.length ? { paths: failed.scope } : {}, syncLabel);
-      }, () => {})
-      .finally(() => setRenewing(false));
-  }, [sync?.expired, sync?.finished_at, account?.auth]);
-  const syncBusy = !!sync?.running;
   const openMenu = (items: MenuItem[], x: number, y: number) => setMenu({ x, y, items });
   const reveal = (path: string) => void api.openPath(path, { reveal: true });
 

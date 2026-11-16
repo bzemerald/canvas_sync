@@ -65,6 +65,8 @@ without the Canvas website or Finder.
 - `app/`: Tauri v2, React 19, TypeScript, Vite, Tailwind v4.
   - `src/lib/navigation.ts`: where the window is (`View`), its history, and the rules of a
     course's tabs (which tab shows a thing, the tab at the end); `navigation.test.ts`.
+  - `src/lib/useSync.ts`: the sync as the window follows it (polling, starting one, signing in
+    again quietly when a browser sign-in expired).
   - `src/MainWindow.tsx`: the window: its state, going places, menus, pinning. What it's
     drawn with: `src/components/Sidebar.tsx` (置顶's list, terms, rows, the sync status),
     `Toolbar.tsx` (breadcrumb, search box), `Notice.tsx`, `Results.tsx` (a smart folder's).
