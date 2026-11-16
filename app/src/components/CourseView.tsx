@@ -15,7 +15,7 @@ import { useLoaded } from "../lib/useLoaded";
 import { shortDate, untilDue } from "../lib/dates";
 import { moved, useReorder } from "../lib/reorder";
 import {
-  type Shown, type Thing, type ViewName, changed, isView, ofCourse, opensElsewhere, ownIn, putAt, refill, same, slotIndex, thingKey,
+  type Shown, type Thing, type ThingOf, type ViewName, changed, isView, ofCourse, opensElsewhere, putAt, refill, same, slotIndex, thingKey,
   thingOf, thingOfItem, view as viewOf, without,
 } from "../lib/things";
 import { FileIcon } from "./FileIcon";
@@ -76,11 +76,14 @@ export function viewsWithContent(overview: Overview | null): Set<ViewName> {
   return new Set((Object.keys(has) as ViewName[]).filter((v) => has[v]));
 }
 
+/** One of the tabs' own: a view of the course (the rest were put there). */
+const ownTab = (e: Shown): e is Shown & ThingOf<"view"> => !!e.own && e.type === "view";
+
 /** The tabs showing: what's not hidden and, of the course's own views, has something in it (or
  * is `current`). */
-function tabsShown(entries: Shown[], course: Course, overview: Overview | null, current?: Thing | null): Shown[] {
+function tabsShown(entries: Shown[], overview: Overview | null, current?: Thing | null): Shown[] {
   const has = viewsWithContent(overview);
-  return entries.filter((e) => !e.hidden && ((current && same(e, current)) || !ownIn("tabs", e, course.id) || has.has((e as { view: ViewName }).view)));
+  return entries.filter((e) => !e.hidden && ((current && same(e, current)) || !ownTab(e) || has.has(e.view)));
 }
 
 /** The one place at the end of a course's tabs: a new tab, or something shown that isn't one of
@@ -115,8 +118,8 @@ export function CourseTabs({
   const entries = loaded ?? [];
   const n = overview?.new;
   const fresh: Partial<Record<ViewName, number>> = n ?? {};
-  const isOwn = (e: Thing): e is Thing & { type: "view" } => ownIn("tabs", e, course.id);
-  const visible = tabsShown(entries, course, overview, blank ? null : tab);
+  const isOwn = ownTab;
+  const visible = tabsShown(entries, overview, blank ? null : tab);
   const extra = !loaded || !spare || spare === "new" ? null : entries.find((e) => same(e, spare)) ?? (spare as Shown); // (as named there, if hidden)
   const name = (e: Shown) => thingName(e, things.courses, "tab");
   const current = (e: Thing) => !blank && same(tab, e);
@@ -315,9 +318,9 @@ export function NewTab({ course, overview, entries, box, typing, found, onOpen, 
   const things = useThings();
   const fresh: Partial<Record<ViewName, number>> = overview?.new ?? {};
   const has = viewsWithContent(overview);
-  const shown = tabsShown(entries, course, overview);
+  const shown = tabsShown(entries, overview);
   const views: Shown[] = [
-    ...entries.filter((e) => (ownIn("tabs", e, course.id) ? has.has((e as { view: ViewName }).view) : e.hidden)),
+    ...entries.filter((e) => (ownTab(e) ? has.has(e.view) : e.hidden)),
     ...(entries.some((e) => isView(e, "tools")) ? [] : [viewOf(course.id, "tools")]),
   ];
   const pick = (x: Shown) => {

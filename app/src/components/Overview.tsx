@@ -17,7 +17,7 @@ import { Settling, lineIn, slotInColumn } from "../lib/slot";
 import { moved, useReorder } from "../lib/reorder";
 import { remember, useLoaded } from "../lib/useLoaded";
 import {
-  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, ownIn, putAt, refill, same, slotIndex, thingKey, thingOfHit, view,
+  type Shown, type Thing, type ThingOf, changed, isView, ofCourse, putAt, refill, same, slotIndex, thingKey, thingOfHit, view,
   without,
 } from "../lib/things";
 import { AddCardDialog } from "./AddCardDialog";
@@ -157,8 +157,8 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
   }, [fresh, grid, heights]);
 
   const all = cards ?? [];
-  const isOwn = (e: Thing) => ownIn("overview", e, course.id);
-  const available = (e: Thing) =>
+  const isOwn = (e: Shown) => !!e.own; // (the overview's own cards: the course's views)
+  const available = (e: Shown) =>
     !isView(e) || !isOwn(e) ? true
       : e.view === "modules" ? !!overview?.current_modules.length
         : e.view === "grades" ? !!overview?.counts.grades
@@ -269,7 +269,7 @@ export function CourseOverview({ course, overview, cards, links, onArrange, onSa
     return [
       { label: t("重命名"), onSelect: () => setRenaming({ place, entry: e }) },
       ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(place, changed(list, e, { title: "" })) }] : []),
-      ownIn(place, e, course.id)
+      e.own
         ? { label: t("隐藏“{name}”", { name }), onSelect: () => onArrange(place, changed(list, e, { hidden: true })) }
         : { label: place === "overview" ? t("删除卡片") : t("删除链接"), danger: true, onSelect: () => takeAway(place, e, name) },
     ];
@@ -549,7 +549,6 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
 }) {
   const things = useThings();
   const [box, setBox] = useState<HTMLDivElement | null>(null);
-  const own = (e: Thing) => ownIn("links", e, course.id);
   // Dragged in from elsewhere: it goes where the link it's over (or nearest) was when it came
   // over the list; judged by what's drawn, the links making room would change the answer.
   const before = useRef<{ left: number; top: number; width: number; height: number }[] | null>(null);
@@ -571,7 +570,7 @@ function LinksList({ course, links, shown, menu, listMenu, onArrange, onTakeAway
   const drag = useReorder(shown.length, (from, to) => from !== to && onArrange(refill(links, shown, moved(shown, from, to))), "cards", {
     zone: zone.id,
     thing: (i) => shown[i],
-    remove: (i) => (own(shown[i]) ? null : () => onTakeAway(shown[i])),
+    remove: (i) => (shown[i].own ? null : () => onTakeAway(shown[i])),
   });
   useFlip(box, true);
   // Drawn as they'd be if what's dragged were let go now: moved among them, or a slot for it.
@@ -654,7 +653,7 @@ export function LinksPage({ course, links, syllabus, onArrange, onSay }: {
   const menu = (e: Shown): MenuItem[] => sections(things.ways(e), [
     { label: t("重命名"), onSelect: () => setRenaming(e) },
     ...(e.title ? [{ label: t("恢复原名"), onSelect: () => onArrange(changed(links, e, { title: "" })) }] : []),
-    ownIn("links", e, course.id)
+    e.own
       ? { label: t("隐藏“{name}”", { name: thingName(e, things.courses) }), onSelect: () => onArrange(changed(links, e, { hidden: true })) }
       : { label: t("删除链接"), danger: true, onSelect: () => takeAway(e) },
   ], [pinItem(things, e)]);

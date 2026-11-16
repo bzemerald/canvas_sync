@@ -36,8 +36,10 @@ export type ThingOf<T extends Thing["type"]> = Extract<Thing, { type: T }>;
 
 /** A thing in a place, as the backend lists it: your name for it there ("": its own), whether it's
  * hidden there; what it's called by itself now (what Canvas or the sync folder calls it; null for
- * what the app names), whether it's still there, the course it's in. */
-export type Placed = Thing & { title: string; hidden: boolean; name: string | null; exists: boolean; in_course: number | null };
+ * what the app names), whether it's still there, the course it's in. `own`: one of the place's own
+ * things (a course's views are its tabs' and its overview's; its tools, syllabus and Canvas its
+ * 工具与链接's: places.py): hidden, never taken away. The rest was put there, and can be taken away. */
+export type Placed = Thing & { title: string; hidden: boolean; name: string | null; exists: boolean; in_course: number | null; own: boolean };
 /** A thing in a place, or on its way there (just put there, or dragged: what's known of it). */
 export type Shown = Thing & Partial<Omit<Placed, keyof Thing>>;
 
@@ -100,18 +102,6 @@ export function ofCourse(t: Thing, course: { id: number; dir: string }): boolean
   }
 }
 
-/** What each of a course's places has of its own (as places.py has it): hidden, never taken away.
- * The rest was put there, and can be taken away again. */
-const OWN_VIEWS: Record<"tabs" | "overview" | "links", ViewName[]> = {
-  tabs: ["overview", "modules", "announcements", "ed", "assignments", "grades", "files", "syllabus", "pages"],
-  overview: ["assignments", "announcements", "ed", "modules", "files", "grades", "tools", "syllabus"],
-  links: ["syllabus", "canvas"], // (and the course's tools)
-};
-export function ownIn(place: "tabs" | "overview" | "links", t: Thing, course: number): boolean {
-  if (courseOf(t) !== course) return false;
-  return t.type === "view" ? OWN_VIEWS[place].includes(t.view) : place === "links" && t.type === "tool";
-}
-
 /** Things that open somewhere else when you open them: a file in its app; a tool, a link or the
  * course on Canvas in the browser; a course on its own page. A tab of one opens it. */
 export const opensElsewhere = (t: Thing) =>
@@ -138,11 +128,12 @@ export function thingOfItem(it: ModuleItem, course: number): Thing | null {
 
 const at = (list: Thing[], t: Thing) => list.findIndex((x) => same(x, t));
 
-/** `entry` put at `index` (it's there already: moved there, shown). */
+/** `entry` put at `index` (it's there already: moved there, shown). New there, it isn't the
+ * place's own, wherever it came from: a place's own things are always in its list. */
 export function putAt<E extends Shown>(list: E[], entry: E, index: number): E[] {
   const was = at(list, entry);
   const rest = was < 0 ? list : list.filter((_, i) => i !== was);
-  const kept = was < 0 ? entry : { ...list[was], hidden: false };
+  const kept = was < 0 ? { ...entry, own: false } : { ...list[was], hidden: false };
   const i = Math.max(0, Math.min(was >= 0 && was < index ? index - 1 : index, rest.length));
   return [...rest.slice(0, i), kept, ...rest.slice(i)];
 }

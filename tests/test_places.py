@@ -206,12 +206,18 @@ def test_putting_things_in_places(root, tmp_path, fake: FakeCanvas):
         usual_ = api.get("/api/courses/1/layout").json()
         assert usual_["own"] == {"tabs": False, "overview": False, "links": False}
         assert usual_["tabs"][0] == {"type": "view", "course": 1, "view": "overview", "title": "", "hidden": False,
-                                     "name": None, "exists": True, "in_course": 1}
+                                     "name": None, "exists": True, "in_course": 1, "own": True}
+        # Each place says which things are its own (the rest were put there): 工具与链接's are the
+        # course's tools, its syllabus and Canvas; 工具与链接 itself is a card's, not a tab's.
+        assert [e["own"] for e in usual_["links"]] == [True, True, True]
+        assert {e["view"]: e["own"] for e in usual_["overview"] if e["type"] == "view"}["tools"] is True
+        assert all(e["own"] for e in usual_["tabs"]) and all(e["view"] != "tools" for e in usual_["tabs"])
         assert [(e.get("view") or e["tool"], e["name"]) for e in usual_["links"]] == [(5, "Gradescope"), ("syllabus", None),
                                                                                        ("canvas", None)]
         # Added after the default ones: it still follows the default.
         r = api.put("/api/courses/1/layout/tabs", json={"entries": [*usual_["tabs"], {**page, "title": "Syllabus"}]}).json()
         assert not r["own"]["tabs"] and (r["tabs"][-1]["name"], r["tabs"][-1]["title"]) == ("Schedule", "Syllabus")
+        assert r["tabs"][-1]["own"] is False  # (put there: it can be taken away)
         # Put among them, renamed, hidden: arranged for this course.
         tabs = r["tabs"]
         moved = [tabs[0], tabs[-1], {**tabs[1], "title": "Weeks"}, {**tabs[2], "hidden": True}, *tabs[3:-1]]

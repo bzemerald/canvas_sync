@@ -347,7 +347,8 @@ def test_names_from_folders_become_titles_once(root, fake):
 
 def test_api_rename_and_pin(api, root):
     assert api.put("/api/pinned", json={"entries": [{"type": "folder", "path": WEEK1}]}).json() == [
-        {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1}
+        {"type": "folder", "path": WEEK1, "title": "", "hidden": False, "name": "01 Week 1", "exists": True, "in_course": 1,
+         "own": False}
     ]
     assert api.post("/api/rename", json={"path": WEEK1, "name": "Week One"}).status_code == 200
     assert api.get("/api/pinned").json()[0]["path"] == WEEK1
@@ -366,7 +367,8 @@ def test_pinned_courses(api, root):
     cfg = root / ".canvas/config.toml"
     # A course's own folder pinned is the course.
     save_pinned(cfg, [Entry(Thing("folder", path=COURSE))])
-    course = {"type": "course", "course": 1, "title": "", "hidden": False, "name": "MATH 221", "exists": True, "in_course": 1}
+    course = {"type": "course", "course": 1, "title": "", "hidden": False, "name": "MATH 221", "exists": True, "in_course": 1,
+              "own": False}
     assert api.get("/api/pinned").json() == [course]
     assert 'type = "course"' in cfg.read_text(encoding="utf-8")
     api.put("/api/courses/1/title", json={"title": "Linear Algebra"})

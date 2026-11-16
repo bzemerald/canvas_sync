@@ -110,7 +110,7 @@ def course_layout(e: Engine, prefs: AppPrefs, course_id: int) -> dict[str, Any]:
     out: dict[str, Any] = {"own": {}}
     for name in PLACES:
         p, stored = course_place(e, prefs, course_id, name), getattr(own, name)
-        out[name] = describe(p.arranged(stored), e)
+        out[name] = describe(p.arranged(stored), e, p)
         out["own"][name] = p.is_arranged(stored)
     return out
 
@@ -144,10 +144,11 @@ def fill(base: list[Entry], default: list[Entry]) -> list[Entry]:
     return out
 
 
-def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
+def describe(entries: list[Entry], e: Engine, place: Place | None = None) -> list[dict[str, Any]]:
     """Entries as the app shows them: each with what its thing is called now (`name`: what Canvas
-    or the sync folder calls it; None for what the app names), whether it's still there, and the
-    course it's in."""
+    or the sync folder calls it; None for what the app names), whether it's still there, the
+    course it's in, and whether it's one of `place`'s own things (`own`: hidden, never taken
+    away; 置顶, no place of a course's, has none)."""
     courses = {c.id: c for c in e.state.courses()}
     dirs = e.layout.course_dirs(courses.values())
     tools: dict[int, dict[int, str | None]] = {}
@@ -180,7 +181,8 @@ def describe(entries: list[Entry], e: Engine) -> list[dict[str, Any]]:
             if t.course not in tools:
                 tools[t.course] = {x["id"]: x["label"] for x in content.tools(e.state, t.course)}
             name, exists = tools[t.course].get(t.tool or 0), t.tool in tools[t.course]
-        out.append({**entry.to_dict(), "name": name, "exists": exists, "in_course": course})
+        out.append({**entry.to_dict(), "name": name, "exists": exists, "in_course": course,
+                    "own": place is not None and place.own(t)})
     return out
 
 

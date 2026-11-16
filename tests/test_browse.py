@@ -252,7 +252,8 @@ def test_api_sync_with_no_files_to_fetch_still_stores_the_rest(api, fake):
 def test_api_smart_folders_thumbs_and_preview(api, root):
     folder = {"type": "search", "query": "lec2", "courses": [1], "kinds": ["file"], "content": False}
     [got] = api.put("/api/pinned", json={"entries": [{**folder, "title": "Week 2"}]}).json()
-    assert got == {**folder, "title": "Week 2", "hidden": False, "name": None, "exists": True, "in_course": None}
+    assert got == {**folder, "title": "Week 2", "hidden": False, "name": None, "exists": True, "in_course": None,
+                   "own": False}
     assert api.put("/api/pinned", json={"entries": [{**folder, "kinds": ["movie"]}]}).status_code == 400
     assert api.put("/api/pinned", json={"entries": []}).json() == []
 

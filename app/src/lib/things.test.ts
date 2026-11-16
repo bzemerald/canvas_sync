@@ -18,3 +18,15 @@ describe("a hidden tab brought back", () => {
     expect(views(back(pages))).toEqual([["overview", false], ["grades", true], ["files", false], ["pages", false]]);
   });
 });
+
+describe("what a place has of its own", () => {
+  const tools: Shown = { ...view(1, "tools"), own: true }; // (as the overview has it: one of its cards)
+  const overview: Shown = { ...tab("overview"), own: true };
+
+  it("stays its own when moved within the place", () => {
+    expect(putAt([overview, tab("files")], overview, 2).map((x) => x.own)).toEqual([undefined, true]);
+  });
+  it("isn't the next place's own for having been another's: put there, it can be taken away", () => {
+    expect(putAt([overview], tools, 1).map((x) => x.own)).toEqual([true, false]);
+  });
+});
