@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import content
+from .config import AppPrefs, CourseLayout, save_pinned, set_courses_hidden
 from .courses import course_label
 from .paths import under
-from .things import Entry, Thing, at_home, course_thing, once, view
+from .things import PLACES, Entry, Thing, at_home, course_thing, once, view
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -90,6 +91,40 @@ class Place:
     def settle(self, stored: list[Entry]) -> list[Entry]:
         """What to keep of an arrangement: just what was added, when that comes to the same."""
         return self.added(stored) if self.arranged(self.added(stored)) == self.arranged(stored) else stored
+
+
+def course_place(e: Engine, prefs: AppPrefs, course_id: int, name: str) -> Place:
+    """One of a course's places as it is now: with the course's tools (工具与链接), the default
+    arrangement (app.toml's; the usual, until it has one) and the course's folder."""
+    tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
+    default = (getattr(prefs, name) or usual(name)) if name in ("tabs", "overview") else []
+    course = e.state.course(course_id)
+    return Place(name, course_id, tools, default, e.layout.course_dir(course).as_posix() if course else None)
+
+
+def course_layout(e: Engine, prefs: AppPrefs, course_id: int) -> dict[str, Any]:
+    """A course's page: its tabs, overview and 工具与链接, each with all it holds, in order, as
+    the app shows them (`describe`). `own`: which of them are arranged for the course (the others
+    follow the default)."""
+    own = e.settings.course_layouts.get(course_id) or CourseLayout()
+    out: dict[str, Any] = {"own": {}}
+    for name in PLACES:
+        p, stored = course_place(e, prefs, course_id, name), getattr(own, name)
+        out[name] = describe(p.arranged(stored), e)
+        out["own"][name] = p.is_arranged(stored)
+    return out
+
+
+def hide_courses(e: Engine, course_ids: list[int], hidden: bool, syncing: bool | None = None) -> None:
+    """Hide courses in the app, or show them again (`syncing`: whether they sync, too; see
+    config.set_courses_hidden). A hidden course isn't on show anywhere: it's unpinned, and so is
+    what's pinned from it."""
+    if hidden:
+        items = e.settings.pinned
+        shown = [x for x, d in zip(items, describe(items, e)) if d["in_course"] not in course_ids]
+        if shown != items:
+            save_pinned(e.config_file, shown)
+    set_courses_hidden(e.config_file, course_ids, hidden, syncing=syncing)
 
 
 def fill(base: list[Entry], default: list[Entry]) -> list[Entry]:

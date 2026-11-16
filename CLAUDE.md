@@ -53,6 +53,7 @@ without the Canvas website or Finder.
   - `meaning.py`: search by meaning (English; off unless turned on in 设置: a small model is
     downloaded to the app's folder, `models/`; passages and their vectors go in index.db).
   - `content.py`: what the app shows (overview, items, modules, tools).
+  - `notes.py`: the notes typed in the app (`.canvas/notes`).
   - `server.py`: the app's HTTP API (`canvas serve`). Its routes stay thin: what they do is in
     the modules, so the command line and `agent.py` get the same answers.
   - `agent.py`: `canvas mcp`, the courses for an AI assistant over MCP (the `mcp` SDK, 2.x:

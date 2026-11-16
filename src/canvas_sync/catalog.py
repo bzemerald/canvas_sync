@@ -14,13 +14,12 @@ the app's query.ts reads as narrowing search to it).
 from __future__ import annotations
 
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from . import content
+from . import content, notes
 from .courses import code_keys, course_label, normalized
 from .documents import canvas_copy, doc_url
-from .paths import note_file
 from .search import DEFAULT_ABBREVIATIONS
 from .things import DOC_KINDS, VIEWS, Entry, Thing, course_thing, view
 
@@ -151,19 +150,10 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
             if entry.title not in d["aliases"]:
                 d["aliases"].append(entry.title)
         if t.type == "note" and t.course is not None and t.id and "text" not in d:
-            d["text"] = _note_start(note_file(e.root, t.course, t.id))
+            d["text"] = notes.start(e.root, t.course, t.id)
     return list(out.values())
 
 
 def abbreviations(e: Engine) -> dict[str, list[str]]:
     """What words stand for in search: the built-in abbreviations, and yours (config.toml)."""
     return {**DEFAULT_ABBREVIATIONS, **e.settings.abbreviations}
-
-
-def _note_start(path: Path) -> str:
-    """A note's first line (what it's about), for finding it by."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    return next((line.strip() for line in text.splitlines() if line.strip()), "")[:120]

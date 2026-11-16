@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from . import assistants, ed, meaning
+from . import assistants, ed, meaning, notes
 from .sync import other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
@@ -43,16 +43,16 @@ from .content import news, news_counts
 from .api import Auth, CanvasClient, CanvasError, parse_json, signed_out
 from .discover import FILE_REF
 from .config import (
-    PREFS_FILE, Account, AppPrefs, ConfigError, CourseLayout, add_titles, migrate, needs_migration, needs_titles,
+    PREFS_FILE, Account, AppPrefs, ConfigError, add_titles, migrate, needs_migration, needs_titles,
     save_course_place, save_pinned,
-    save_sidebar_order, set_course_icon, set_course_select, set_courses_hidden, set_courses_syncing, set_ed_courses,
+    save_sidebar_order, set_course_icon, set_course_select, set_courses_syncing, set_ed_courses,
 )
 from .engine import Engine, migrate_folder_names
 from .layout import titles_of_folders
 from .local import inside as in_folder
-from .local import MoveError, move_sync_folder, open_path, write_whole
-from .paths import META_DIR, config_file, note_file
-from .places import Place, as_course, describe, usual
+from .local import MoveError, move_sync_folder, open_path
+from .paths import META_DIR, config_file
+from .places import as_course, course_layout, course_place, describe, hide_courses
 from .plan import TRANSFERS, Kind, Scope
 from .courses import course_label
 from .things import NOTE_ID, PLACES, Entry, once, parse_entry
@@ -983,44 +983,20 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
                 raise HTTPException(404, str(err))
 
     def hide(course_ids: list[int], req: HideRequest) -> None:
-        if req.hidden:
-            # A hidden course isn't on show anywhere: it's unpinned, and so is what's pinned from it.
-            with engine() as e:
-                items = e.settings.pinned
-                shown = [x for x, d in zip(items, describe(items, e)) if d["in_course"] not in course_ids]
-            if shown != items:
-                save_pinned(config(), shown)
-        set_courses_hidden(config(), course_ids, req.hidden, syncing=req.syncing)
-
-    # -- a course's page, arranged ------------------------------------------------------------
-
-    def place(e: Engine, course_id: int, name: str) -> Place:
-        tools = [t["id"] for t in content.tools(e.state, course_id)] if name == "links" else []
-        default = (prefs().tabs or usual("tabs")) if name == "tabs" else (prefs().overview or usual("overview")) if name == "overview" else []
-        course = e.state.course(course_id)
-        return Place(name, course_id, tools, default, e.layout.course_dir(course).as_posix() if course else None)
-
-    def own_layout(e: Engine, course_id: int) -> CourseLayout:
-        return e.settings.course_layouts.get(course_id) or CourseLayout()
-
-    def layout_of(course_id: int) -> dict[str, Any]:
-        """The course's page: its tabs, overview and 工具与链接, each with all it holds, in order."""
         with engine() as e:
-            own = own_layout(e, course_id)
-            out: dict[str, Any] = {"own": {}}
-            for name in PLACES:
-                p, stored = place(e, course_id, name), getattr(own, name)
-                out[name] = describe(p.arranged(stored), e)
-                out["own"][name] = p.is_arranged(stored)  # (else it follows the default)
-            return out
+            hide_courses(e, course_ids, req.hidden, req.syncing)
+
+    # -- a course's page, arranged (places.py) ------------------------------------------------
 
     def known(name: str) -> None:
         if name not in PLACES:
             raise HTTPException(404, f"places are {PLACES}")
 
     @api.get("/courses/{course_id}/layout")
-    def course_layout(course_id: int) -> dict[str, Any]:
-        return layout_of(course_id)
+    def layout_of(course_id: int) -> dict[str, Any]:
+        """The course's page: its tabs, overview and 工具与链接, each with all it holds, in order."""
+        with engine() as e:
+            return course_layout(e, prefs(), course_id)
 
     @api.put("/courses/{course_id}/layout/{name}")
     def arrange_course(course_id: int, name: str, req: PlaceRequest) -> dict[str, Any]:
@@ -1029,31 +1005,27 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         known(name)
         items = place_entries(req, course_id)
         with engine() as e:
-            p = place(e, course_id, name)
+            p = course_place(e, prefs(), course_id, name)
             if other := [x.thing.to_dict() for x in items if not p.holds(x.thing)]:
                 raise HTTPException(400, f"not this course's: {other}")  # (its places hold only its things)
             save_course_place(config(), course_id, name, p.settle(items))
         return layout_of(course_id)
 
-    def note_at(course_id: int, note: str) -> Path:
+    def note_id(note: str) -> str:
         if not NOTE_ID.fullmatch(note):
             raise HTTPException(400, "not a note id")
-        assert account is not None
-        return note_file(account.root, course_id, note)
+        return note
 
     @api.get("/courses/{course_id}/notes/{note}")
     def read_note(course_id: int, note: str) -> dict[str, str]:
-        f = note_at(course_id, note)
-        return {"text": f.read_text(encoding="utf-8") if f.exists() else ""}
+        return {"text": notes.read(account.root, course_id, note_id(note))}
 
     @api.put("/courses/{course_id}/notes/{note}")
     def write_note(course_id: int, note: str, req: NoteRequest) -> dict[str, str]:
         """A note card's text, as typed (kept in the sync folder, under .canvas/notes)."""
         if len(req.text) > 1_000_000:
             raise HTTPException(413, "too long")
-        f = note_at(course_id, note)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        write_whole(f, req.text)
+        notes.write(account.root, course_id, note_id(note), req.text)
         return {"text": req.text}
 
     @api.post("/courses/{course_id}/hide")
@@ -1064,7 +1036,7 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             return {"hidden": course_id in e.settings.hidden, "excluded": course_id in e.settings.exclude}
 
     @api.post("/courses/hide")
-    def hide_courses(req: HideRequest) -> dict[str, Any]:
+    def hide_several(req: HideRequest) -> dict[str, Any]:
         """The same for several courses (a whole term)."""
         hide(req.courses, req)
         with engine() as e:
