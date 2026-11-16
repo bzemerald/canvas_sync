@@ -35,28 +35,31 @@ if (!notes(changelog, "Unreleased")) {
 const now = new Date();
 const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
 
-// Where the version is written: each pattern's first group is what comes before it.
+// Where the version is written: each pattern's first group is what comes before it. (Line ends
+// may be \r\n: a Windows checkout's.)
 const files = [
   ["app/src-tauri/tauri.conf.json", /^(\s*"version": ")[^"]+/m], // (what Check for updates compares)
   ["app/package.json", /^(\s*"version": ")[^"]+/m],
   ["app/package-lock.json", /^(\s*"version": ")[^"]+/m], // (the top, then the root package's)
   ["app/package-lock.json", /("packages": \{\s*"": \{\s*"name": "canvas-desktop",\s*"version": ")[^"]+/],
   ["app/src-tauri/Cargo.toml", /^(version = ")[^"]+/m],
-  ["app/src-tauri/Cargo.lock", /(name = "canvas-desktop"\nversion = ")[^"]+/],
+  ["app/src-tauri/Cargo.lock", /(name = "canvas-desktop"\r?\nversion = ")[^"]+/],
   ["pyproject.toml", /^(version = ")[^"]+/m],
   ["src/canvas_sync/__init__.py", /^(__version__ = ")[^"]+/m],
 ];
+// Every file is changed in memory first: one without its version stops the release before
+// anything is written.
+const changed = new Map([[CHANGELOG, dated(changelog, version, today)]]);
 for (const [file, pattern] of files) {
   const path = join(repo, file);
-  const text = readFileSync(path, "utf8");
+  const text = changed.get(path) ?? readFileSync(path, "utf8");
   if (!pattern.test(text)) {
-    console.error(`no version found in ${file}`);
+    console.error(`no version found in ${file}; nothing was changed`);
     process.exit(1);
   }
-  writeFileSync(path, text.replace(pattern, `$1${version}`));
+  changed.set(path, text.replace(pattern, `$1${version}`));
 }
-
-writeFileSync(CHANGELOG, dated(changelog, version, today));
+for (const [path, text] of changed) writeFileSync(path, text);
 
 git("add", "CHANGELOG.md", ...new Set(files.map(([f]) => f)));
 git("commit", "-m", `Version ${version}`);
