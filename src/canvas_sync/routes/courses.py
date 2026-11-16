@@ -110,25 +110,25 @@ def routes(b: Backend) -> APIRouter:
     @r.get("/courses/{course_id}/overview")
     def course_overview(course_id: int) -> dict[str, Any]:
         with b.engine() as e:
-            return content.overview(e.state, e.root, course_id, layout=e.layout)
+            return content.CourseContent.of(e, course_id).overview()
 
     @r.get("/courses/{course_id}/modules")
     def course_modules(course_id: int) -> list[dict[str, Any]]:
         with b.engine() as e:
-            return content.modules(e.state, e.root, e.layout, course_id)
+            return content.CourseContent.of(e, course_id).modules()
 
     @r.get("/courses/{course_id}/items")
     def course_items(course_id: int, kind: str) -> list[dict[str, Any]]:
         if kind not in content.KINDS:
             raise HTTPException(400, f"kind must be one of {content.KINDS}")
         with b.engine() as e:
-            return content.items(e.state, e.root, course_id, kind)
+            return content.CourseContent.of(e, course_id).items(kind)
 
     @r.get("/courses/{course_id}/ed")
     def course_ed(course_id: int) -> list[dict[str, Any]]:
         """Everything the course has on Ed (the `ed` view's list), each the kind it is."""
         with b.engine() as e:
-            return content.ed_items(e.state, e.root, course_id)
+            return content.CourseContent.of(e, course_id).ed_items()
 
     @r.get("/courses/{course_id}/items/{kind}/{doc_id}")
     async def course_item(course_id: int, kind: str, doc_id: str) -> dict[str, Any]:
@@ -139,7 +139,7 @@ def routes(b: Backend) -> APIRouter:
         with b.engine() as e:
             if content.on_ed(kind, doc_id) and account.ed_region and (ed_token := account.ed_token()):
                 await ed.fetch_replies(e, ed_token, account.ed_region, course_id, kind, doc_id)
-            found = content.item(e.state, e.root, course_id, kind, doc_id)
+            found = content.CourseContent.of(e, course_id).item(kind, doc_id)
             if found is not None:
                 e.state.mark_seen(course_id, [(kind, doc_id)])
         if found is None:
@@ -149,7 +149,7 @@ def routes(b: Backend) -> APIRouter:
     @r.get("/courses/{course_id}/grades")
     def course_grades(course_id: int) -> dict[str, Any]:
         with b.engine() as e:
-            return content.grades(e.state, e.root, course_id)
+            return content.CourseContent.of(e, course_id).grades()
 
     @r.post("/courses/{course_id}/seen")
     def course_seen(course_id: int, req: SeenRequest | None = None) -> dict[str, int]:

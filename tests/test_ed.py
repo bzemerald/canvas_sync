@@ -163,7 +163,7 @@ def test_pull_on_the_command_line_syncs_ed_too(root, linked, web, monkeypatch):
     result = CliRunner().invoke(cli.app, ["pull"])
     assert result.exit_code == 0, result.output
     with Engine(root) as e:
-        assert [x["title"] for x in content.items(e.state, e.root, 1, "post")] == ["HW 3 megathread"]
+        assert [x["title"] for x in content.CourseContent(e.state, e.root, 1).items("post")] == ["HW 3 megathread"]
         assert [h.title for h in e.search("megathread")] == ["HW 3 megathread"]  # (and indexed)
 
 
@@ -202,22 +202,22 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
     assert ed_sync(root) is None
 
     with Engine(root) as e:
-        items = content.items(e.state, e.root, 1, "announcement")
+        items = content.CourseContent(e.state, e.root, 1).items("announcement")
         assert [(a["id"], a["title"]) for a in items] == [("ed-9001", "HW 3 deadline moved"), ("9", "Welcome"), ("ed-9004", "Welcome")]
         a = items[0]
         assert a["date"] == "2026-10-15T23:00:00Z"  # (as Canvas writes times: they sort together)
         assert a["author"] == "Prof Ed" and a["source"] == "ed"
         assert a["url"] == "https://edstem.org/au/courses/501/discussion/9001"
-        it = content.item(e.state, e.root, 1, "announcement", "ed-9001")
+        it = content.CourseContent(e.state, e.root, 1).item("announcement", "ed-9001")
         assert it["html"] == ('<p>HW 3 is due <strong>Friday</strong>; see '
                               '<a href="https://x.edu/hw3">the spec</a>.</p>')
         # Ed lists it all, each the kind it is; what's a copy of the Canvas announcement isn't news.
-        on_ed = {p["id"]: p["kind"] for p in content.ed_items(e.state, e.root, 1)}
+        on_ed = {p["id"]: p["kind"] for p in content.CourseContent(e.state, e.root, 1).ed_items()}
         assert on_ed == {"ed-9001": "announcement", "ed-9002": "post", "ed-9003": "announcement", "ed-9004": "announcement", "ed-9005": "post", "ed-9006": "post"}
         assert next(iter(on_ed)) == "ed-9005"  # (pinned first)
-        assert {p["id"] for p in content.items(e.state, e.root, 1, "post")} == {"ed-9002", "ed-9006"}  # (a kind is that kind; 9005 is staff's, so Canvas's too)
-        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 6
-        assert content.overview(e.state, e.root, 1)["counts"]["announcements"] == 3
+        assert {p["id"] for p in content.CourseContent(e.state, e.root, 1).items("post")} == {"ed-9002", "ed-9006"}  # (a kind is that kind; 9005 is staff's, so Canvas's too)
+        assert content.CourseContent(e.state, e.root, 1).overview()["counts"]["ed"] == 6
+        assert content.CourseContent(e.state, e.root, 1).overview()["counts"]["announcements"] == 3
         assert not {"ed-9003", "ed-9005"} & {i for ids in content.news(e.state, e.root, 1).values() for i in ids}
         names = [x.get("name") for x in catalog(e) if x["type"] == "doc" and x.get("id", "").startswith("ed-")]
         assert "welcome!" not in names  # (by name, the Canvas announcement)
@@ -230,7 +230,7 @@ def test_ed_announcements_are_the_courses(root, fake, linked):
     pull(root, fake)
     ed_sync(root)
     with Engine(root) as e:
-        assert {a["id"] for a in content.items(e.state, e.root, 1, "announcement")} == {"ed-9001", "9", "ed-9004"}
+        assert {a["id"] for a in content.CourseContent(e.state, e.root, 1).items("announcement")} == {"ed-9001", "9", "ed-9004"}
 
 
 def test_an_announcement_stays_what_it_is_when_it_turns_up_on_canvas_too(root, fake, linked):
@@ -240,8 +240,8 @@ def test_an_announcement_stays_what_it_is_when_it_turns_up_on_canvas_too(root, f
     linked.reply(501, 9001, "Which building?")
     ed_sync(root)
     with Engine(root) as e:
-        assert [a["id"] for a in content.items(e.state, e.root, 1, "announcement")] == ["ed-9001"]
-        before = content.item(e.state, e.root, 1, "announcement", "ed-9001")["replies"]
+        assert [a["id"] for a in content.CourseContent(e.state, e.root, 1).items("announcement")] == ["ed-9001"]
+        before = content.CourseContent(e.state, e.root, 1).item("announcement", "ed-9001")["replies"]
     assert len(before) == 1
     linked.requests.clear()
     fake.announcements.append({"id": 9, "title": "Exam room", "message": "<p>In 101</p>", "posted_at": "2026-10-10T00:00:00Z",
@@ -249,9 +249,9 @@ def test_an_announcement_stays_what_it_is_when_it_turns_up_on_canvas_too(root, f
     pull(root, fake)
     ed_sync(root)
     with Engine(root) as e:
-        assert content.item(e.state, e.root, 1, "announcement", "ed-9001")["replies"] == before  # (still there, as it was)
-        assert [a["id"] for a in content.items(e.state, e.root, 1, "announcement")] == ["9"]
-        assert {p["id"]: p["kind"] for p in content.ed_items(e.state, e.root, 1)} == {"ed-9001": "announcement"}
+        assert content.CourseContent(e.state, e.root, 1).item("announcement", "ed-9001")["replies"] == before  # (still there, as it was)
+        assert [a["id"] for a in content.CourseContent(e.state, e.root, 1).items("announcement")] == ["9"]
+        assert {p["id"]: p["kind"] for p in content.CourseContent(e.state, e.root, 1).ed_items()} == {"ed-9001": "announcement"}
     assert not [r for r in linked.requests if "/threads/9001" in r]  # (its replies, kept: not asked for again)
 
 
@@ -275,13 +275,13 @@ def test_ed_going_wrong_keeps_what_came(root, linked):
     linked.threads[501][0].pop("category")  # Ed changed what it says
     assert ed_sync(root) == "Ed changed"
     with Engine(root) as e:
-        assert [a["id"] for a in content.items(e.state, e.root, 1, "announcement")] == ["ed-9001"]
+        assert [a["id"] for a in content.CourseContent(e.state, e.root, 1).items("announcement")] == ["ed-9001"]
 
     # A course that's no longer linked to its Ed course doesn't keep what came from there.
     set_ed_courses(root / ".canvas" / "config.toml", {1: 0})
     assert ed_sync(root) is None
     with Engine(root) as e:
-        assert content.items(e.state, e.root, 1, "announcement") == []
+        assert content.CourseContent(e.state, e.root, 1).items("announcement") == []
 
 
 def test_to_html():
@@ -304,15 +304,15 @@ def test_ed_posts_are_listed_with_what_else_is_on_ed(root, tmp_path, linked, web
     assert replies_fetched == ["edstem.org/api/threads/9001"]  # (the pinned megathread's; the question's: when opened)
 
     with Engine(root) as e:
-        posts = content.items(e.state, e.root, 1, "post")
+        posts = content.CourseContent(e.state, e.root, 1).items("post")
         assert [p["title"] for p in posts] == ["HW 3 megathread", "Is lecture recorded?", "Office hours moved"]  # pinned first
         assert posts[0]["ed"]["category"] == "Homework" and posts[0]["ed"]["staff"] and posts[0]["ed"]["replies"] == 1
-        o = content.overview(e.state, e.root, 1)
+        o = content.CourseContent(e.state, e.root, 1).overview()
         assert [p["title"] for p in o["ed"]] == ["HW 3 megathread", "Office hours moved"]  # pinned, then staff's
         assert o["counts"]["ed"] == 3
         # What's new: staff's and what's pinned, not every question.
         assert set(content.news(e.state, e.root, 1)["post"]) == {"ed-9001", "ed-9002"}
-        it = content.item(e.state, e.root, 1, "post", "ed-9001")
+        it = content.CourseContent(e.state, e.root, 1).item("post", "ed-9001")
         assert [(r["author"], r["staff"], r["html"]) for r in it["replies"]] == [("Prof Ed", True, "<p>Q2 has a typo: it's x^2</p>")]
 
     web["edstem:au"] = TOKEN
@@ -332,7 +332,7 @@ def test_ed_posts_are_listed_with_what_else_is_on_ed(root, tmp_path, linked, web
     ed_sync(root)
     assert [r for r in linked.requests if "/api/threads/" in r] == ["edstem.org/api/threads/9001"]
     with Engine(root) as e:
-        assert len(content.item(e.state, e.root, 1, "post", "ed-9001")["replies"]) == 2
+        assert len(content.CourseContent(e.state, e.root, 1).item("post", "ed-9001")["replies"]) == 2
 
 
 def test_ed_posts_are_found_and_go_anywhere_in_their_course(root, tmp_path, linked):

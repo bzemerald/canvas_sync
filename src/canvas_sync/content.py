@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import asdict
+from functools import cached_property
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -91,10 +92,6 @@ def tools(state: State, course_id: int) -> list[dict[str, Any]]:
         if t.get("type") == "external" and m and not t.get("hidden"):
             out.append({"id": int(m[1]), "label": t.get("label") or None, "url": relative_url(t.get("html_url"))})
     return out
-
-
-def _docs(state: State, course_id: int, kind: str | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
-    return [(d.kind, d.id, d.title, d.raw) for d in state.documents(course_id, kind or None)]
 
 
 # The views that count what's new in them: whether (kind, id) is in each.
@@ -184,18 +181,7 @@ def _file_there(rec: FileRecord | None, root: Path) -> bool:
 
 def news(state: State, root: Path, course_id: int) -> dict[str, dict[str, bool]]:
     """What's new to you in a course: kind -> {id: whether it's a new version (files)}."""
-    out: dict[str, dict[str, bool]] = {k: {} for k in NEWS_KINDS}
-    unseen = state.unseen(course_id)
-    if not unseen:
-        return out
-    docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
-    for (_, kind, i), updated in unseen.items():
-        if kind == "file":
-            if _file_there(state.get(int(i)), root):
-                out["file"][i] = updated  # (not one taken off Canvas since)
-        elif (kind, i) in docs and _still_new(kind, docs[(kind, i)]):
-            out[kind][i] = False
-    return out
+    return CourseContent(state, root, course_id).news
 
 
 def new_files(state: State, root: Path) -> list[str]:
@@ -219,40 +205,264 @@ def mark_seen(state: State, course_id: int, views: Iterable[str] | None = None) 
     state.mark_seen(course_id, [(k, i) for _, k, i in state.unseen(course_id) if any(h(k, i) for h in has)])
 
 
-def items(state: State, root: Path, course_id: int, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
-    """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
-    new = news(state, root, course_id).get(kind, {})
-    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, kind) if not canvas_copy(k, raw)]
-    if kind == "assignment":
-        # Upcoming soonest first, then past ones most recent first, then undated.
+Doc = tuple[str, str, str, dict[str, Any]]  # kind, id, title, what Canvas (or Ed) said of it
+
+
+class CourseContent:
+    """A course's content as the app shows it. Each part of what the last pull stored (its
+    documents, files, what's new) is read once, when first needed: make one per request.
+    `layout` is needed for modules (and the overview's 当前模块 card)."""
+
+    def __init__(self, state: State, root: Path, course_id: int, layout: Layout | None = None):
+        self.state, self.root, self.id, self.layout = state, root, course_id, layout
+
+    @classmethod
+    def of(cls, e: Engine, course_id: int) -> CourseContent:
+        return cls(e.state, e.root, course_id, e.layout)
+
+    # -- what's stored, read once ---------------------------------------------------------
+
+    @cached_property
+    def docs(self) -> list[Doc]:
+        return [(d.kind, d.id, d.title, d.raw) for d in self.state.documents(self.id)]
+
+    def docs_of(self, kind: str) -> list[Doc]:
+        return [d for d in self.docs if d[0] == kind]
+
+    @cached_property
+    def raw(self) -> dict[tuple[str, str], dict[str, Any]]:
+        """Each document as Canvas (or Ed) said it, by (kind, id)."""
+        return {(k, i): raw for k, i, _, raw in self.docs}
+
+    @cached_property
+    def files(self) -> list[FileRecord]:
+        return self.state.files_for_course(self.id)
+
+    @cached_property
+    def files_raw(self) -> dict[int, dict[str, Any]]:
+        return self.state.files_raw(self.id)
+
+    @cached_property
+    def unseen(self) -> dict[tuple[int, str, str], bool]:
+        return self.state.unseen(self.id)
+
+    @cached_property
+    def news(self) -> dict[str, dict[str, bool]]:
+        """What's new to you: kind -> {id: whether it's a new version (files)}."""
+        out: dict[str, dict[str, bool]] = {k: {} for k in NEWS_KINDS}
+        if not self.unseen:
+            return out
+        for (_, kind, i), updated in self.unseen.items():
+            if kind == "file":
+                if _file_there(self.state.get(int(i)), self.root):
+                    out["file"][i] = updated  # (not one taken off Canvas since)
+            elif (kind, i) in self.raw and _still_new(kind, self.raw[(kind, i)]):
+                out[kind][i] = False
+        return out
+
+    def _is_new(self, kind: str, doc_id: str, raw: dict[str, Any]) -> bool:
+        """Whether one document is in `news`, without reading the others."""
+        return kind in NEWS_KINDS and kind != "file" and (self.id, kind, doc_id) in self.unseen and _still_new(kind, raw)
+
+    # -- what the app asks for --------------------------------------------------------------
+
+    def items(self, kind: str, now: datetime | None = None) -> list[dict[str, Any]]:
+        """Summaries of one kind of item, in the order the app lists them (`now`: for what's upcoming)."""
+        new = self.news.get(kind, {})
+        out = [_summary(self.id, k, i, t, raw, i in new) for k, i, t, raw in self.docs_of(kind) if not canvas_copy(k, raw)]
+        if kind == "assignment":
+            # Upcoming soonest first, then past ones most recent first, then undated.
+            now = now or datetime.now(timezone.utc)
+            def order(a: dict[str, Any]) -> tuple[int, float]:
+                due = time_of(a["due_at"])
+                if due is None:
+                    return (2, 0)
+                return (0, due.timestamp()) if due >= now else (1, -due.timestamp())
+            out.sort(key=order)
+        elif kind == "page":
+            out.sort(key=lambda p: (not p["front_page"], p["title"].casefold()))
+        elif kind == "post":
+            out.sort(key=_ed_order)
+        else:
+            out.sort(key=lambda a: a.get("date") or "", reverse=True)
+        return out
+
+    def ed_items(self) -> list[dict[str, Any]]:
+        """Everything the course has on Ed, as Ed lists it, each the kind it is."""
+        new = self.news
+        return sorted((_summary(self.id, k, i, t, raw, i in new[k]) for k, i, t, raw in self.docs if on_ed(k, i)), key=_ed_order)
+
+    def item(self, kind: str, doc_id: str) -> dict[str, Any] | None:
+        """One item in full: its summary, its HTML, and the local copies of files it refers to."""
+        d = self.state.document(self.id, kind, doc_id)
+        if d is None:
+            return None
+        raw = d.raw
+        html = raw.get(DOC_BODY.get(kind, ""), "") or ""
+        attached = [a for a in raw.get("attachments") or [] if a.get("id")]
+        refs = list(dict.fromkeys([*file_refs(html, self.id), *(a["id"] for a in attached)]))
+        local = _local_files(self.state, self.root, refs)
+        thread = (raw.get("ed") or {}).get("thread")
+        return _summary(self.id, d.kind, d.id, d.title, raw, self._is_new(kind, d.id, raw)) | {
+            "replies": thread["replies"] if thread else None,  # (on Ed: its answers and comments, once fetched)
+            "html": html,
+            "files": local,  # Canvas file id -> local copy
+            "attachments": [
+                {"id": a["id"], "name": a.get("display_name") or a.get("filename") or str(a["id"]),
+                 "path": local.get(str(a["id"]), {}).get("path")}
+                for a in attached
+            ],
+        }
+
+    def overview(self, now: datetime | None = None) -> dict[str, Any]:
+        """What a course page opens with: what's due, what was said, what's new, how you're doing;
+        with a layout, this week's modules too (the 当前模块 card)."""
         now = now or datetime.now(timezone.utc)
-        def order(a: dict[str, Any]) -> tuple[int, float]:
-            due = time_of(a["due_at"])
-            if due is None:
-                return (2, 0)
-            return (0, due.timestamp()) if due >= now else (1, -due.timestamp())
-        out.sort(key=order)
-    elif kind == "page":
-        out.sort(key=lambda p: (not p["front_page"], p["title"].casefold()))
-    elif kind == "post":
-        out.sort(key=_ed_order)
-    else:
-        out.sort(key=lambda a: a.get("date") or "", reverse=True)
-    return out
+        docs, new = self.docs, self.news
+        count = {k: sum(d[0] == k and not canvas_copy(k, d[3]) for d in docs) for k in KINDS}
+        syllabus = next((raw for k, _, _, raw in docs if k == "syllabus"), None)
+
+        assignments = [_summary(self.id, k, i, t, raw, i in new["assignment"]) for k, i, t, raw in docs if k == "assignment"]
+        upcoming = sorted(
+            (a for a in assignments if (due := time_of(a["due_at"])) and now - timedelta(hours=12) <= due <= now + timedelta(days=21)),
+            key=lambda a: a["due_at"],
+        )
+        announcements = sorted(
+            (_summary(self.id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement" and not canvas_copy(k, raw)),
+            key=lambda a: a.get("date") or "", reverse=True,
+        )
+        on_ed_now = self.ed_items()
+        total = _total(self.state, self.id)
+        graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
+
+        files = []
+        for r in self.files:
+            if r.path and not r.ignored and (self.root / r.path).exists():
+                raw = self.files_raw[r.id]
+                files.append({"file_id": r.id, "path": r.path, "name": Path(r.path).name,
+                              "date": raw.get("created_at") or raw.get("updated_at"),
+                              "new": str(r.id) in new["file"], "updated": new["file"].get(str(r.id), False)})
+        # Newest uploads, and anything else new to you (a new version of an old file).
+        files.sort(key=lambda f: f["date"] or "", reverse=True)
+        shown = files[:8]
+        shown += [f for f in files[8:] if f["new"]][:8]
+
+        modules = self.state.modules(self.id)
+        out = {
+            "upcoming": upcoming[:8],
+            "announcements": announcements[:5],
+            # Of what's on Ed: what's pinned, announcements and what staff posted, not every question.
+            "ed": [p for p in on_ed_now if p["ed"]["pinned"] or p["ed"]["staff"] or p["kind"] == "announcement"][:5],
+            "new_files": shown,
+            "grades": {"total": total, "recent": graded[:3]},
+            "tools": tools(self.state, self.id),
+            "new": news_counts(new),
+            "counts": {
+                "modules": len(modules),
+                "announcements": count["announcement"],
+                "assignments": count["assignment"],
+                "pages": count["page"],
+                "ed": len(on_ed_now),
+                "files": len(files),
+                "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
+                "grades": total is not None or bool(graded),
+            },
+        }
+        if self.layout is not None:
+            out["current_modules"] = [m for m in self.modules(now, modules) if m["current"]][:2]
+        return out
+
+    def grades(self) -> dict[str, Any]:
+        """Your total as Canvas computes it, and each assignment's grade, latest due first."""
+        new = self.news["assignment"]
+        out = [_summary(self.id, k, i, t, raw, i in new) for k, i, t, raw in self.docs_of("assignment")
+               if raw.get("grading_type") != "not_graded"]
+        dated = sorted((a for a in out if a["due_at"]), key=lambda a: a["due_at"], reverse=True)
+        return {"total": _total(self.state, self.id), "assignments": dated + [a for a in out if not a["due_at"]]}
+
+    def modules(self, now: datetime | None = None, raw_modules: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """The course's modules, each item saying where it leads in the app: a local file, a
+        page / assignment / announcement shown here, a web link, or the item on Canvas."""
+        assert self.layout is not None, "modules need the layout (CourseContent.of)"
+        layout, root, course_id = self.layout, self.root, self.id
+        now = now or datetime.now(timezone.utc)
+        course = self.state.course(course_id)
+        if raw_modules is None:
+            raw_modules = self.state.modules(course_id)
+        if course is None or not raw_modules:
+            return []
+        docs = self.raw
+        files = {r.id: r for r in self.files}
+        new = self.news
+        created = {fid: raw.get("created_at") or raw.get("updated_at") or "" for fid, raw in self.files_raw.items()}
+
+        def target(item: dict[str, Any]) -> dict[str, Any]:
+            kind, cid = item.get("type"), item.get("content_id")
+            canvas = relative_url(item.get("html_url"))
+            if kind == "File" and cid in files:
+                rec = files[cid]
+                if rec.ignored:
+                    return {"deleted": True, "url": canvas}
+                if rec.path and (root / rec.path).exists():
+                    return {"file": rec.path}
+                return {"url": canvas or file_url(course_id, cid)}
+            if kind == "Page" and ("page", item.get("page_url")) in docs:
+                return {"doc": {"kind": "page", "id": item["page_url"]}}
+            if kind == "Assignment" and ("assignment", str(cid)) in docs:
+                return {"doc": {"kind": "assignment", "id": str(cid)},
+                        "due_at": docs[("assignment", str(cid))].get("due_at")}
+            if kind == "Discussion" and ("announcement", str(cid)) in docs:
+                return {"doc": {"kind": "announcement", "id": str(cid)}}
+            if kind == "ExternalUrl" and item.get("external_url"):
+                return {"external": item["external_url"]}
+            if kind == "ExternalTool" and item.get("id"):
+                return {"tool": {"module_item_id": item["id"], "name": tool_name(item.get("external_url"))},
+                        **({"url": canvas} if canvas else {})}
+            return {"url": canvas} if canvas else {}
+
+        # "Current": the module with the newest upload, and the one with the next deadline.
+        newest = max(((created.get(i.get("content_id"), ""), m["id"]) for m in raw_modules for i in m.get("items") or []
+                      if i.get("type") == "File"), default=("", None))[1]
+        soonest: tuple[datetime, Any] | None = None
+        out = []
+        for m in raw_modules:
+            items = []
+            for it in m.get("items") or []:
+                t = target(it)
+                if (due := time_of(t.get("due_at"))) and due >= now and (soonest is None or due < soonest[0]):
+                    soonest = (due, m["id"])
+                title = it.get("title")
+                if not title and it.get("type") == "File" and it.get("content_id") in files:
+                    title = files[it["content_id"]].name
+                fresh = False
+                if "file" in t:
+                    fresh = str(it.get("content_id")) in new["file"]
+                elif "doc" in t:
+                    fresh = t["doc"]["id"] in new.get(t["doc"]["kind"], {})
+                items.append({
+                    "id": it.get("id"), "type": it.get("type"), "title": title or "", "indent": it.get("indent") or 0,
+                    "done": bool((it.get("completion_requirement") or {}).get("completed")), "new": fresh, **t,
+                })
+            name = m.get("name") or "Module"
+            folder = (
+                layout.course_dir(course) / layout.s.view_dirs.get("modules", "modules")
+                / sanitize(f"{m.get('position', 0):02d} {name}")
+            )
+            out.append({
+                "id": m["id"], "name": name, "position": m.get("position") or 0,
+                "unlock_at": m.get("unlock_at"), "state": m.get("state"),  # Canvas's: locked / unlocked / started / completed
+                "folder": folder.as_posix() if (root / folder).is_dir() else None,
+                "items": items,
+            })
+        current = {newest, soonest[1] if soonest else None} - {None}
+        for m in out:
+            m["current"] = m["id"] in current
+        return out
 
 
 def _ed_order(p: dict[str, Any]) -> tuple[bool, float]:
     """As Ed lists things: pinned first, then newest."""
     return (not p["ed"]["pinned"], _desc(p.get("date")))
-
-
-def _on_ed(course_id: int, docs: list[tuple[str, str, str, dict[str, Any]]], new: dict[str, dict[str, bool]]) -> list[dict[str, Any]]:
-    return sorted((_summary(course_id, k, i, t, raw, i in new[k]) for k, i, t, raw in docs if on_ed(k, i)), key=_ed_order)
-
-
-def ed_items(state: State, root: Path, course_id: int) -> list[dict[str, Any]]:
-    """Everything a course has on Ed, as Ed lists it, each the kind it is."""
-    return _on_ed(course_id, _docs(state, course_id), news(state, root, course_id))
 
 
 def _local_files(state: State, root: Path, ids: list[int]) -> dict[str, dict[str, str]]:
@@ -261,90 +471,6 @@ def _local_files(state: State, root: Path, ids: list[int]) -> dict[str, dict[str
         rec = state.get(fid)
         if rec and rec.path and not rec.ignored and (root / rec.path).exists():
             out[str(fid)] = {"path": rec.path, "name": Path(rec.path).name}
-    return out
-
-
-def item(state: State, root: Path, course_id: int, kind: str, doc_id: str) -> dict[str, Any] | None:
-    """One item in full: its summary, its HTML, and the local copies of files it refers to."""
-    d = state.document(course_id, kind, doc_id)
-    if d is None:
-        return None
-    raw = d.raw
-    html = raw.get(DOC_BODY.get(kind, ""), "") or ""
-    attached = [a for a in raw.get("attachments") or [] if a.get("id")]
-    refs = list(dict.fromkeys([*file_refs(html, course_id), *(a["id"] for a in attached)]))
-    local = _local_files(state, root, refs)
-    thread = (raw.get("ed") or {}).get("thread")
-    return _summary(course_id, d.kind, d.id, d.title, raw, d.id in news(state, root, course_id).get(kind, {})) | {
-        "replies": thread["replies"] if thread else None,  # (on Ed: its answers and comments, once fetched)
-        "html": html,
-        "files": local,  # Canvas file id -> local copy
-        "attachments": [
-            {"id": a["id"], "name": a.get("display_name") or a.get("filename") or str(a["id"]),
-             "path": local.get(str(a["id"]), {}).get("path")}
-            for a in attached
-        ],
-    }
-
-
-def overview(state: State, root: Path, course_id: int, now: datetime | None = None,
-             layout: Layout | None = None) -> dict[str, Any]:
-    """What a course page opens with: what's due, what was said, what's new, how you're doing;
-    with `layout`, this week's modules too (the 当前模块 card)."""
-    now = now or datetime.now(timezone.utc)
-    docs = _docs(state, course_id)
-    count = {k: sum(d[0] == k and not canvas_copy(k, d[3]) for d in docs) for k in KINDS}
-    syllabus = next((raw for k, _, _, raw in docs if k == "syllabus"), None)
-    new = news(state, root, course_id)
-
-    assignments = [_summary(course_id, k, i, t, raw, i in new["assignment"]) for k, i, t, raw in docs if k == "assignment"]
-    upcoming = sorted(
-        (a for a in assignments if (due := time_of(a["due_at"])) and now - timedelta(hours=12) <= due <= now + timedelta(days=21)),
-        key=lambda a: a["due_at"],
-    )
-    announcements = sorted(
-        (_summary(course_id, k, i, t, raw, i in new["announcement"]) for k, i, t, raw in docs if k == "announcement" and not canvas_copy(k, raw)),
-        key=lambda a: a.get("date") or "", reverse=True,
-    )
-    on_ed_now = _on_ed(course_id, docs, new)
-    total = _total(state, course_id)
-    graded = sorted((a for a in assignments if a["status"] == "graded"), key=lambda a: a["graded_at"] or "", reverse=True)
-
-    files = []
-    raws = state.files_raw(course_id)
-    for r in state.files_for_course(course_id):
-        if r.path and not r.ignored and (root / r.path).exists():
-            raw = raws[r.id]
-            files.append({"file_id": r.id, "path": r.path, "name": Path(r.path).name,
-                          "date": raw.get("created_at") or raw.get("updated_at"),
-                          "new": str(r.id) in new["file"], "updated": new["file"].get(str(r.id), False)})
-    # Newest uploads, and anything else new to you (a new version of an old file).
-    files.sort(key=lambda f: f["date"] or "", reverse=True)
-    shown = files[:8]
-    shown += [f for f in files[8:] if f["new"]][:8]
-
-    out = {
-        "upcoming": upcoming[:8],
-        "announcements": announcements[:5],
-        # Of what's on Ed: what's pinned, announcements and what staff posted, not every question.
-        "ed": [p for p in on_ed_now if p["ed"]["pinned"] or p["ed"]["staff"] or p["kind"] == "announcement"][:5],
-        "new_files": shown,
-        "grades": {"total": total, "recent": graded[:3]},
-        "tools": tools(state, course_id),
-        "new": news_counts(new),
-        "counts": {
-            "modules": len(state.modules(course_id)),
-            "announcements": count["announcement"],
-            "assignments": count["assignment"],
-            "pages": count["page"],
-            "ed": len(on_ed_now),
-            "files": len(files),
-            "syllabus": bool(syllabus and (syllabus.get("syllabus_body") or "").strip()),
-            "grades": total is not None or bool(graded),
-        },
-    }
-    if layout is not None:
-        out["current_modules"] = [m for m in modules(state, root, layout, course_id, now) if m["current"]][:2]
     return out
 
 
@@ -357,89 +483,3 @@ def _desc(iso: str | None) -> float:
 def _total(state: State, course_id: int) -> dict[str, Any] | None:
     g = state.grades(course_id)
     return g if g and g.get("current_score") is not None else None
-
-
-def grades(state: State, root: Path, course_id: int) -> dict[str, Any]:
-    """Your total as Canvas computes it, and each assignment's grade, latest due first."""
-    new = news(state, root, course_id)["assignment"]
-    out = [_summary(course_id, k, i, t, raw, i in new) for k, i, t, raw in _docs(state, course_id, "assignment")
-           if raw.get("grading_type") != "not_graded"]
-    dated = sorted((a for a in out if a["due_at"]), key=lambda a: a["due_at"], reverse=True)
-    return {"total": _total(state, course_id), "assignments": dated + [a for a in out if not a["due_at"]]}
-
-
-def modules(state: State, root: Path, layout: Layout, course_id: int, now: datetime | None = None) -> list[dict[str, Any]]:
-    """The course's modules, each item saying where it leads in the app: a local file, a
-    page / assignment / announcement shown here, a web link, or the item on Canvas."""
-    now = now or datetime.now(timezone.utc)
-    course = state.course(course_id)
-    raw_modules = state.modules(course_id)
-    if course is None or not raw_modules:
-        return []
-    docs = {(k, i): raw for k, i, _, raw in _docs(state, course_id)}
-    files = {r.id: r for r in state.files_for_course(course_id)}
-    new = news(state, root, course_id)
-    created = {fid: raw.get("created_at") or raw.get("updated_at") or "" for fid, raw in state.files_raw(course_id).items()}
-
-    def target(item: dict[str, Any]) -> dict[str, Any]:
-        kind, cid = item.get("type"), item.get("content_id")
-        canvas = relative_url(item.get("html_url"))
-        if kind == "File" and cid in files:
-            rec = files[cid]
-            if rec.ignored:
-                return {"deleted": True, "url": canvas}
-            if rec.path and (root / rec.path).exists():
-                return {"file": rec.path}
-            return {"url": canvas or file_url(course_id, cid)}
-        if kind == "Page" and ("page", item.get("page_url")) in docs:
-            return {"doc": {"kind": "page", "id": item["page_url"]}}
-        if kind == "Assignment" and ("assignment", str(cid)) in docs:
-            return {"doc": {"kind": "assignment", "id": str(cid)},
-                    "due_at": docs[("assignment", str(cid))].get("due_at")}
-        if kind == "Discussion" and ("announcement", str(cid)) in docs:
-            return {"doc": {"kind": "announcement", "id": str(cid)}}
-        if kind == "ExternalUrl" and item.get("external_url"):
-            return {"external": item["external_url"]}
-        if kind == "ExternalTool" and item.get("id"):
-            return {"tool": {"module_item_id": item["id"], "name": tool_name(item.get("external_url"))},
-                    **({"url": canvas} if canvas else {})}
-        return {"url": canvas} if canvas else {}
-
-    # "Current": the module with the newest upload, and the one with the next deadline.
-    newest = max(((created.get(i.get("content_id"), ""), m["id"]) for m in raw_modules for i in m.get("items") or []
-                  if i.get("type") == "File"), default=("", None))[1]
-    soonest: tuple[datetime, Any] | None = None
-    out = []
-    for m in raw_modules:
-        items = []
-        for it in m.get("items") or []:
-            t = target(it)
-            if (due := time_of(t.get("due_at"))) and due >= now and (soonest is None or due < soonest[0]):
-                soonest = (due, m["id"])
-            title = it.get("title")
-            if not title and it.get("type") == "File" and it.get("content_id") in files:
-                title = files[it["content_id"]].name
-            fresh = False
-            if "file" in t:
-                fresh = str(it.get("content_id")) in new["file"]
-            elif "doc" in t:
-                fresh = t["doc"]["id"] in new.get(t["doc"]["kind"], {})
-            items.append({
-                "id": it.get("id"), "type": it.get("type"), "title": title or "", "indent": it.get("indent") or 0,
-                "done": bool((it.get("completion_requirement") or {}).get("completed")), "new": fresh, **t,
-            })
-        name = m.get("name") or "Module"
-        folder = (
-            layout.course_dir(course) / layout.s.view_dirs.get("modules", "modules")
-            / sanitize(f"{m.get('position', 0):02d} {name}")
-        )
-        out.append({
-            "id": m["id"], "name": name, "position": m.get("position") or 0,
-            "unlock_at": m.get("unlock_at"), "state": m.get("state"),  # Canvas's: locked / unlocked / started / completed
-            "folder": folder.as_posix() if (root / folder).is_dir() else None,
-            "items": items,
-        })
-    current = {newest, soonest[1] if soonest else None} - {None}
-    for m in out:
-        m["current"] = m["id"] in current
-    return out

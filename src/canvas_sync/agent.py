@@ -301,7 +301,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
             doc_id = id or (str(c.id) if kind == "syllabus" else None)
             if doc_id is None:
                 raise ToolError("Which one? Give its id (search or list_items has it).")
-            it = content.item(e.state, e.root, c.id, kind, doc_id)
+            it = content.CourseContent.of(e, c.id).item(kind, doc_id)
             if it is None:
                 raise ToolError("Not found: not synced yet, or no longer on Canvas.")
             parts = [html_to_text(it["html"])]
@@ -327,7 +327,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
             raise ToolError(f"kind must be one of {', '.join(content.KINDS)} (files: list_files)")
         with engine() as e:
             c = course_of(e, course)
-            items = content.items(e.state, e.root, c.id, kind)
+            items = content.CourseContent.of(e, c.id).items(kind)
             offset = max(0, offset)
             return {"total": len(items), "offset": offset,
                     "items": [brief(e, c, s) for s in items[offset:offset + max(1, min(limit, LIST_MAX))]]}
@@ -339,7 +339,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         how many of each thing it has and how many are new."""
         with engine() as e:
             c = course_of(e, course)
-            o = content.overview(e.state, e.root, c.id, layout=e.layout)
+            o = content.CourseContent.of(e, c.id).overview()
             return {
                 "course": course_label(c, e.settings), "name": c.name,
                 "due_soon": [brief(e, c, s) for s in o["upcoming"]],
@@ -364,7 +364,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         with engine() as e:
             c = course_of(e, course)
             out = []
-            for m in content.modules(e.state, e.root, e.layout, c.id):
+            for m in content.CourseContent.of(e, c.id).modules():
                 items = []
                 for it in m["items"]:
                     x: dict[str, Any] = {"title": it["title"], "type": it["type"]}
@@ -398,7 +398,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         with engine() as e:
             due = []
             for c in shown(e, course):
-                for a in content.items(e.state, e.root, c.id, "assignment", now):
+                for a in content.CourseContent.of(e, c.id).items("assignment", now):
                     if (when := _when(a["due_at"])) and now - timedelta(hours=12) <= when <= end:
                         due.append((when, brief(e, c, a)))
             due.sort(key=lambda d: d[0])
@@ -421,11 +421,12 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         with engine() as e:
             out = []
             for c in shown(e, course):
+                cc = content.CourseContent.of(e, c.id)
                 rows = e.state.arrived(c.id, start.astimezone(timezone.utc).isoformat() if start else "")
                 arrived = {(r["kind"], r["id"]): {"arrived_at": r["arrived_at"], "opened": r["seen_at"] is not None,
                                                   **({"updated": True} if r["updated"] else {})} for r in rows}
                 if start is None:  # (not opened; nor read on Canvas, nor handed in; files still here)
-                    new = content.news(e.state, e.root, c.id)
+                    new = cc.news
                     arrived = {key: v for key, v in arrived.items() if key[1] in new.get(key[0], {})}
                 for kind in sorted({k for k, _ in arrived}):
                     if kind == "file":
@@ -434,7 +435,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
                                 out.append(file(e, rec.path, kind="file", title=Path(rec.path).name,
                                                 date=uploaded(e, rec.id), **extra))
                         continue
-                    for s in content.items(e.state, e.root, c.id, kind):
+                    for s in cc.items(kind):
                         if (extra := arrived.get((kind, s["id"]))) is not None:
                             out.append(brief(e, c, s) | {k: v for k, v in extra.items() if k != "updated"})
             sync: dict[str, Any] = {"last_synced": (t := e.state.last_synced()) and t.isoformat(timespec="seconds")}
@@ -449,7 +450,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
         and each graded assignment's score, latest due first."""
         with engine() as e:
             c = course_of(e, course)
-            g = content.grades(e.state, e.root, c.id)
+            g = content.CourseContent.of(e, c.id).grades()
             return {"course": course_label(c, e.settings), "total": g["total"],
                     "assignments": [brief(e, c, s) for s in g["assignments"]]}
 

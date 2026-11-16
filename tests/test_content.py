@@ -50,7 +50,7 @@ def course(fake: FakeCanvas) -> FakeCanvas:
 def test_overview(root, course):
     pull(root, course)
     with Engine(root) as e:
-        o = content.overview(e.state, e.root, 1, NOW)
+        o = content.CourseContent(e.state, e.root, 1).overview(NOW)
     assert [a["title"] for a in o["upcoming"]] == ["HW 6"]  # not past, not 40 days out, not undated
     assert [a["title"] for a in o["announcements"]] == ["Midterm room", "Welcome"]
     assert o["announcements"][0]["author"] == "Prof"
@@ -62,14 +62,14 @@ def test_overview(root, course):
 def test_items_and_one_item(root, course):
     pull(root, course)
     with Engine(root) as e:
-        assert [a["title"] for a in content.items(e.state, e.root, 1, "assignment", NOW)] == ["HW 6", "Project", "HW 5", "Reading"]
-        assert [p["title"] for p in content.items(e.state, e.root, 1, "page")] == ["Intro", "Another"]  # front page first
-        hw = content.item(e.state, e.root, 1, "assignment", "10")
+        assert [a["title"] for a in content.CourseContent(e.state, e.root, 1).items("assignment", NOW)] == ["HW 6", "Project", "HW 5", "Reading"]
+        assert [p["title"] for p in content.CourseContent(e.state, e.root, 1).items("page")] == ["Intro", "Another"]  # front page first
+        hw = content.CourseContent(e.state, e.root, 1).item("assignment", "10")
         assert hw["files"] == {"101": {"path": f"{COURSE}/Files/hw6.pdf", "name": "hw6.pdf"}}
-        ann = content.item(e.state, e.root, 1, "announcement", "7")
+        ann = content.CourseContent(e.state, e.root, 1).item("announcement", "7")
         assert ann["attachments"] == [{"id": 101, "name": "hw6.pdf", "path": f"{COURSE}/Files/hw6.pdf"}]
-        assert content.item(e.state, e.root, 1, "syllabus", "1")["html"] == "<p>Grading: 50% exams</p>"
-        assert content.item(e.state, e.root, 1, "page", "nope") is None
+        assert content.CourseContent(e.state, e.root, 1).item("syllabus", "1")["html"] == "<p>Grading: 50% exams</p>"
+        assert content.CourseContent(e.state, e.root, 1).item("page", "nope") is None
 
 
 def test_search_hits_say_which_item(root, course):
@@ -152,7 +152,7 @@ def test_modules(root, course):
     ])
     pull(root, course)
     with Engine(root) as e:
-        week1, week2 = content.modules(e.state, e.root, e.layout, 1, NOW)
+        week1, week2 = content.CourseContent.of(e, 1).modules(NOW)
     assert week1["name"] == "Week 1" and week1["folder"] == f"{COURSE}/Modules/01 Week 1"
     assert week1["items"][0] == {"id": None, "type": "File", "title": "lec1.pdf", "indent": 0, "done": False,
                                       "new": False, "file": f"{COURSE}/Modules/01 Week 1/lec1.pdf"}
@@ -333,8 +333,8 @@ def test_external_tools(root, course):
                                  "external_url": "https://edstem.org/lti", "html_url": f"{BASE}/courses/1/modules/items/26"}])
     pull(root, course)
     with Engine(root) as e:
-        o = content.overview(e.state, e.root, 1, NOW)
-        [ed] = content.modules(e.state, e.root, e.layout, 1, NOW)[1]["items"]
+        o = content.CourseContent(e.state, e.root, 1).overview(NOW)
+        [ed] = content.CourseContent.of(e, 1).modules(NOW)[1]["items"]
     assert o["tools"] == [{"id": 5, "label": "Gradescope", "url": "/courses/1/external_tools/5"},
                           {"id": 6, "label": "Ed", "url": "/courses/1/external_tools/6"}]
     assert o["upcoming"][0]["tool"] == {"assignment_id": 10, "name": "Gradescope"}
@@ -408,8 +408,8 @@ def test_grades(root, course):
     course.assignments.append({"id": 30, "name": "Attendance", "grading_type": "not_graded"})
     pull(root, course)
     with Engine(root) as e:
-        g = content.grades(e.state, e.root, 1)
-        o = content.overview(e.state, e.root, 1, NOW)
+        g = content.CourseContent(e.state, e.root, 1).grades()
+        o = content.CourseContent(e.state, e.root, 1).overview(NOW)
     assert g["total"] == {"current_score": 91.5, "current_grade": "A-", "final_score": 60.2, "final_grade": "D-"}
     assert [a["title"] for a in g["assignments"]] == ["Project", "HW 6", "HW 5", "Reading"]  # latest due first
     assert g["assignments"][1]["score"] == 9
@@ -419,7 +419,7 @@ def test_grades(root, course):
     course.course["enrollments"] = [{"type": "student"}]
     pull(root, course)
     with Engine(root) as e:
-        assert content.grades(e.state, e.root, 1)["total"] is None
+        assert content.CourseContent(e.state, e.root, 1).grades()["total"] is None
 
 
 def test_a_page_whose_name_starts_with_ed_isnt_from_ed(root, course):
@@ -427,8 +427,8 @@ def test_a_page_whose_name_starts_with_ed_isnt_from_ed(root, course):
     course.pages["ed-discussion"] = {"url": "ed-discussion", "title": "Ed Discussion", "body": "<p>Join</p>"}
     pull(root, course)
     with Engine(root) as e:
-        assert content.ed_items(e.state, e.root, 1) == []
-        assert content.overview(e.state, e.root, 1)["counts"]["ed"] == 0
-        assert "ed-discussion" in {p["id"] for p in content.items(e.state, e.root, 1, "page")}
+        assert content.CourseContent(e.state, e.root, 1).ed_items() == []
+        assert content.CourseContent(e.state, e.root, 1).overview()["counts"]["ed"] == 0
+        assert "ed-discussion" in {p["id"] for p in content.CourseContent(e.state, e.root, 1).items("page")}
     assert content.on_ed("post", "ed-5") and content.on_ed("announcement", "ed-5")
     assert not content.on_ed("page", "ed-discussion") and not content.on_ed("announcement", "7")
