@@ -1,0 +1,56 @@
+{
+  "about": "Things and places, as src/canvas_sync/things.py and places.py have them and app/src/lib/things.ts must too: the fields that say which one a thing is, when two are the same thing, what a course's places hold (`course`: the course whose places), and what's from Ed.",
+  "fields": {
+    "course": ["course"],
+    "folder": ["path"],
+    "file": ["path"],
+    "doc": ["course", "kind", "id"],
+    "module": ["course", "module"],
+    "tool": ["course", "tool"],
+    "link": ["url"],
+    "search": ["query", "courses", "kinds", "content"],
+    "note": ["course", "id"],
+    "view": ["course", "view"]
+  },
+  "same": [
+    {"a": {"type": "search", "query": "mt", "courses": [8, 7], "kinds": ["page", "file"], "content": false},
+     "b": {"type": "search", "query": "mt", "courses": [7, 8], "kinds": ["file", "page"], "content": false}, "same": true},
+    {"a": {"type": "search", "query": "mt", "courses": [7], "kinds": [], "content": false},
+     "b": {"type": "search", "query": "mt", "courses": [7], "kinds": [], "content": true}, "same": false},
+    {"a": {"type": "view", "course": 7, "view": "files", "title": "Readings", "hidden": true},
+     "b": {"type": "view", "course": 7, "view": "files"}, "same": true},
+    {"a": {"type": "view", "course": 7, "view": "files"}, "b": {"type": "view", "course": 8, "view": "files"}, "same": false},
+    {"a": {"type": "file", "path": "Fall 2026/MATH 221/a.pdf"}, "b": {"type": "folder", "path": "Fall 2026/MATH 221/a.pdf"}, "same": false},
+    {"a": {"type": "doc", "course": 7, "kind": "announcement", "id": "1"}, "b": {"type": "doc", "course": 7, "kind": "assignment", "id": "1"}, "same": false},
+    {"a": {"type": "note", "course": 7, "id": "n1"}, "b": {"type": "doc", "course": 7, "kind": "page", "id": "n1"}, "same": false},
+    {"a": {"type": "link", "url": "https://example.edu/a"}, "b": {"type": "link", "url": "https://example.edu/a", "title": "Site"}, "same": true}
+  ],
+  "course": {"id": 7, "dir": "Fall 2026/MATH 221"},
+  "holds": [
+    {"thing": {"type": "view", "course": 7, "view": "files"}, "holds": true},
+    {"thing": {"type": "view", "course": 8, "view": "files"}, "holds": false},
+    {"thing": {"type": "doc", "course": 7, "kind": "page", "id": "schedule"}, "holds": true},
+    {"thing": {"type": "doc", "course": 8, "kind": "page", "id": "schedule"}, "holds": false},
+    {"thing": {"type": "module", "course": 7, "module": 3}, "holds": true},
+    {"thing": {"type": "module", "course": 8, "module": 3}, "holds": false},
+    {"thing": {"type": "tool", "course": 7, "tool": 5}, "holds": true},
+    {"thing": {"type": "note", "course": 7, "id": "n1"}, "holds": true},
+    {"thing": {"type": "link", "url": "https://example.edu"}, "holds": true},
+    {"thing": {"type": "course", "course": 7}, "holds": false},
+    {"thing": {"type": "folder", "path": "Fall 2026/MATH 221"}, "holds": true},
+    {"thing": {"type": "folder", "path": "Fall 2026/MATH 221/Files/Week 1"}, "holds": true},
+    {"thing": {"type": "file", "path": "Fall 2026/MATH 221/Files/Week 1/lec1.pdf"}, "holds": true},
+    {"thing": {"type": "file", "path": "Fall 2026/MATH 221 Lab/lec1.pdf"}, "holds": false},
+    {"thing": {"type": "folder", "path": "Fall 2026"}, "holds": false},
+    {"thing": {"type": "search", "query": "mt", "courses": [7], "kinds": [], "content": false}, "holds": true},
+    {"thing": {"type": "search", "query": "mt", "courses": [7, 8], "kinds": [], "content": false}, "holds": false},
+    {"thing": {"type": "search", "query": "mt", "courses": [], "kinds": [], "content": false}, "holds": false}
+  ],
+  "on_ed": [
+    {"kind": "announcement", "id": "ed-9001", "on_ed": true},
+    {"kind": "post", "id": "ed-9002", "on_ed": true},
+    {"kind": "announcement", "id": "123", "on_ed": false},
+    {"kind": "page", "id": "ed-discussion", "on_ed": false},
+    {"kind": "assignment", "id": "55", "on_ed": false}
+  ]
+}

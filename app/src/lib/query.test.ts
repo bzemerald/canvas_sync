@@ -1,6 +1,6 @@
 // How queries are read (query.ts). Times are local: now is Friday, October 16, 2026, 10 pm.
 import { describe, expect, it } from "vitest";
-import { type KindId, type Part, type Vocabulary, asText, corrected, indexQuery, read, sameSeries, seriesIn, singular } from "./query";
+import { type KindId, type Part, type Vocabulary, asText, corrected, indexQuery, read } from "./query";
 
 const NOW = new Date(2026, 9, 16, 22, 0).getTime();
 const at = (m: number, d: number, y = 2026) => new Date(y, m - 1, d).getTime();
@@ -100,35 +100,8 @@ describe("one of a series", () => {
     expect(said("第9讲")).toEqual(["series:讲 9"]); // i18n-ignore
   });
 
-  it("is found in names", () => {
-    expect(seriesIn("Homework 3: RISC-V + Logic")).toEqual([{ name: "homework", n: 3 }]);
-    expect(seriesIn("EE64_FA26_HW6_Sol.pdf")).toContainEqual({ name: "hw", n: 6 });
-    expect(seriesIn("Problem Set #3")).toEqual([{ name: "set", n: 3 }, { name: "problem set", n: 3 }]);
-    expect(seriesIn("第3讲 导数.pdf")).toEqual([{ name: "讲", n: 3 }]); // i18n-ignore
-    expect(seriesIn("第3次作业")).toEqual([{ name: "作业", n: 3 }]); // i18n-ignore
-    expect(seriesIn("作业3")).toEqual([{ name: "作业", n: 3 }]); // i18n-ignore
-    expect(seriesIn("Midterm I Regrades")).toEqual([{ name: "midterm", n: 1 }]);
-    expect(seriesIn("Topics II")).toEqual([{ name: "topics", n: 2 }]);
-    expect(seriesIn("Homework 2: FP + RISC-V")).toEqual([{ name: "homework", n: 2 }]); // (not risc 5)
-  });
-
-  it("is the same series by another name", () => {
-    expect(sameSeries("hw", "homework", ABBR)).toBe(true);
-    expect(sameSeries("hw", "problem set", ABBR)).toBe(true);
-    expect(sameSeries("ps", "hw", ABBR)).toBe(true); // (both homework)
-    expect(sameSeries("mt", "prelim", ABBR)).toBe(true);
-    expect(sameSeries("期中", "midterm", ABBR)).toBe(true); // i18n-ignore
-    expect(sameSeries("lec", "lecture", ABBR)).toBe(true);
-    expect(sameSeries("labs", "lab", ABBR)).toBe(true);
-    expect(sameSeries("ws", "worksheet", ABBR)).toBe(true); // (no abbreviation for it: its letters in order)
-    expect(sameSeries("fe", "final exam", ABBR)).toBe(true); // (its initials)
-    expect(sameSeries("ps", "physics", ABBR)).toBe(false); // (ps is problem set)
-    expect(sameSeries("lab", "lecture", ABBR)).toBe(false);
-    expect(sameSeries("midterm", "final", ABBR)).toBe(false);
-    expect(singular("quizzes")).toBe("quiz");
-    expect(singular("classes")).toBe("class");
-    expect(singular("problem sets")).toBe("problem set");
-  });
+  // (Found in names, and the same series by another name: tests/shared/words.json, which the
+  // backend's search.py is held to as well; shared.test.ts runs it.)
 });
 
 describe("a time", () => {

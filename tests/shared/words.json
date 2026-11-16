@@ -1,0 +1,51 @@
+{
+  "about": "Words in what's searched for, as src/canvas_sync/search.py and app/src/lib/query.ts each read them: a word without its plural ending, the numbered things a name is (`series_in`: [name, number] pairs, in order), whether a series as typed is one a name has (`same_series`, with `abbreviations`), and the words that say little by themselves.",
+  "singular": [
+    ["labs", "lab"], ["quizzes", "quiz"], ["classes", "class"], ["class", "class"], ["problem sets", "problem set"],
+    ["lectures", "lecture"], ["boxes", "box"], ["studies", "study"], ["syllabus", "syllabus"], ["analysis", "analysis"], ["hws", "hws"],
+    ["midterms", "midterm"], ["作业", "作业"]
+  ],
+  "series_in": [
+    {"name": "Homework 3: RISC-V + Logic", "series": [["homework", 3]]},
+    {"name": "Homework 2: FP + RISC-V", "series": [["homework", 2]]},
+    {"name": "EE64_FA26_HW6_Sol.pdf", "series": [["ee", 64], ["fa", 26], ["hw", 6]]},
+    {"name": "Problem Set #3", "series": [["set", 3], ["problem set", 3]]},
+    {"name": "lec12-notes.pdf", "series": [["lec", 12]]},
+    {"name": "第3讲 导数.pdf", "series": [["讲", 3]]},
+    {"name": "第3次作业", "series": [["作业", 3]]},
+    {"name": "作业3", "series": [["作业", 3]]},
+    {"name": "Midterm I Regrades", "series": [["midterm", 1]]},
+    {"name": "Topics II", "series": [["topics", 2]]},
+    {"name": "Syllabus", "series": []}
+  ],
+  "abbreviations": {
+    "mt": ["midterm", "mid term", "prelim"],
+    "hw": ["homework", "problem set", "pset", "assignment"],
+    "ps": ["problem set", "pset", "homework"],
+    "lec": ["lecture", "slides"],
+    "作业": ["homework", "assignment", "problem set"],
+    "期中": ["midterm", "mt", "prelim"],
+    "讲": ["lecture"]
+  },
+  "same_series": [
+    {"a": "hw", "b": "homework", "same": true},
+    {"a": "hw", "b": "problem set", "same": true},
+    {"a": "ps", "b": "hw", "same": true},
+    {"a": "mt", "b": "prelim", "same": true},
+    {"a": "期中", "b": "midterm", "same": true},
+    {"a": "lec", "b": "lecture", "same": true},
+    {"a": "labs", "b": "lab", "same": true},
+    {"a": "prelab", "b": "pre lab", "same": true},
+    {"a": "ws", "b": "worksheet", "same": true},
+    {"a": "fe", "b": "final exam", "same": true},
+    {"a": "ps", "b": "physics", "same": false},
+    {"a": "lab", "b": "lecture", "same": false},
+    {"a": "midterm", "b": "final", "same": false}
+  ],
+  "stopwords": [
+    "a", "an", "the", "and", "or", "but", "if", "of", "to", "in", "on", "at", "by", "for", "with", "from", "about", "as", "into", "than", "then", "so",
+    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "done", "can", "could", "will", "would", "should", "shall", "must", "might", "get",
+    "i", "me", "my", "we", "us", "our", "you", "your", "he", "him", "his", "she", "her", "it", "its", "they", "them", "their",
+    "this", "that", "these", "those", "there", "here", "what", "which", "who", "whom", "whose", "when", "where", "why", "how"
+  ]
+}

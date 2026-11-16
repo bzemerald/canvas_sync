@@ -43,7 +43,7 @@ export type Placed = Thing & { title: string; hidden: boolean; name: string | nu
 /** A thing in a place, or on its way there (just put there, or dragged: what's known of it). */
 export type Shown = Thing & Partial<Omit<Placed, keyof Thing>>;
 
-const FIELDS: { [T in Thing["type"]]: (keyof ThingOf<T>)[] } = {
+export const FIELDS: { [T in Thing["type"]]: (keyof ThingOf<T>)[] } = {
   course: ["course"], folder: ["path"], file: ["path"], doc: ["course", "kind", "id"], module: ["course", "module"],
   tool: ["course", "tool"], link: ["url"], search: ["query", "courses", "kinds", "content"], note: ["course", "id"],
   view: ["course", "view"],
