@@ -15,7 +15,6 @@ import os
 import re
 import secrets
 import socket
-import subprocess
 import sys
 import threading
 import webbrowser
@@ -53,16 +52,15 @@ from .layout import titles_of_folders
 from .local import inside as in_folder
 from .local import MoveError, move_sync_folder, open_path, write_whole
 from .paths import META_DIR, config_file, note_file
-from .places import PLACES, Place, as_course, describe, usual
-from .plan import Kind, Scope
+from .places import Place, as_course, describe, usual
+from .plan import TRANSFERS, Kind, Scope
 from .courses import course_label
-from .things import NOTE_ID, Entry, once, parse_entry
+from .things import NOTE_ID, PLACES, Entry, once, parse_entry
 from .thumbs import forget_old_thumbnails, thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"]
 
-TRANSFERS = (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT)
 MEDIA_MAX_BYTES = 25 * 1024 * 1024
 DEFAULT_ROOT = Path("~/Canvas")
 # What works before an account is set up: enough to set one up.

@@ -23,6 +23,7 @@ from mcp.types import ToolAnnotations
 from . import __version__, content
 from .config import PREFS_FILE, Account, ConfigError
 from .courses import course_label, pick_courses
+from .documents import whole_url
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import inside
 from .models import Course
@@ -135,9 +136,7 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
 
     def web(url: str | None) -> str | None:
         """A Canvas link (relative to the site) or another one (Ed's), whole."""
-        if not url:
-            return None
-        return url if url.startswith(("http://", "https://")) else account.base_url + url
+        return whole_url(url, account.base_url)
 
     def course_of(e: Engine, wanted: str) -> Course:
         found = pick_courses(e.state.courses(), wanted, e.settings)

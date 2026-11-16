@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from . import content
 from .courses import course_label
 from .paths import under
-from .things import PLACES, Entry, Thing, at_home, course_thing, once, view
+from .things import Entry, Thing, at_home, course_thing, once, view
 
 if TYPE_CHECKING:
     from .engine import Engine

@@ -19,6 +19,13 @@ def relative_url(url: str | None) -> str | None:
     return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
+def whole_url(url: str | None, base_url: str) -> str | None:
+    """A link as kept (Canvas's relative to the site, others in full), in full."""
+    if not url:
+        return None
+    return url if url.startswith(("http://", "https://")) else base_url + url
+
+
 def doc_url(raw: dict[str, Any]) -> str | None:
     """Where a document is on the web: on Canvas, relative to the site; from elsewhere (Ed),
     in full."""

@@ -37,6 +37,9 @@ class Kind(StrEnum):
     SKIP = "skip"  # informational: can't or won't sync this
 
 
+TRANSFERS = (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT)  # what fetches a file (what a sync's progress counts)
+
+
 @dataclass
 class Action:
     kind: Kind

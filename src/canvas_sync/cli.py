@@ -18,11 +18,12 @@ from rich.table import Table
 from .api import Auth, CanvasClient, CanvasError
 from .config import PREFS_FILE, Account, ConfigError, set_course_listed
 from .courses import pick_courses as matching
+from .documents import whole_url
 from .engine import Engine, NotInitialized, migrate_folder_names
 from .local import open_path
 from .models import Course
 from .paths import config_file
-from .plan import Kind, Plan, Scope
+from .plan import TRANSFERS, Kind, Plan, Scope
 from .search import Hit
 from .sync import other_sources
 from .sync import reindex as sync_reindex
@@ -225,12 +226,12 @@ def pull(
             return
         if dry_run:
             return
-        transfers = sum(a.kind in (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT) for a in work)
+        transfers = sum(a.kind in TRANSFERS for a in work)
         with Progress(console=console, transient=True) as progress:
             task = progress.add_task("Downloading", total=transfers)
 
             def on_event(a, error):
-                if a.kind in (Kind.DOWNLOAD, Kind.UPDATE, Kind.CONFLICT):
+                if a.kind in TRANSFERS:
                     progress.advance(task)
                 if error:
                     progress.console.print(f"[red]failed:[/] {a.path or a.name}: {error}")
@@ -282,7 +283,7 @@ KIND_LABEL = {"file": "file", "page": "page", "assignment": "hw", "announcement"
 
 def web_link(h: Hit, base_url: str) -> str:
     """Where a hit is on the web: Canvas's are relative to it, Ed's whole."""
-    return "" if not h.url else h.url if h.url.startswith(("http://", "https://")) else base_url + h.url
+    return whole_url(h.url, base_url) or ""
 
 
 def render_hit(n: int, h: Hit, base_url: str) -> None:

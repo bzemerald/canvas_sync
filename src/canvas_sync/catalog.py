@@ -22,13 +22,10 @@ from .courses import code_keys, course_label, normalized
 from .documents import canvas_copy, doc_url
 from .paths import note_file
 from .search import DEFAULT_ABBREVIATIONS
-from .things import Entry, Thing, course_thing, view
+from .things import DOC_KINDS, VIEWS, Entry, Thing, course_thing, view
 
 if TYPE_CHECKING:
     from .engine import Engine
-
-DOC_KINDS = ("announcement", "assignment", "page", "post")
-
 
 def catalog(e: Engine) -> list[dict[str, Any]]:
     courses = [c for c in e.state.courses() if c.id not in e.settings.hidden]
@@ -96,8 +93,7 @@ def catalog(e: Engine) -> list[dict[str, Any]]:
                        "canvas_url": fields["canvas_url"] or f"/courses/{cid}/pages/{d.id}"}
         add(Thing("doc", course=cid, kind=kind, id=d.id), **fields)
     for c in courses:
-        for v in ("overview", "modules", "announcements", "ed", "assignments", "grades", "files", "syllabus", "pages",
-                  "tools", "canvas"):
+        for v in VIEWS:
             if v in has[c.id]:
                 add(view(c.id, v))
 
