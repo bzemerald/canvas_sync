@@ -19,12 +19,13 @@ from .api import Auth, CanvasClient, CanvasError
 from .config import PREFS_FILE, Account, ConfigError, set_course_listed
 from .courses import pick_courses as matching
 from .documents import whole_url
-from .engine import Engine, NotInitialized, migrate_folder_names
+from .engine import Engine, NotInitialized
 from .local import open_path
 from .models import Course
 from .paths import config_file
 from .plan import TRANSFERS, Kind, Plan, Scope
 from .finding import find
+from .migrations import migrate_folder_names
 from .search import Hit
 from .sync import keep_sign_in, other_sources
 from .sync import reindex as sync_reindex

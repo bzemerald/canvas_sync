@@ -24,9 +24,10 @@ from . import __version__, content, finding
 from .config import PREFS_FILE, Account, ConfigError
 from .courses import course_label, pick_courses
 from .documents import whole_url
-from .engine import Engine, NotInitialized, migrate_folder_names
+from .engine import Engine, NotInitialized
 from .local import inside
 from .models import Course
+from .migrations import migrate_folder_names
 from .search import Hit
 from .text import extract, html_to_text, slides
 from .things import Thing, of_item

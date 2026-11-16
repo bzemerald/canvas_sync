@@ -14,7 +14,7 @@ from canvas_sync import Engine, agent
 from canvas_sync.config import (
     Account, ConfigError, Settings, change_things, needs_titles, old_folder_names, save_pinned, update_skip_folders,
 )
-from canvas_sync.engine import migrate_folder_names
+from canvas_sync.migrations import migrate_folder_names
 from canvas_sync.plan import Scope
 from canvas_sync.things import Entry, Thing
 from canvas_sync.catalog import catalog

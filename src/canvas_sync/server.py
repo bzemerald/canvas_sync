@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from . import assistants, ed, finding, meaning, notes
+from . import assistants, ed, finding, meaning, migrations, notes
 from .sync import keep_sign_in, other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
@@ -43,12 +43,11 @@ from .content import news, news_counts
 from .api import Auth, CanvasClient, CanvasError, parse_json, signed_out
 from .discover import FILE_REF
 from .config import (
-    PREFS_FILE, Account, AppPrefs, ConfigError, add_titles, migrate, needs_migration, needs_titles,
+    PREFS_FILE, Account, AppPrefs, ConfigError,
     save_course_place, save_pinned,
     save_sidebar_order, set_course_icon, set_course_select, set_courses_syncing, set_ed_courses,
 )
-from .engine import Engine, migrate_folder_names
-from .layout import titles_of_folders
+from .engine import Engine
 from .local import inside as in_folder
 from .local import MoveError, move_sync_folder, open_path
 from .paths import META_DIR, config_file
@@ -56,7 +55,7 @@ from .places import as_course, course_layout, course_place, describe, hide_cours
 from .plan import TRANSFERS, Kind, Scope
 from .courses import course_label
 from .things import NOTE_ID, PLACES, Entry, once, parse_entry
-from .thumbs import forget_old_thumbnails, thumbnail
+from .thumbs import thumbnail
 
 # Where the Tauri webview loads the UI from (production on macOS/Linux, Windows, dev server).
 APP_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420"]
@@ -280,20 +279,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
             timer.cancel()
 
     def update_files() -> None:
-        """config.toml and app.toml written as an older version did, the way this one does."""
-        try:
-            if account is not None:
-                migrate_folder_names(account.root)
-                forget_old_thumbnails(account.root)
-            if account is not None and needs_migration(cfg := config_file(account.root)):
-                with Engine(account.root) as e:
-                    migrate(cfg, lambda course: [t["id"] for t in content.tools(e.state, course)])
-            if account is not None and needs_titles(cfg := config_file(account.root)):
-                with Engine(account.root) as e:
-                    add_titles(cfg, *titles_of_folders(e.settings, e.state.courses()))
-            AppPrefs.migrate(prefs_path)
-        except Exception:  # (a broken config.toml: every request says so)
-            pass
+        """The sync folder and app.toml as an older version left them, the way this one keeps them."""
+        migrations.update(account.root if account is not None else None, prefs_path)
 
     update_files()
     app = FastAPI(title="canvas-sync", version=__version__, lifespan=lifespan)

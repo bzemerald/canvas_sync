@@ -37,6 +37,9 @@ without the Canvas website or Finder.
   - `cli.py`: the `canvas` command.
   - `engine.py`, `plan.py`, `execute.py`: sync. `sync.py`: what a sync does after Canvas (Ed,
     the index, meaning), for the app and `canvas pull` alike.
+  - `migrations.py`: what older versions left (folders renamed on disk, old config formats),
+    made as this one keeps it, when the backend starts; the command line and `canvas mcp` do
+    only the folders.
   - `finding.py`: the app's search of what things say (`find`: the index's, with misspellings
     taken for what's there, and by meaning when that's on).
   - `discover.py`: finding files through modules and pages.
@@ -155,9 +158,9 @@ without the Canvas website or Finder.
   - In the app: `open(thing)` opens anything where it opens; `ways(thing)` is what its menu
     offers; each place renders a thing its own way (a tab shows it, a card sums it up).
   - Old config formats (pinned without `type`, `tab_items`, `cards`, `hidden_links`, app.toml's
-    `tab_order`...) are read by `old_*` in things.py and rewritten once, when the server starts. (`[folder_names]` also moves
-    folders, so it's undone where anything starts, the command line and `canvas mcp` too:
-    `migrate_folder_names`.)
+    `tab_order`...) are read by `old_*` in things.py and rewritten once, when the server starts (migrations.py: `update`).
+    (`[folder_names]` also moves folders, so it's undone where anything starts, the command line
+    and `canvas mcp` too: `migrate_folder_names`.)
 - **Dragging uses pointer events, not HTML5 drag and drop:**
   - `lib/drag.ts` (`trackDrag`): threshold, the copy that follows the pointer, auto-scroll, the
     swallowed click.

@@ -14,7 +14,7 @@ from send2trash import send2trash
 from .api import CanvasClient
 from .browse import RESTORABLE, Entry, list_dir
 from .config import (
-    SETTINGS_TEMPLATE, Settings, change_things, old_folder_names, replace_folder_names, set_folder_title, update_skip_folders,
+    SETTINGS_TEMPLATE, Settings, change_things, replace_folder_names, set_folder_title, update_skip_folders,
 )
 from .discover import discover_course
 from .execute import EventHandler, Executor
@@ -32,15 +32,6 @@ log = logging.getLogger(__name__)
 
 class NotInitialized(Exception):
     pass
-
-
-def migrate_folder_names(root: Path) -> None:
-    """A sync folder from when renaming a folder renamed it on disk, as it is now. Once, where the
-    app, the command line and `canvas mcp` start (not when an Engine opens: most only read)."""
-    cfg = config_file(root.expanduser())
-    if cfg.exists() and (names := old_folder_names(cfg)) is not None:
-        with Engine(root) as e:
-            e.undo_folder_names(names)
 
 
 @dataclass
@@ -435,7 +426,7 @@ class Engine:
         self._reload()
 
     def undo_folder_names(self, names: dict[str, str]) -> None:
-        """Folders renamed on disk by older versions (see `migrate_folder_names`) get their own
+        """Folders renamed on disk by older versions (see migrations.py) get their own
         names back, deepest first; what you called them becomes their titles. A name no course's
         folder goes through (an old one, left over) renamed nothing, so it's dropped: a folder
         called that is yours. Each folder is committed by itself and [folder_names] goes last, so
