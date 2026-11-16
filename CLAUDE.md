@@ -36,7 +36,9 @@ without the Canvas website or Finder.
   - `places.py`: the places (置顶; a course's tabs, overview, 工具与链接), their rules.
   - `cli.py`: the `canvas` command.
   - `engine.py`, `plan.py`, `execute.py`: sync. `sync.py`: what a sync does after Canvas (Ed,
-    the index, meaning), for the app and `canvas pull` alike. `Engine.find`: the app's search.
+    the index, meaning), for the app and `canvas pull` alike.
+  - `finding.py`: the app's search of what things say (`find`: the index's, with misspellings
+    taken for what's there, and by meaning when that's on).
   - `discover.py`: finding files through modules and pages.
   - `ed.py`: Ed (edstem.org): its unofficial API (read-only, a token from Ed's settings), which
     Canvas course each Ed course is.

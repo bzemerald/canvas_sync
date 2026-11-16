@@ -24,6 +24,7 @@ from .local import open_path
 from .models import Course
 from .paths import config_file
 from .plan import TRANSFERS, Kind, Plan, Scope
+from .finding import find
 from .search import Hit
 from .sync import keep_sign_in, other_sources
 from .sync import reindex as sync_reindex
@@ -309,8 +310,8 @@ def search(
 ) -> None:
     """Search files, pages, assignments and announcements (offline)."""
     acc = account()
-    hits, corrected = with_engine(False, lambda engine: _value(engine.find(" ".join(query), limit, literal=False,
-                                                                           prefs_path=PREFS_FILE)))
+    hits, corrected = with_engine(False, lambda engine: _value(find(engine, " ".join(query), limit, literal=False,
+                                                                    prefs_path=PREFS_FILE)))
     if as_json:
         print(json.dumps([h.to_dict() for h in hits], indent=2, ensure_ascii=False))
         return

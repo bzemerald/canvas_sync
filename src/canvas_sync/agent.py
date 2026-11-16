@@ -20,7 +20,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from . import __version__, content
+from . import __version__, content, finding
 from .config import PREFS_FILE, Account, ConfigError
 from .courses import course_label, pick_courses
 from .documents import whole_url
@@ -261,8 +261,8 @@ def create_server(account: Account | None, prefs_path: Path = PREFS_FILE,
             raise ToolError(f"kinds must be among {', '.join(KINDS)} (not {', '.join(sorted(bad))})")
         with engine() as e:
             ids = [course_of(e, course).id] if course else None
-            hits, corrected = e.find(query, max(1, min(limit, LIST_MAX)), ids, kinds or None, since, until, source,
-                                     literal=bool(course), prefs_path=prefs_path)
+            hits, corrected = finding.find(e, query, max(1, min(limit, LIST_MAX)), ids, kinds or None, since, until, source,
+                                           literal=bool(course), prefs_path=prefs_path)
             return {"results": [found(e, h) for h in hits], **({"corrected": corrected} if corrected else {})}
 
     @tool

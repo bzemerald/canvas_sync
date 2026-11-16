@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, content
-from . import assistants, ed, meaning, notes
+from . import assistants, ed, finding, meaning, notes
 from .sync import keep_sign_in, other_sources, reindex
 from .catalog import abbreviations, catalog
 from .meaning import Meaning
@@ -708,8 +708,8 @@ def create_app(account: Account | None, token: str, prefs_path: Path = PREFS_FIL
         if under:
             inside(under)
         with engine() as e:
-            hits, corrected = e.find(q, min(limit, 500), course, kind or None, since or None, until or None,
-                                     source or None, under, prefs_path=prefs_path)
+            hits, corrected = finding.find(e, q, min(limit, 500), course, kind or None, since or None, until or None,
+                                           source or None, under, prefs_path=prefs_path)
             return {"hits": [h.to_dict() for h in hits], "corrected": corrected}
 
     @api.get("/catalog")
